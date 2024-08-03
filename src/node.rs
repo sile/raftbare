@@ -32,7 +32,9 @@ impl Node {
 
     // TODO: restart
 
-    pub fn create_cluster(&mut self) {}
+    pub fn create_cluster(&mut self) -> bool {
+        true
+    }
 
     pub fn id(&self) -> NodeId {
         self.id
