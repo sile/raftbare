@@ -12,3 +12,4 @@ Differences with the paper
 ### Optimizations
 
 - StartLeader command
+- Log index (0 based index with a first sentinel entry)

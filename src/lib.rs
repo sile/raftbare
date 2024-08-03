@@ -1,9 +1,10 @@
 // TODO: private
 pub mod action;
 pub mod event;
+pub mod log;
 pub mod node;
 
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct Term(u64);
 
 impl Term {

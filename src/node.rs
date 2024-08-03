@@ -1,4 +1,4 @@
-use crate::{action::Action, event::Event};
+use crate::{action::Action, event::Event, log::Log};
 use std::collections::VecDeque;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -14,11 +14,12 @@ impl NodeId {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Node {
     id: NodeId,
     action_queue: VecDeque<Action>,
     role: Role,
+    log: Log,
 }
 
 impl Node {
@@ -27,6 +28,7 @@ impl Node {
             id,
             action_queue: VecDeque::new(),
             role: Role::Follower,
+            log: Log::new(),
         }
     }
 
@@ -42,6 +44,10 @@ impl Node {
 
     pub fn role(&self) -> Role {
         self.role
+    }
+
+    pub fn log(&self) -> &Log {
+        &self.log
     }
 
     pub fn handle_event(&mut self, _event: Event) {}
