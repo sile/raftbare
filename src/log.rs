@@ -1,4 +1,4 @@
-use crate::Term;
+use crate::{config::ClusterConfig, Term};
 use std::collections::BTreeMap;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -34,6 +34,7 @@ impl LogEntries {
             LogEntry::Term(term) => {
                 self.terms.insert(self.last.index, term);
             }
+            LogEntry::ClusterConfig(_) => {}
             LogEntry::Command => {}
         }
     }
@@ -75,6 +76,6 @@ impl LogEntryRef {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum LogEntry {
     Term(Term),
-    // TODO: ClusterConfig,
+    ClusterConfig(ClusterConfig),
     Command,
 }

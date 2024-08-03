@@ -38,6 +38,7 @@ fn create_single_node_cluster() {
 
     // Create cluster.
     assert!(node.create_cluster());
+    assert_eq!(node.role(), Role::Leader);
     assert_action!(node, save_current_term(t(1)));
     assert_action!(node, save_voted_for(Some(node.id())));
     assert_last_action!(node, append_log_entry(prev(t(0), i(0)), term_entry(t(1))));

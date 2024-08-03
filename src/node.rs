@@ -1,5 +1,6 @@
 use crate::{
     action::Action,
+    config::ClusterConfig,
     event::Event,
     log::{LogEntries, LogEntry, LogEntryRef, LogIndex},
     Term,
@@ -27,6 +28,7 @@ pub struct Node {
     voted_for: Option<NodeId>,
     current_term: Term,
     log: LogEntries,
+    config: ClusterConfig,
 }
 
 impl Node {
@@ -40,6 +42,7 @@ impl Node {
             voted_for: None,
             current_term: term,
             log: LogEntries::new(LogEntryRef::new(term, index)),
+            config: ClusterConfig::new(),
         };
         this.enqueue_action(Action::CreateLog(LogEntry::Term(term)));
         this
@@ -90,6 +93,10 @@ impl Node {
 
     pub fn current_term(&self) -> Term {
         self.current_term
+    }
+
+    pub fn cluster_config(&self) -> &ClusterConfig {
+        &self.config
     }
 
     pub fn log(&self) -> &LogEntries {
