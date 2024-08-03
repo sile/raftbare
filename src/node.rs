@@ -1,4 +1,9 @@
-use crate::{action::Action, event::Event, log::Log};
+use crate::{
+    action::Action,
+    event::Event,
+    log::{Log, LogEntry, LogEntryRef, LogIndex},
+    Term,
+};
 use std::collections::VecDeque;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -24,12 +29,16 @@ pub struct Node {
 
 impl Node {
     pub fn start(id: NodeId) -> Self {
-        Self {
+        let term = Term::new(0);
+        let index = LogIndex::new(0);
+        let mut this = Self {
             id,
             action_queue: VecDeque::new(),
             role: Role::Follower,
-            log: Log::new(),
-        }
+            log: Log::new(LogEntryRef::new(term, index)),
+        };
+        this.enqueue_action(Action::append_log_entry(LogEntry::Term(term)));
+        this
     }
 
     // TODO: restart
@@ -54,6 +63,10 @@ impl Node {
 
     pub fn next_action(&mut self) -> Option<Action> {
         self.action_queue.pop_front()
+    }
+
+    fn enqueue_action(&mut self, action: Action) {
+        self.action_queue.push_back(action);
     }
 }
 

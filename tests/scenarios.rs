@@ -1,8 +1,19 @@
-use raftbare::node::{Node, NodeId, Role};
+use raftbare::{
+    action::Action,
+    log::LogEntry,
+    node::{Node, NodeId, Role},
+    Term,
+};
 
 macro_rules! assert_no_action {
     ($node:expr) => {
-        assert_eq!(None, $node.next_action());
+        assert_eq!($node.next_action(), None);
+    };
+}
+
+macro_rules! assert_action {
+    ($node:expr, $action:expr) => {
+        assert_eq!($node.next_action(), Some($action));
     };
 }
 
@@ -10,9 +21,22 @@ macro_rules! assert_no_action {
 fn single_node_start() {
     let mut node = Node::start(id(0));
     assert_eq!(node.role(), Role::Follower);
+    assert_action!(node, append_log_entry_action(term_entry(t(0))));
     assert_no_action!(node);
 }
 
-const fn id(id: u64) -> NodeId {
+fn id(id: u64) -> NodeId {
     NodeId::new(id)
+}
+
+fn t(term: u64) -> Term {
+    Term::new(term)
+}
+
+fn append_log_entry_action(entry: LogEntry) -> Action {
+    Action::append_log_entry(entry)
+}
+
+fn term_entry(term: Term) -> LogEntry {
+    LogEntry::Term(term)
 }

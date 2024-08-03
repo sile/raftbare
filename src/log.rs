@@ -1,16 +1,23 @@
 use crate::Term;
+use std::collections::BTreeMap;
 
 #[derive(Debug, Clone)]
 pub struct Log {
-    pub snapshot_term: Term,
-    pub snapshot_index: LogIndex,
+    // TODO: private
+    pub prev: LogEntryRef,
+    pub next: LogEntryRef,
+    pub terms: BTreeMap<LogIndex, Term>,
+    // TODO: cluster_configs
 }
 
 impl Log {
-    pub fn new() -> Self {
+    pub fn new(prev: LogEntryRef) -> Self {
+        let mut terms = BTreeMap::new();
+        terms.insert(prev.index, prev.term);
         Self {
-            snapshot_term: Term::new(0),
-            snapshot_index: LogIndex::new(0),
+            prev,
+            next: prev.next(),
+            terms,
         }
     }
 }
@@ -30,4 +37,27 @@ impl LogIndex {
     pub const fn next(self) -> Self {
         Self(self.0 + 1)
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct LogEntryRef {
+    pub term: Term,
+    pub index: LogIndex,
+}
+
+impl LogEntryRef {
+    pub const fn new(term: Term, index: LogIndex) -> Self {
+        Self { term, index }
+    }
+
+    pub const fn next(self) -> Self {
+        Self::new(self.term, self.index.next())
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum LogEntry {
+    Term(Term),
+    // TODO: ClusterConfig,
+    Command,
 }
