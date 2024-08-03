@@ -24,6 +24,8 @@ pub struct Node {
     id: NodeId,
     action_queue: VecDeque<Action>,
     role: Role,
+    voted_for: Option<NodeId>,
+    current_term: Term,
     log: Log,
 }
 
@@ -35,6 +37,8 @@ impl Node {
             id,
             action_queue: VecDeque::new(),
             role: Role::Follower,
+            voted_for: None,
+            current_term: term,
             log: Log::new(LogEntryRef::new(term, index)),
         };
         this.enqueue_action(Action::append_log_entry(LogEntry::Term(term)));
@@ -44,6 +48,10 @@ impl Node {
     // TODO: restart
 
     pub fn create_cluster(&mut self) -> bool {
+        if self.current_term != Term::new(0) {
+            return false;
+        }
+
         true
     }
 
@@ -53,6 +61,14 @@ impl Node {
 
     pub fn role(&self) -> Role {
         self.role
+    }
+
+    pub fn voted_for(&self) -> Option<NodeId> {
+        self.voted_for
+    }
+
+    pub fn current_term(&self) -> Term {
+        self.current_term
     }
 
     pub fn log(&self) -> &Log {
