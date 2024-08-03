@@ -58,15 +58,21 @@ impl Node {
         self.role = Role::Leader;
         self.set_current_term(self.current_term.next());
         self.set_voted_for(Some(self.id));
+        self.config.voters.insert(self.id);
 
-        self.enqueue_action(Action::AppendLogEntries(LogEntries::single(
-            self.log.last,
-            LogEntry::Term(self.current_term),
-        )));
-
-        // TODO: set cluster config
+        self.append_log_entry(LogEntry::Term(self.current_term));
+        self.append_log_entry(LogEntry::ClusterConfig(self.config.clone()));
+        self.enqueue_action(Action::NotifyCommitted(self.log.last.index));
 
         true
+    }
+
+    fn append_log_entry(&mut self, entry: LogEntry) {
+        self.enqueue_action(Action::AppendLogEntries(LogEntries::single(
+            self.log.last,
+            &entry,
+        )));
+        self.log.append_entry(&entry);
     }
 
     fn set_current_term(&mut self, term: Term) {
@@ -95,7 +101,7 @@ impl Node {
         self.current_term
     }
 
-    pub fn cluster_config(&self) -> &ClusterConfig {
+    pub fn config(&self) -> &ClusterConfig {
         &self.config
     }
 

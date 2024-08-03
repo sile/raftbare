@@ -1,5 +1,5 @@
 use crate::{
-    log::{LogEntries, LogEntry},
+    log::{LogEntries, LogEntry, LogIndex},
     node::NodeId,
     Term,
 };
@@ -10,9 +10,10 @@ pub enum Action {
     SaveVotedFor(Option<NodeId>),
     CreateLog(LogEntry),
     AppendLogEntries(LogEntries),
-    InstallSnapshot,
+    InstallSnapshot, // {LogEntries)
     UnicastMessage,
     BroadcastMessage,
     SetTimeout,
-    NotifyCommited,
+    NotifyCommitted(LogIndex),
+    // NotifyLogTruncated
 }

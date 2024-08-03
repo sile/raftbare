@@ -4,37 +4,39 @@ use std::collections::BTreeMap;
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct LogEntries {
     // TODO: private
-    pub prev: LogEntryRef,
+    pub prev: LogEntryRef, // TODO: LogIndex
     pub last: LogEntryRef,
     pub terms: BTreeMap<LogIndex, Term>,
-    // TODO: cluster_configs
+    pub configs: BTreeMap<LogIndex, ClusterConfig>,
 }
 
 impl LogEntries {
     // TODO: remove
     pub fn new(prev: LogEntryRef) -> Self {
-        let mut terms = BTreeMap::new();
-        terms.insert(prev.index, prev.term);
         Self {
             prev,
             last: prev,
-            terms,
+            terms: BTreeMap::new(),
+            configs: BTreeMap::new(),
         }
     }
 
-    pub fn single(prev: LogEntryRef, entry: LogEntry) -> Self {
+    pub fn single(prev: LogEntryRef, entry: &LogEntry) -> Self {
         let mut this = Self::new(prev);
-        this.append_entry(entry);
+        this.append_entry(&entry);
         this
     }
 
-    pub fn append_entry(&mut self, entry: LogEntry) {
+    pub fn append_entry(&mut self, entry: &LogEntry) {
         self.last = self.last.next();
         match entry {
             LogEntry::Term(term) => {
-                self.terms.insert(self.last.index, term);
+                self.terms.insert(self.last.index, *term);
+                self.last.term = *term;
             }
-            LogEntry::ClusterConfig(_) => {}
+            LogEntry::ClusterConfig(config) => {
+                self.configs.insert(self.last.index, config.clone());
+            }
             LogEntry::Command => {}
         }
     }
@@ -57,6 +59,7 @@ impl LogIndex {
     }
 }
 
+// TODO(?): Remove
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct LogEntryRef {
     pub term: Term,

@@ -2,4 +2,5 @@
 pub enum Event {
     Proposed,
     Received,
+    // SnapshotSent
 }
