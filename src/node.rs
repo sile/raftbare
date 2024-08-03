@@ -18,18 +18,28 @@ impl NodeId {
 pub struct Node {
     id: NodeId,
     action_queue: VecDeque<Action>,
+    role: Role,
 }
 
 impl Node {
-    pub fn new(id: NodeId) -> Self {
+    pub fn start(id: NodeId) -> Self {
         Self {
             id,
             action_queue: VecDeque::new(),
+            role: Role::Follower,
         }
     }
 
-    pub fn id(&self) -> &NodeId {
-        &self.id
+    // TODO: restart
+
+    pub fn create_cluster(&mut self) {}
+
+    pub fn id(&self) -> NodeId {
+        self.id
+    }
+
+    pub fn role(&self) -> Role {
+        self.role
     }
 
     pub fn handle_event(&mut self, _event: Event) {}
@@ -37,4 +47,11 @@ impl Node {
     pub fn next_action(&mut self) -> Option<Action> {
         self.action_queue.pop_front()
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum Role {
+    Follower,
+    Candidate,
+    Leader,
 }
