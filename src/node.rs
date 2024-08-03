@@ -1,7 +1,7 @@
 use crate::{
     action::Action,
     event::Event,
-    log::{Log, LogEntry, LogEntryRef, LogIndex},
+    log::{LogEntries, LogEntry, LogEntryRef, LogIndex},
     Term,
 };
 use std::collections::VecDeque;
@@ -26,7 +26,7 @@ pub struct Node {
     role: Role,
     voted_for: Option<NodeId>,
     current_term: Term,
-    log: Log,
+    log: LogEntries,
 }
 
 impl Node {
@@ -39,9 +39,12 @@ impl Node {
             role: Role::Follower,
             voted_for: None,
             current_term: term,
-            log: Log::new(LogEntryRef::new(term, index)),
+            log: LogEntries::new(LogEntryRef::new(term, index)),
         };
-        this.enqueue_action(Action::append_log_entry(LogEntry::Term(term)));
+        this.enqueue_action(Action::append_log_entry(
+            this.log.last,
+            LogEntry::Term(term),
+        ));
         this
     }
 
@@ -71,7 +74,7 @@ impl Node {
         self.current_term
     }
 
-    pub fn log(&self) -> &Log {
+    pub fn log(&self) -> &LogEntries {
         &self.log
     }
 

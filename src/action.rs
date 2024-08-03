@@ -1,11 +1,14 @@
-use crate::{log::LogEntry, node::NodeId, Term};
+use crate::{
+    log::{LogEntries, LogEntry, LogEntryRef},
+    node::NodeId,
+    Term,
+};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Action {
     SaveCurrentTerm(Term),
     SaveVotedFor(NodeId),
-    AppendLogEntries(AppendLogEntriesAction),
-    TruncateLog,
+    AppendLogEntries(LogEntries),
     InstallSnapshot,
     UnicastMessage,
     BroadcastMessage,
@@ -14,22 +17,7 @@ pub enum Action {
 }
 
 impl Action {
-    pub fn append_log_entry(entry: LogEntry) -> Self {
-        Self::AppendLogEntries(AppendLogEntriesAction::Signle(entry))
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub enum AppendLogEntriesAction {
-    Signle(LogEntry),
-    Multi(Vec<LogEntry>),
-}
-
-impl AppendLogEntriesAction {
-    pub fn entries(&self) -> &[LogEntry] {
-        match self {
-            AppendLogEntriesAction::Signle(entry) => std::slice::from_ref(entry),
-            AppendLogEntriesAction::Multi(entries) => entries,
-        }
+    pub fn append_log_entry(prev: LogEntryRef, entry: LogEntry) -> Self {
+        Self::AppendLogEntries(LogEntries::single(prev, entry))
     }
 }

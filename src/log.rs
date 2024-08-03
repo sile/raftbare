@@ -1,23 +1,40 @@
 use crate::Term;
 use std::collections::BTreeMap;
 
-#[derive(Debug, Clone)]
-pub struct Log {
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct LogEntries {
     // TODO: private
     pub prev: LogEntryRef,
-    pub next: LogEntryRef,
+    pub last: LogEntryRef,
     pub terms: BTreeMap<LogIndex, Term>,
     // TODO: cluster_configs
 }
 
-impl Log {
+impl LogEntries {
+    // TODO: remove
     pub fn new(prev: LogEntryRef) -> Self {
         let mut terms = BTreeMap::new();
         terms.insert(prev.index, prev.term);
         Self {
             prev,
-            next: prev.next(),
+            last: prev,
             terms,
+        }
+    }
+
+    pub fn single(prev: LogEntryRef, entry: LogEntry) -> Self {
+        let mut this = Self::new(prev);
+        this.append_entry(entry);
+        this
+    }
+
+    pub fn append_entry(&mut self, entry: LogEntry) {
+        self.last = self.last.next();
+        match entry {
+            LogEntry::Term(term) => {
+                self.terms.insert(self.last.index, term);
+            }
+            LogEntry::Command => {}
         }
     }
 }
