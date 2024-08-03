@@ -1,16 +1,16 @@
 use crate::action::Action;
-use std::{collections::VecDeque, sync::Arc};
+use std::collections::VecDeque;
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub struct NodeId(Arc<String>);
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct NodeId(u64);
 
 impl NodeId {
-    pub fn new(id: &str) -> Self {
-        NodeId(Arc::new(id.to_owned()))
+    pub const fn new(id: u64) -> Self {
+        NodeId(id)
     }
 
-    pub fn get(&self) -> &str {
-        &self.0
+    pub const fn get(self) -> u64 {
+        self.0
     }
 }
 
