@@ -1,4 +1,4 @@
-use crate::action::Action;
+use crate::{action::Action, event::Event};
 use std::collections::VecDeque;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -31,6 +31,8 @@ impl Node {
     pub fn id(&self) -> &NodeId {
         &self.id
     }
+
+    pub fn handle_event(&mut self, _event: Event) {}
 
     pub fn next_action(&mut self) -> Option<Action> {
         self.action_queue.pop_front()

@@ -1,5 +1,6 @@
 // TODO: private
 pub mod action;
+pub mod event;
 pub mod node;
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
