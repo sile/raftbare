@@ -41,10 +41,7 @@ impl Node {
             current_term: term,
             log: LogEntries::new(LogEntryRef::new(term, index)),
         };
-        this.enqueue_action(Action::append_log_entry(
-            this.log.last,
-            LogEntry::Term(term),
-        ));
+        this.enqueue_action(Action::CreateLog(LogEntry::Term(term)));
         this
     }
 
@@ -55,7 +52,28 @@ impl Node {
             return false;
         }
 
+        self.role = Role::Leader;
+        self.set_current_term(self.current_term.next());
+        self.set_voted_for(Some(self.id));
+
+        self.enqueue_action(Action::AppendLogEntries(LogEntries::single(
+            self.log.last,
+            LogEntry::Term(self.current_term),
+        )));
+
+        // TODO: set cluster config
+
         true
+    }
+
+    fn set_current_term(&mut self, term: Term) {
+        self.current_term = term;
+        self.enqueue_action(Action::SaveCurrentTerm(term));
+    }
+
+    fn set_voted_for(&mut self, voted_for: Option<NodeId>) {
+        self.voted_for = voted_for;
+        self.enqueue_action(Action::SaveVotedFor(voted_for));
     }
 
     pub fn id(&self) -> NodeId {
@@ -94,4 +112,18 @@ pub enum Role {
     Follower,
     Candidate,
     Leader,
+}
+
+impl Role {
+    pub const fn is_leader(self) -> bool {
+        matches!(self, Self::Leader)
+    }
+
+    pub const fn is_follower(self) -> bool {
+        matches!(self, Self::Follower)
+    }
+
+    pub const fn is_candidate(self) -> bool {
+        matches!(self, Self::Candidate)
+    }
 }

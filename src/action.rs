@@ -1,5 +1,5 @@
 use crate::{
-    log::{LogEntries, LogEntry, LogEntryRef},
+    log::{LogEntries, LogEntry},
     node::NodeId,
     Term,
 };
@@ -7,17 +7,12 @@ use crate::{
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Action {
     SaveCurrentTerm(Term),
-    SaveVotedFor(NodeId),
+    SaveVotedFor(Option<NodeId>),
+    CreateLog(LogEntry),
     AppendLogEntries(LogEntries),
     InstallSnapshot,
     UnicastMessage,
     BroadcastMessage,
-    NotifyCommited,
     SetTimeout,
-}
-
-impl Action {
-    pub fn append_log_entry(prev: LogEntryRef, entry: LogEntry) -> Self {
-        Self::AppendLogEntries(LogEntries::single(prev, entry))
-    }
+    NotifyCommited,
 }
