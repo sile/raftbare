@@ -21,6 +21,13 @@ impl LogEntries {
         }
     }
 
+    // TODO: rename
+    pub fn new_at_snapshot(prev: LogEntryRef, config: ClusterConfig) -> Self {
+        let mut this = Self::new(prev);
+        this.configs.insert(prev.index, config);
+        this
+    }
+
     pub fn single(prev: LogEntryRef, entry: &LogEntry) -> Self {
         let mut this = Self::new(prev);
         this.append_entry(&entry);

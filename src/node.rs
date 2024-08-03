@@ -48,7 +48,7 @@ impl Node {
         this
     }
 
-    // TODO: restart
+    // TODO: restart (id: NodeId, log_since_snapshot: LogEntries) -> Self
 
     pub fn create_cluster(&mut self) -> bool {
         if self.current_term != Term::new(0) {
