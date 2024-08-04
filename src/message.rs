@@ -1,13 +1,14 @@
 use crate::{
-    log::{LogEntries, LogIndex},
+    log::{LogEntries, LogEntryRef, LogIndex},
     node::NodeId,
     Term,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Message {
-    RequestVoteRequest { sender_id: NodeId, term: Term },
+    RequestVoteRequest { from: NodeId, term: Term },
     AppendEntriesRequest(AppendEntriesRequest),
+    AppendEntriesReply(AppendEntriesReply),
 }
 
 impl Message {
@@ -15,13 +16,17 @@ impl Message {
         match self {
             Self::RequestVoteRequest { term, .. } => *term,
             Self::AppendEntriesRequest(m) => m.term,
+            Self::AppendEntriesReply(m) => m.term,
         }
     }
 
     pub fn from(&self) -> NodeId {
         match self {
-            Self::RequestVoteRequest { sender_id, .. } => *sender_id,
-            Self::AppendEntriesRequest(m) => m.leader_id,
+            Self::RequestVoteRequest {
+                from: sender_id, ..
+            } => *sender_id,
+            Self::AppendEntriesRequest(m) => m.from,
+            Self::AppendEntriesReply(m) => m.from,
         }
     }
 
@@ -33,9 +38,23 @@ impl Message {
     ) -> Self {
         Self::AppendEntriesRequest(AppendEntriesRequest {
             term,
-            leader_id,
+            from: leader_id,
             leader_commit,
             entries,
+        })
+    }
+
+    pub fn append_entries_reply(
+        term: Term,
+        from: NodeId,
+        last_entry: LogEntryRef,
+        success: bool,
+    ) -> Self {
+        Self::AppendEntriesReply(AppendEntriesReply {
+            term,
+            from,
+            last_entry,
+            success,
         })
     }
 }
@@ -43,7 +62,15 @@ impl Message {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct AppendEntriesRequest {
     pub term: Term,
-    pub leader_id: NodeId, // TODO: rename
+    pub from: NodeId,
     pub leader_commit: LogIndex,
     pub entries: LogEntries,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct AppendEntriesReply {
+    pub term: Term,
+    pub from: NodeId,
+    pub last_entry: LogEntryRef,
+    pub success: bool,
 }

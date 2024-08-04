@@ -89,7 +89,12 @@ fn create_two_nodes_cluster() {
     assert_no_action!(node0);
 
     node1.handle_message(&msg);
+    let reply = append_entries_reply(node1.current_term(), node1.id(), node1.log().last, false);
+    assert_action!(node1, unicast_message(node0.id(), &reply));
     assert_no_action!(node1);
+
+    node0.handle_message(&reply);
+    assert_no_action!(node0);
 }
 
 fn id(id: u64) -> NodeId {
@@ -140,6 +145,14 @@ fn append_entries_request(
     entries: LogEntries,
 ) -> Message {
     Message::append_entries_request(term, leader_id, commit_index, entries)
+}
+
+fn append_entries_reply(term: Term, from: NodeId, entry: LogEntryRef, success: bool) -> Message {
+    Message::append_entries_reply(term, from, entry, success)
+}
+
+fn unicast_message(destination: NodeId, message: &Message) -> Action {
+    Action::UnicastMessage(destination, message.clone())
 }
 
 fn broadcast_message(message: &Message) -> Action {

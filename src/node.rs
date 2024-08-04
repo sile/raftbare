@@ -139,6 +139,10 @@ impl Node {
         self.enqueue_action(Action::BroadcastMessage(message));
     }
 
+    fn unicast_message(&mut self, destination: NodeId, message: Message) {
+        self.enqueue_action(Action::UnicastMessage(destination, message));
+    }
+
     fn update_commit_index_if_possible(&mut self) {
         let new_commit_index = self.quorum.commit_index();
         if self.commit_index < new_commit_index {
@@ -203,11 +207,27 @@ impl Node {
         match message {
             Message::RequestVoteRequest { .. } => todo!(),
             Message::AppendEntriesRequest(msg) => self.handle_append_entries_request(msg),
+            Message::AppendEntriesReply { .. } => todo!(),
         }
     }
 
-    fn handle_append_entries_request(&mut self, msg: &AppendEntriesRequest) {
-        //
+    fn reply_append_entries(&mut self, request: &AppendEntriesRequest, success: bool) {
+        self.unicast_message(
+            request.from,
+            Message::append_entries_reply(self.current_term, self.id, self.log.last, success),
+        );
+    }
+
+    fn handle_append_entries_request(&mut self, request: &AppendEntriesRequest) {
+        if request.term < self.current_term {
+            self.reply_append_entries(request, false);
+            return;
+        }
+        if !self.log.contains(request.entries.prev) {
+            self.reply_append_entries(request, false);
+            return;
+        }
+        todo!()
     }
 
     pub fn id(&self) -> NodeId {

@@ -34,6 +34,21 @@ impl LogEntries {
         this
     }
 
+    pub fn contains(&self, entry: LogEntryRef) -> bool {
+        if !(self.prev.index..=self.last.index).contains(&entry.index) {
+            return false;
+        }
+
+        let term = self
+            .terms
+            .range(..=entry.index)
+            .rev()
+            .next()
+            .map(|(_, term)| *term)
+            .unwrap_or(self.prev.term);
+        term == entry.term
+    }
+
     pub fn append_entry(&mut self, entry: &LogEntry) {
         self.last = self.last.next();
         match entry {
