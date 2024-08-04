@@ -6,13 +6,22 @@ use crate::{
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Message {
+    RequestVoteRequest { sender_id: NodeId, term: Term },
     AppendEntriesRequest(AppendEntriesRequest),
 }
 
 impl Message {
     pub fn term(&self) -> Term {
         match self {
-            Message::AppendEntriesRequest(m) => m.term,
+            Self::RequestVoteRequest { term, .. } => *term,
+            Self::AppendEntriesRequest(m) => m.term,
+        }
+    }
+
+    pub fn from(&self) -> NodeId {
+        match self {
+            Self::RequestVoteRequest { sender_id, .. } => *sender_id,
+            Self::AppendEntriesRequest(m) => m.leader_id,
         }
     }
 
@@ -34,7 +43,7 @@ impl Message {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct AppendEntriesRequest {
     pub term: Term,
-    pub leader_id: NodeId,
+    pub leader_id: NodeId, // TODO: rename
     pub leader_commit: LogIndex,
     pub entries: LogEntries,
 }

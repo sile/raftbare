@@ -2,7 +2,7 @@ use crate::{
     action::Action,
     config::ClusterConfig,
     log::{LogEntries, LogEntry, LogEntryRef, LogIndex},
-    message::Message,
+    message::{AppendEntriesRequest, Message},
     quorum::Quorum,
     Term,
 };
@@ -186,6 +186,28 @@ impl Node {
     fn set_voted_for(&mut self, voted_for: Option<NodeId>) {
         self.voted_for = voted_for;
         self.enqueue_action(Action::SaveVotedFor(voted_for));
+    }
+
+    pub fn handle_message(&mut self, message: &Message) {
+        if self.current_term < message.term() {
+            if matches!(message, Message::RequestVoteRequest { .. })
+                && self.role.is_follower()
+                && self.voted_for.map_or(false, |id| id != message.from())
+            {
+                // TODO: note comment
+                return;
+            }
+            //
+        }
+
+        match message {
+            Message::RequestVoteRequest { .. } => todo!(),
+            Message::AppendEntriesRequest(msg) => self.handle_append_entries_request(msg),
+        }
+    }
+
+    fn handle_append_entries_request(&mut self, msg: &AppendEntriesRequest) {
+        //
     }
 
     pub fn id(&self) -> NodeId {

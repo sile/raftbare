@@ -87,6 +87,8 @@ fn create_two_nodes_cluster() {
     );
     assert_action!(node0, broadcast_message(&msg));
     assert_no_action!(node0);
+
+    node1.handle_message(&msg);
     assert_no_action!(node1);
 }
 
