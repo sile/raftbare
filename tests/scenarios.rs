@@ -136,11 +136,11 @@ fn create_two_nodes_cluster() {
         append_log_entry(prev_entry, cluster_config_entry(new_config))
     );
     assert_action!(node0, broadcast_message(&request));
-
-    // TODO: Remove this redundant action if possible.
-    assert_action!(node0, unicast_message(node1.id(), &request));
-
+    assert_action!(node0, unicast_message(node1.id(), &request)); // TODO: Remove this redundant action if possible.
     assert_no_action!(node0);
+
+    node1.handle_message(&request);
+    assert_no_action!(node1);
 }
 
 fn entries(prev: LogEntryRef, entries: &[LogEntry]) -> LogEntries {
