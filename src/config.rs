@@ -23,6 +23,10 @@ impl ClusterConfig {
             non_voters: self.non_voters.iter().peekable(),
         }
     }
+
+    pub fn is_joint_consensus(&self) -> bool {
+        !self.new_voters.is_empty()
+    }
 }
 
 #[derive(Debug)]

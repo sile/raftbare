@@ -29,6 +29,7 @@ pub struct Node {
     current_term: Term,
     log: LogEntries,
     config: ClusterConfig,
+    commit_index: LogIndex,
 }
 
 impl Node {
@@ -43,6 +44,7 @@ impl Node {
             current_term: term,
             log: LogEntries::new(LogEntryRef::new(term, index)),
             config: ClusterConfig::new(),
+            commit_index: LogIndex::new(0),
         };
         this.enqueue_action(Action::CreateLog(LogEntry::Term(term)));
         this
@@ -62,29 +64,59 @@ impl Node {
         self.set_voted_for(Some(self.id));
         self.config.voters.insert(self.id);
 
-        self.append_log_entry(LogEntry::Term(self.current_term));
-        self.append_log_entry(LogEntry::ClusterConfig(self.config.clone()));
-        self.enqueue_action(Action::NotifyCommitted(self.log.last.index));
+        // Optimized propose
+        self.append_log_entry(&LogEntry::Term(self.current_term));
+        self.append_log_entry(&LogEntry::ClusterConfig(self.config.clone()));
+        self.commit(self.log.last.index);
 
         true
+    }
+
+    fn commit(&mut self, index: LogIndex) {
+        self.commit_index = index;
+        self.enqueue_action(Action::NotifyCommitted(index));
+    }
+
+    // TODO: fn propose_command(&mut self, n: usize) -> Result<()>;
+
+    fn propose(&mut self, entry: LogEntry) {
+        debug_assert_eq!(self.role, Role::Leader);
+
+        self.append_log_entry(&entry);
+        self.update_commit_index_if_possible();
+        // TODO: self.broadcast_message();
+    }
+
+    fn update_commit_index_if_possible(&mut self) {
+        // TODO
     }
 
     pub fn change_cluster_config(
         &mut self,
         new_config: ClusterConfig,
     ) -> Result<(), ChangeClusterConfigError> {
-        // self.config = config;
-        // self.enqueue_action(Action::SaveClusterConfig(config.clone()));
-        // self.append_log_entry(LogEntry::ClusterConfig(config));
-        todo!()
+        if !self.role.is_leader() {
+            return Err(ChangeClusterConfigError::NotLeader);
+        }
+        if self.config.voters != new_config.voters {
+            return Err(ChangeClusterConfigError::VotersMismatched);
+        }
+        if self.config.is_joint_consensus() {
+            return Err(ChangeClusterConfigError::JointConsensusInProgress);
+        }
+
+        self.propose(LogEntry::ClusterConfig(new_config.clone()));
+        self.config = new_config;
+
+        Ok(())
     }
 
-    fn append_log_entry(&mut self, entry: LogEntry) {
+    fn append_log_entry(&mut self, entry: &LogEntry) {
         self.enqueue_action(Action::AppendLogEntries(LogEntries::single(
             self.log.last,
-            &entry,
+            entry,
         )));
-        self.log.append_entry(&entry);
+        self.log.append_entry(entry);
     }
 
     fn set_current_term(&mut self, term: Term) {
