@@ -15,5 +15,5 @@ pub enum Action {
     BroadcastMessage,
     SetTimeout,
     NotifyCommitted(LogIndex),
-    // NotifyLogTruncated
+    // NotifyLogTruncated or NotifyRejected or NotifyCanceled
 }

@@ -70,11 +70,17 @@ fn create_two_nodes_cluster() {
     assert_eq!(node0.take_actions().count(), 5);
 
     // Update cluster configuration.
-    let index = node0.log().last.index.next();
-    assert_eq!(
-        Ok(index),
-        node0.change_cluster_config(joint(&[node0.id()], &[node0.id(), node1.id()]))
+    let prev_entry = node0.log().last;
+    let next_index = node0.log().last.index.next();
+    let new_config = joint(&[node0.id()], &[node0.id(), node1.id()]);
+    assert_eq!(Ok(next_index), node0.change_cluster_config(&new_config));
+    assert_action!(
+        node0,
+        append_log_entry(prev_entry, cluster_config_entry(new_config))
     );
+    assert_action!(node0, committed(next_index));
+    assert_no_action!(node0);
+    assert_no_action!(node1);
 }
 
 fn id(id: u64) -> NodeId {

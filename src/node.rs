@@ -84,14 +84,6 @@ impl Node {
         self.leader_index = self.log.last.index;
 
         self.append_log_entry(&LogEntry::ClusterConfig(self.config.clone()));
-
-        self.quorum.update_match_index(
-            &self.config,
-            self.id,
-            LogIndex::new(0),
-            self.log.last.index,
-        );
-
         self.commit(self.log.last.index);
 
         debug_assert!(self.followers.is_empty());
@@ -114,16 +106,20 @@ impl Node {
         self.update_commit_index_if_possible();
         // TODO: self.broadcast_message();
 
-        todo!()
+        //        todo!()
+        self.log.last.index
     }
 
     fn update_commit_index_if_possible(&mut self) {
-        // TODO
+        let new_commit_index = self.quorum.commit_index();
+        if self.commit_index < new_commit_index {
+            self.commit(new_commit_index);
+        }
     }
 
     pub fn change_cluster_config(
         &mut self,
-        new_config: ClusterConfig,
+        new_config: &ClusterConfig,
     ) -> Result<LogIndex, ChangeClusterConfigError> {
         if !self.role.is_leader() {
             return Err(ChangeClusterConfigError::NotLeader);
@@ -136,17 +132,23 @@ impl Node {
         }
 
         let index = self.propose(LogEntry::ClusterConfig(new_config.clone()));
-        self.config = new_config;
+        self.config = new_config.clone();
 
         Ok(index)
     }
 
     fn append_log_entry(&mut self, entry: &LogEntry) {
+        let prev_index = self.log.last.index;
         self.enqueue_action(Action::AppendLogEntries(LogEntries::single(
             self.log.last,
             entry,
         )));
         self.log.append_entry(entry);
+
+        if self.role.is_leader() {
+            self.quorum
+                .update_match_index(&self.config, self.id, prev_index, self.log.last.index);
+        }
     }
 
     fn set_current_term(&mut self, term: Term) {
