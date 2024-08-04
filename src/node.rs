@@ -36,6 +36,7 @@ pub struct Node {
     leader_index: LogIndex,
     followers: BTreeMap<NodeId, Follower>,
     quorum: Quorum,
+    joint_consensus_index: Option<LogIndex>,
 }
 
 impl Node {
@@ -58,6 +59,7 @@ impl Node {
             leader_index: LogIndex::new(0),
             followers: BTreeMap::new(),
             quorum,
+            joint_consensus_index: None,
         };
         this.enqueue_action(Action::CreateLog(LogEntry::Term(term)));
         this
@@ -151,12 +153,30 @@ impl Node {
     }
 
     fn update_commit_index_if_possible(&mut self) {
+        debug_assert!(self.role.is_leader());
+
         let new_commit_index = self.quorum.commit_index();
         if self.commit_index < new_commit_index {
             self.commit(new_commit_index);
 
-            // TODO: handle change config (joint => single)
+            if self
+                .joint_consensus_index
+                .map_or(false, |i| i <= new_commit_index)
+            {
+                self.finalize_joint_consensus();
+            }
         }
+    }
+
+    fn finalize_joint_consensus(&mut self) {
+        debug_assert!(self.role.is_leader());
+        debug_assert!(self.config.is_joint_consensus());
+
+        self.joint_consensus_index = None;
+
+        let mut new_config = self.config.clone();
+        new_config.voters = std::mem::take(&mut new_config.new_voters);
+        self.propose(LogEntry::ClusterConfig(new_config));
     }
 
     pub fn change_cluster_config(
@@ -174,6 +194,9 @@ impl Node {
         }
 
         let index = self.propose(LogEntry::ClusterConfig(new_config.clone()));
+        if self.config.is_joint_consensus() {
+            self.joint_consensus_index = Some(index);
+        }
         Ok(index)
     }
 
@@ -215,6 +238,7 @@ impl Node {
         }
         if self.log.last == entries.prev {
             // Simple appending.
+            self.enqueue_action(Action::AppendLogEntries(entries.clone()));
             self.log.append_entries(entries);
             if let Some((_, new_config)) = entries.configs.last_key_value() {
                 self.config = new_config.clone();
@@ -422,7 +446,7 @@ pub enum ChangeClusterConfigError {
 
 #[derive(Debug, Clone)]
 pub struct Follower {
-    pub next_index: LogIndex,
+    pub next_index: LogIndex, // TODO: remove
     pub match_index: LogIndex,
 }
 

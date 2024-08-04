@@ -15,3 +15,4 @@ Differences with the paper
 - Log index (0 based index with a first sentinel entry)
 - AppendEntriesRPC reply (log entry ref)
    - Add last_entry instead of success
+- Removed next_index in favor of ...

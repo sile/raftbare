@@ -96,23 +96,50 @@ fn create_two_nodes_cluster() {
     assert_no_action!(node1);
 
     node0.handle_message(&reply);
+    let entries = entries(
+        prev(t(0), i(0)), // == node1.log().last
+        &[
+            term_entry(t(1)),
+            cluster_config_entry(voters(&[node0.id()])),
+            cluster_config_entry(joint(&[node0.id()], &[node0.id(), node1.id()])),
+        ],
+    );
     let msg = append_entries_request(
         node0.current_term(),
         node0.id(),
         node0.commit_index(),
-        entries(
-            prev(t(0), i(0)), // == node1.log().last
-            &[
-                term_entry(t(1)),
-                cluster_config_entry(voters(&[node0.id()])),
-                cluster_config_entry(joint(&[node0.id()], &[node0.id(), node1.id()])),
-            ],
-        ),
+        entries.clone(),
     );
     assert_action!(node0, unicast_message(node1.id(), &msg));
     assert_no_action!(node0);
 
     node1.handle_message(&msg);
+    assert_eq!(node1.log().last, node0.log().last);
+    let reply = append_entries_reply(node1.current_term(), node1.id(), node1.log().last);
+    assert_action!(node1, append_log_entries(&entries));
+    assert_action!(node1, committed(i(2)));
+    assert_action!(node1, unicast_message(node0.id(), &reply));
+    assert_no_action!(node1);
+
+    let new_config = voters(&[node0.id(), node1.id()]);
+    let prev_entry = node0.log().last;
+    let request = append_entries_request(
+        node0.current_term(),
+        node0.id(),
+        i(3),
+        LogEntries::single(prev_entry, &cluster_config_entry(new_config.clone())),
+    );
+    node0.handle_message(&reply);
+    assert_action!(node0, committed(i(3)));
+    assert_action!(
+        node0,
+        append_log_entry(prev_entry, cluster_config_entry(new_config))
+    );
+    assert_action!(node0, broadcast_message(&request));
+
+    // TODO: Remove this redundant action if possible.
+    assert_action!(node0, unicast_message(node1.id(), &request));
+
     assert_no_action!(node0);
 }
 
@@ -188,6 +215,10 @@ fn broadcast_message(message: &Message) -> Action {
 
 fn append_log_entry(prev: LogEntryRef, entry: LogEntry) -> Action {
     Action::AppendLogEntries(LogEntries::single(prev, &entry))
+}
+
+fn append_log_entries(entries: &LogEntries) -> Action {
+    Action::AppendLogEntries(entries.clone())
 }
 
 fn save_current_term(term: Term) -> Action {
