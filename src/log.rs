@@ -68,7 +68,7 @@ impl LogEntries {
         (self.prev.index..=self.last.index).contains(&index)
     }
 
-    pub fn strip_common_prefix(&mut self, other: &Self) {
+    pub fn strip_common_prefix(&mut self, _other: &Self) {
         todo!();
     }
 
@@ -84,6 +84,15 @@ impl LogEntries {
             }
             LogEntry::Command => {}
         }
+    }
+
+    pub fn append_entries(&mut self, entries: &Self) {
+        debug_assert_eq!(self.last, entries.prev);
+        // TODO: use append()
+        self.terms.extend(&entries.terms);
+        self.configs
+            .extend(entries.configs.iter().map(|(k, v)| (k.clone(), v.clone())));
+        self.last = entries.last;
     }
 }
 

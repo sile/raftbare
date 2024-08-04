@@ -63,7 +63,7 @@ impl Node {
         this
     }
 
-    // TODO: restart (id: NodeId, log_since_snapshot: LogEntries) -> Self
+    // TODO: restart (id: NodeId, current_term, voted_for, log_since_snapshot: LogEntries) -> Self
     // TODO: consistent_query() or heartbeat() -> Heartbeat
     // impl Heartbeat { pub fn handle_event(&mut self,.. ); pub fn is_latest_leader(&self) -> Option<bool>; }
 
@@ -178,6 +178,8 @@ impl Node {
     }
 
     fn append_log_entry(&mut self, entry: &LogEntry) {
+        debug_assert!(self.role.is_leader());
+
         let prev_index = self.log.last.index;
         self.enqueue_action(Action::AppendLogEntries(LogEntries::single(
             self.log.last,
@@ -185,6 +187,7 @@ impl Node {
         )));
         self.log.append_entry(entry);
 
+        // TODO: unnecessary condition?
         if self.role.is_leader() {
             self.quorum
                 .update_match_index(&self.config, self.id, prev_index, self.log.last.index);
@@ -192,6 +195,7 @@ impl Node {
 
         if let LogEntry::ClusterConfig(new_config) = entry {
             self.config = new_config.clone();
+            // TODO: unnecessary condition?
             if self.role.is_leader() {
                 self.rebuild_followers();
                 self.rebuild_quorum();
@@ -200,6 +204,8 @@ impl Node {
     }
 
     fn try_append_log_entries(&mut self, entries: &LogEntries) -> bool {
+        debug_assert!(self.role.is_follower());
+
         if self.log.contains(entries.last) {
             // Already up-to-date.
             return false;
@@ -209,9 +215,11 @@ impl Node {
         }
         if self.log.last == entries.prev {
             // Simple appending.
-            //self.append_log_entries(&request.entries);
-            // return true;
-            todo!();
+            self.log.append_entries(entries);
+            if let Some((_, new_config)) = entries.configs.last_key_value() {
+                self.config = new_config.clone();
+            }
+            return true;
         }
 
         // TODO: strip common prefix and diverging suffix
