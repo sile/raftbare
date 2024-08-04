@@ -3,9 +3,10 @@ use crate::{
     config::ClusterConfig,
     event::Event,
     log::{LogEntries, LogEntry, LogEntryRef, LogIndex},
+    quorum::Quorum,
     Term,
 };
-use std::collections::VecDeque;
+use std::collections::{BTreeMap, VecDeque};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct NodeId(u64);
@@ -30,12 +31,19 @@ pub struct Node {
     log: LogEntries,
     config: ClusterConfig,
     commit_index: LogIndex,
+
+    // Leader state
+    leader_index: LogIndex,
+    followers: BTreeMap<NodeId, Follower>,
+    quorum: Quorum,
 }
 
 impl Node {
     pub fn start(id: NodeId) -> Self {
         let term = Term::new(0);
         let index = LogIndex::new(0);
+        let config = ClusterConfig::new();
+        let quorum = Quorum::new(&config);
         let mut this = Self {
             id,
             action_queue: VecDeque::new(),
@@ -43,8 +51,13 @@ impl Node {
             voted_for: None,
             current_term: term,
             log: LogEntries::new(LogEntryRef::new(term, index)),
-            config: ClusterConfig::new(),
+            config,
             commit_index: LogIndex::new(0),
+
+            // leader state
+            leader_index: LogIndex::new(0),
+            followers: BTreeMap::new(),
+            quorum,
         };
         this.enqueue_action(Action::CreateLog(LogEntry::Term(term)));
         this
@@ -59,15 +72,21 @@ impl Node {
             return false;
         }
 
+        // TODO: factor out
         self.role = Role::Leader;
         self.set_current_term(self.current_term.next());
         self.set_voted_for(Some(self.id));
         self.config.voters.insert(self.id);
+        self.quorum = Quorum::new(&self.config);
 
         // Optimized propose
         self.append_log_entry(&LogEntry::Term(self.current_term));
+        self.leader_index = self.log.last.index;
+
         self.append_log_entry(&LogEntry::ClusterConfig(self.config.clone()));
         self.commit(self.log.last.index);
+
+        debug_assert!(self.followers.is_empty());
 
         true
     }
@@ -79,12 +98,14 @@ impl Node {
 
     // TODO: fn propose_command(&mut self, n: usize) -> Result<()>;
 
-    fn propose(&mut self, entry: LogEntry) {
+    fn propose(&mut self, entry: LogEntry) -> LogIndex {
         debug_assert_eq!(self.role, Role::Leader);
 
         self.append_log_entry(&entry);
         self.update_commit_index_if_possible();
         // TODO: self.broadcast_message();
+
+        todo!()
     }
 
     fn update_commit_index_if_possible(&mut self) {
@@ -94,7 +115,7 @@ impl Node {
     pub fn change_cluster_config(
         &mut self,
         new_config: ClusterConfig,
-    ) -> Result<(), ChangeClusterConfigError> {
+    ) -> Result<LogIndex, ChangeClusterConfigError> {
         if !self.role.is_leader() {
             return Err(ChangeClusterConfigError::NotLeader);
         }
@@ -105,10 +126,10 @@ impl Node {
             return Err(ChangeClusterConfigError::JointConsensusInProgress);
         }
 
-        self.propose(LogEntry::ClusterConfig(new_config.clone()));
+        let index = self.propose(LogEntry::ClusterConfig(new_config.clone()));
         self.config = new_config;
 
-        Ok(())
+        Ok(index)
     }
 
     fn append_log_entry(&mut self, entry: &LogEntry) {
@@ -194,4 +215,19 @@ pub enum ChangeClusterConfigError {
     NotLeader,
     VotersMismatched,
     JointConsensusInProgress,
+}
+
+#[derive(Debug, Clone)]
+pub struct Follower {
+    pub next_index: LogIndex,
+    pub match_index: LogIndex,
+}
+
+impl Follower {
+    pub fn new(next_index: LogIndex) -> Self {
+        Self {
+            next_index,
+            match_index: LogIndex::new(0),
+        }
+    }
 }

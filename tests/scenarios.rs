@@ -70,6 +70,11 @@ fn create_two_nodes_cluster() {
     assert_eq!(node0.take_actions().count(), 5);
 
     // Update cluster configuration.
+    let index = node0.log().last.index.next();
+    assert_eq!(
+        Ok(index),
+        node0.change_cluster_config(joint(&[node0.id()], &[node0.id(), node1.id()]))
+    );
 }
 
 fn id(id: u64) -> NodeId {
@@ -86,6 +91,13 @@ fn i(index: u64) -> LogIndex {
 
 fn prev(term: Term, index: LogIndex) -> LogEntryRef {
     LogEntryRef::new(term, index)
+}
+
+fn joint(old: &[NodeId], new: &[NodeId]) -> ClusterConfig {
+    let mut config = ClusterConfig::new();
+    config.voters.extend(old.iter().copied());
+    config.new_voters.extend(new.iter().copied());
+    config
 }
 
 fn voters(ids: &[NodeId]) -> ClusterConfig {

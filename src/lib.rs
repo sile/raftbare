@@ -4,6 +4,7 @@ pub mod config;
 pub mod event;
 pub mod log;
 pub mod node;
+pub mod quorum;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct Term(u64);
