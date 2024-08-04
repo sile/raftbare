@@ -49,6 +49,8 @@ impl Node {
     }
 
     // TODO: restart (id: NodeId, log_since_snapshot: LogEntries) -> Self
+    // TODO: consistent_query() or heartbeat() -> Heartbeat
+    // impl Heartbeat { pub fn handle_event(&mut self,.. ); pub fn is_latest_leader(&self) -> Option<bool>; }
 
     pub fn create_cluster(&mut self) -> bool {
         if self.current_term != Term::new(0) {
@@ -65,6 +67,16 @@ impl Node {
         self.enqueue_action(Action::NotifyCommitted(self.log.last.index));
 
         true
+    }
+
+    pub fn change_cluster_config(
+        &mut self,
+        new_config: ClusterConfig,
+    ) -> Result<(), ChangeClusterConfigError> {
+        // self.config = config;
+        // self.enqueue_action(Action::SaveClusterConfig(config.clone()));
+        // self.append_log_entry(LogEntry::ClusterConfig(config));
+        todo!()
     }
 
     fn append_log_entry(&mut self, entry: LogEntry) {
@@ -101,7 +113,7 @@ impl Node {
         self.current_term
     }
 
-    pub fn config(&self) -> &ClusterConfig {
+    pub fn cluster_config(&self) -> &ClusterConfig {
         &self.config
     }
 
@@ -113,6 +125,10 @@ impl Node {
 
     pub fn next_action(&mut self) -> Option<Action> {
         self.action_queue.pop_front()
+    }
+
+    pub fn take_actions(&mut self) -> impl '_ + Iterator<Item = Action> {
+        self.action_queue.drain(..)
     }
 
     fn enqueue_action(&mut self, action: Action) {
@@ -139,4 +155,11 @@ impl Role {
     pub const fn is_candidate(self) -> bool {
         matches!(self, Self::Candidate)
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum ChangeClusterConfigError {
+    NotLeader,
+    VotersMismatched,
+    JointConsensusInProgress,
 }

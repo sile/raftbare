@@ -34,7 +34,6 @@ fn create_single_node_cluster() {
 
     // Create cluster.
     assert!(node.create_cluster());
-    assert_eq!(node.role(), Role::Leader);
     assert_action!(node, save_current_term(t(1)));
     assert_action!(node, save_voted_for(Some(node.id())));
     assert_action!(node, append_log_entry(prev(t(0), i(0)), term_entry(t(1))));
@@ -45,8 +44,32 @@ fn create_single_node_cluster() {
     assert_action!(node, committed(i(2)));
     assert_no_action!(node);
 
+    assert_eq!(node.role(), Role::Leader);
+    assert_eq!(
+        node.cluster_config().members().collect::<Vec<_>>(),
+        &[node.id()]
+    );
+    assert_eq!(node.cluster_config().voters.len(), 1);
+    assert_eq!(node.cluster_config().non_voters.len(), 0);
+    assert_eq!(node.cluster_config().new_voters.len(), 0);
+
     // Cannot create cluster again.
     assert!(!node.create_cluster());
+    assert_no_action!(node);
+}
+
+#[test]
+fn create_two_nodes_cluster() {
+    let mut node0 = Node::start(id(0));
+    let mut node1 = Node::start(id(1));
+    assert_eq!(node0.take_actions().count(), 1);
+    assert_eq!(node1.take_actions().count(), 1);
+
+    // Create single node cluster.
+    assert!(node0.create_cluster());
+    assert_eq!(node0.take_actions().count(), 5);
+
+    // Update cluster configuration.
 }
 
 fn id(id: u64) -> NodeId {

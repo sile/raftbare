@@ -11,5 +11,5 @@ Differences with the paper
 
 ### Optimizations
 
-- StartLeader command
+- Term log entry (instead of no-op entry)
 - Log index (0 based index with a first sentinel entry)

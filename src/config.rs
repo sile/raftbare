@@ -7,7 +7,7 @@ use std::{
 #[derive(Debug, Default, Clone, PartialEq, Eq, Hash)]
 pub struct ClusterConfig {
     pub voters: BTreeSet<NodeId>,
-    pub old_voters: BTreeSet<NodeId>,
+    pub new_voters: BTreeSet<NodeId>, // Empty means no voters are being added or removed.
     pub non_voters: BTreeSet<NodeId>,
 }
 
@@ -19,7 +19,7 @@ impl ClusterConfig {
     pub fn members(&self) -> Members {
         Members {
             voters: self.voters.iter().peekable(),
-            old_voters: self.old_voters.iter().peekable(),
+            new_voters: self.new_voters.iter().peekable(),
             non_voters: self.non_voters.iter().peekable(),
         }
     }
@@ -28,7 +28,7 @@ impl ClusterConfig {
 #[derive(Debug)]
 pub struct Members<'a> {
     voters: Peekable<Iter<'a, NodeId>>,
-    old_voters: Peekable<Iter<'a, NodeId>>,
+    new_voters: Peekable<Iter<'a, NodeId>>,
     non_voters: Peekable<Iter<'a, NodeId>>,
 }
 
@@ -37,7 +37,7 @@ impl<'a> Iterator for Members<'a> {
 
     fn next(&mut self) -> Option<Self::Item> {
         let a = self.voters.peek().copied();
-        let b = self.old_voters.peek().copied();
+        let b = self.new_voters.peek().copied();
         let c = self.non_voters.peek().copied();
         match (a, b, c) {
             (None, None, None) => None,
@@ -46,7 +46,7 @@ impl<'a> Iterator for Members<'a> {
                 Some(*a)
             }
             (None, Some(b), None) => {
-                self.old_voters.next();
+                self.new_voters.next();
                 Some(*b)
             }
             (None, None, Some(c)) => {
@@ -58,7 +58,7 @@ impl<'a> Iterator for Members<'a> {
                     self.voters.next();
                     Some(*a)
                 } else {
-                    self.old_voters.next();
+                    self.new_voters.next();
                     Some(*b)
                 }
             }
@@ -73,7 +73,7 @@ impl<'a> Iterator for Members<'a> {
             }
             (None, Some(b), Some(c)) => {
                 if b < c {
-                    self.old_voters.next();
+                    self.new_voters.next();
                     Some(*b)
                 } else {
                     self.non_voters.next();
@@ -85,7 +85,7 @@ impl<'a> Iterator for Members<'a> {
                     self.voters.next();
                     Some(*a)
                 } else if b < a && b < c {
-                    self.old_voters.next();
+                    self.new_voters.next();
                     Some(*b)
                 } else {
                     self.non_voters.next();
