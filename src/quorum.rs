@@ -19,7 +19,7 @@ impl Quorum {
         let new_majority_indices = config
             .new_voters
             .iter()
-            .take(config.voters.len() / 2 + 1)
+            .take(config.new_voters.len() / 2 + 1)
             .copied()
             .map(|id| (LogIndex::new(0), id))
             .collect::<BTreeSet<_>>();

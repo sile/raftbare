@@ -3,6 +3,7 @@ use crate::{
     config::ClusterConfig,
     event::Event,
     log::{LogEntries, LogEntry, LogEntryRef, LogIndex},
+    message::Message,
     quorum::Quorum,
     Term,
 };
@@ -104,12 +105,39 @@ impl Node {
     fn propose(&mut self, entry: LogEntry) -> LogIndex {
         debug_assert_eq!(self.role, Role::Leader);
 
+        // TODO: Create LogEnties instance only once
+        let prev_entry = self.log.last;
         self.append_log_entry(&entry);
+        if let LogEntry::ClusterConfig(new_config) = &entry {
+            self.config = new_config.clone();
+            self.rebuild_quorum();
+        }
+        self.broadcast_message(Message::append_entries_request(
+            self.current_term,
+            self.id,
+            self.commit_index,
+            LogEntries::single(prev_entry, &entry),
+        ));
         self.update_commit_index_if_possible();
-        // TODO: self.broadcast_message();
 
-        //        todo!()
         self.log.last.index
+    }
+
+    fn rebuild_quorum(&mut self) {
+        self.quorum = Quorum::new(&self.config);
+
+        let zero = LogIndex::new(0);
+        self.quorum
+            .update_match_index(&self.config, self.id, zero, self.log.last.index);
+
+        for (&id, follower) in &mut self.followers {
+            self.quorum
+                .update_match_index(&self.config, id, zero, follower.match_index);
+        }
+    }
+
+    fn broadcast_message(&mut self, message: Message) {
+        self.enqueue_action(Action::BroadcastMessage(message));
     }
 
     fn update_commit_index_if_possible(&mut self) {
@@ -134,8 +162,6 @@ impl Node {
         }
 
         let index = self.propose(LogEntry::ClusterConfig(new_config.clone()));
-        self.config = new_config.clone();
-
         Ok(index)
     }
 
@@ -169,6 +195,10 @@ impl Node {
 
     pub fn role(&self) -> Role {
         self.role
+    }
+
+    pub fn commit_index(&self) -> LogIndex {
+        self.commit_index
     }
 
     pub fn voted_for(&self) -> Option<NodeId> {

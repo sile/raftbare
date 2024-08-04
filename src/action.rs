@@ -1,5 +1,6 @@
 use crate::{
     log::{LogEntries, LogEntry, LogIndex},
+    message::Message,
     node::NodeId,
     Term,
 };
@@ -10,10 +11,10 @@ pub enum Action {
     SaveVotedFor(Option<NodeId>),
     CreateLog(LogEntry),
     AppendLogEntries(LogEntries),
-    InstallSnapshot, // {LogEntries)
-    UnicastMessage,
-    BroadcastMessage,
+    UnicastMessage(NodeId, Message),
+    BroadcastMessage(Message),
     SetTimeout,
+    InstallSnapshot, // {LogEntries)
     NotifyCommitted(LogIndex),
     // NotifyLogTruncated or NotifyRejected or NotifyCanceled
 }

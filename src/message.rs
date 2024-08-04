@@ -15,6 +15,20 @@ impl Message {
             Message::AppendEntriesRequest(m) => m.term,
         }
     }
+
+    pub fn append_entries_request(
+        term: Term,
+        leader_id: NodeId,
+        leader_commit: LogIndex,
+        entries: LogEntries,
+    ) -> Self {
+        Self::AppendEntriesRequest(AppendEntriesRequest {
+            term,
+            leader_id,
+            leader_commit,
+            entries,
+        })
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
