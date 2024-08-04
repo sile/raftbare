@@ -86,6 +86,8 @@ impl Node {
         self.append_log_entry(&LogEntry::ClusterConfig(self.config.clone()));
         self.commit(self.log.last.index);
 
+        // TODO: set heartbeat timeout
+
         debug_assert!(self.followers.is_empty());
         debug_assert_eq!(self.quorum.commit_index(), self.commit_index);
 
