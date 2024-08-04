@@ -44,17 +44,11 @@ impl Message {
         })
     }
 
-    pub fn append_entries_reply(
-        term: Term,
-        from: NodeId,
-        last_entry: LogEntryRef,
-        success: bool,
-    ) -> Self {
+    pub fn append_entries_reply(term: Term, from: NodeId, last_entry: LogEntryRef) -> Self {
         Self::AppendEntriesReply(AppendEntriesReply {
             term,
             from,
             last_entry,
-            success,
         })
     }
 }
@@ -72,5 +66,4 @@ pub struct AppendEntriesReply {
     pub term: Term,
     pub from: NodeId,
     pub last_entry: LogEntryRef,
-    pub success: bool,
 }

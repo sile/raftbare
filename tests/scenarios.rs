@@ -89,12 +89,39 @@ fn create_two_nodes_cluster() {
     assert_no_action!(node0);
 
     node1.handle_message(&msg);
-    let reply = append_entries_reply(node1.current_term(), node1.id(), node1.log().last, false);
+    let reply = append_entries_reply(node1.current_term(), node1.id(), node1.log().last);
+    assert_action!(node1, save_current_term(node0.current_term()));
+    assert_action!(node1, save_voted_for(Some(node0.id())));
     assert_action!(node1, unicast_message(node0.id(), &reply));
     assert_no_action!(node1);
 
     node0.handle_message(&reply);
+    let msg = append_entries_request(
+        node0.current_term(),
+        node0.id(),
+        node0.commit_index(),
+        entries(
+            prev(t(0), i(0)), // == node1.log().last
+            &[
+                term_entry(t(1)),
+                cluster_config_entry(voters(&[node0.id()])),
+                cluster_config_entry(joint(&[node0.id()], &[node0.id(), node1.id()])),
+            ],
+        ),
+    );
+    assert_action!(node0, unicast_message(node1.id(), &msg));
     assert_no_action!(node0);
+
+    node1.handle_message(&msg);
+    assert_no_action!(node0);
+}
+
+fn entries(prev: LogEntryRef, entries: &[LogEntry]) -> LogEntries {
+    let mut log = LogEntries::new(prev);
+    for entry in entries {
+        log.append_entry(entry);
+    }
+    log
 }
 
 fn id(id: u64) -> NodeId {
@@ -147,8 +174,8 @@ fn append_entries_request(
     Message::append_entries_request(term, leader_id, commit_index, entries)
 }
 
-fn append_entries_reply(term: Term, from: NodeId, entry: LogEntryRef, success: bool) -> Message {
-    Message::append_entries_reply(term, from, entry, success)
+fn append_entries_reply(term: Term, from: NodeId, entry: LogEntryRef) -> Message {
+    Message::append_entries_reply(term, from, entry)
 }
 
 fn unicast_message(destination: NodeId, message: &Message) -> Action {

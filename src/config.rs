@@ -25,6 +25,10 @@ impl ClusterConfig {
         }
     }
 
+    pub fn contains(&self, id: NodeId) -> bool {
+        self.voters.contains(&id) || self.new_voters.contains(&id) || self.non_voters.contains(&id)
+    }
+
     pub fn is_joint_consensus(&self) -> bool {
         !self.new_voters.is_empty()
     }

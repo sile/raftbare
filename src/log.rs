@@ -34,6 +34,21 @@ impl LogEntries {
         this
     }
 
+    pub fn since(&self, new_prev: LogEntryRef) -> Option<Self> {
+        if !self.contains(new_prev) {
+            return None;
+        }
+
+        let mut this = self.clone();
+        this.prev = new_prev;
+
+        // TODO: optimize(?)
+        this.terms.retain(|index, _| index > &new_prev.index);
+        this.configs.retain(|index, _| index > &new_prev.index);
+
+        Some(this)
+    }
+
     pub fn contains(&self, entry: LogEntryRef) -> bool {
         if !(self.prev.index..=self.last.index).contains(&entry.index) {
             return false;

@@ -2,7 +2,7 @@ use crate::{
     action::Action,
     config::ClusterConfig,
     log::{LogEntries, LogEntry, LogEntryRef, LogIndex},
-    message::{AppendEntriesRequest, Message},
+    message::{AppendEntriesReply, AppendEntriesRequest, Message},
     quorum::Quorum,
     Term,
 };
@@ -109,6 +109,7 @@ impl Node {
         self.append_log_entry(&entry);
         if let LogEntry::ClusterConfig(new_config) = &entry {
             self.config = new_config.clone();
+            self.rebuild_followers();
             self.rebuild_quorum();
         }
         self.broadcast_message(Message::append_entries_request(
@@ -120,6 +121,17 @@ impl Node {
         self.update_commit_index_if_possible();
 
         self.log.last.index
+    }
+
+    fn rebuild_followers(&mut self) {
+        for id in self.config.members() {
+            if id == self.id {
+                continue;
+            }
+            self.followers
+                .insert(id, Follower::new(self.log.last.index));
+        }
+        self.followers.retain(|id, _| self.config.contains(*id));
     }
 
     fn rebuild_quorum(&mut self) {
@@ -147,6 +159,8 @@ impl Node {
         let new_commit_index = self.quorum.commit_index();
         if self.commit_index < new_commit_index {
             self.commit(new_commit_index);
+
+            // TODO: handle change config (joint => single)
         }
     }
 
@@ -192,42 +206,105 @@ impl Node {
         self.enqueue_action(Action::SaveVotedFor(voted_for));
     }
 
-    pub fn handle_message(&mut self, message: &Message) {
-        if self.current_term < message.term() {
-            if matches!(message, Message::RequestVoteRequest { .. })
+    pub fn handle_message(&mut self, msg: &Message) {
+        if self.current_term < msg.term() {
+            if matches!(msg, Message::RequestVoteRequest { .. })
                 && self.role.is_follower()
-                && self.voted_for.map_or(false, |id| id != message.from())
+                && self.voted_for.map_or(false, |id| id != msg.from())
             {
-                // TODO: note comment
                 return;
             }
-            //
+
+            self.enter_follower_with_vote(msg.term(), msg.from());
         }
 
-        match message {
+        match msg {
             Message::RequestVoteRequest { .. } => todo!(),
             Message::AppendEntriesRequest(msg) => self.handle_append_entries_request(msg),
-            Message::AppendEntriesReply { .. } => todo!(),
+            Message::AppendEntriesReply(msg) => self.handle_append_entries_reply(msg),
         }
     }
 
-    fn reply_append_entries(&mut self, request: &AppendEntriesRequest, success: bool) {
+    fn enter_follower_with_vote(&mut self, term: Term, voted_for: NodeId) {
+        self.set_current_term(term);
+        self.set_voted_for(Some(voted_for));
+        self.role = Role::Follower;
+        // TODO: set election timeout
+    }
+
+    fn reply_append_entries(&mut self, request: &AppendEntriesRequest) {
         self.unicast_message(
             request.from,
-            Message::append_entries_reply(self.current_term, self.id, self.log.last, success),
+            Message::append_entries_reply(self.current_term, self.id, self.log.last),
         );
     }
 
     fn handle_append_entries_request(&mut self, request: &AppendEntriesRequest) {
+        if !self.role.is_follower() {
+            return;
+        }
         if request.term < self.current_term {
-            self.reply_append_entries(request, false);
+            self.reply_append_entries(request);
             return;
         }
         if !self.log.contains(request.entries.prev) {
-            self.reply_append_entries(request, false);
+            self.reply_append_entries(request);
             return;
         }
         todo!()
+    }
+
+    fn handle_append_entries_reply(&mut self, reply: &AppendEntriesReply) {
+        if !self.role.is_leader() {
+            return;
+        }
+
+        let Some(follower) = self.followers.get_mut(&reply.from) else {
+            // Replies from unknown nodes are ignored.
+            return;
+        };
+        if reply.last_entry.index < follower.match_index {
+            // Maybe delayed reply.
+            // (or the follower's storage has been corrupted. Raft does not handle this case though.)
+            return;
+        };
+
+        if reply.last_entry.index > follower.match_index {
+            let old_match_index = follower.match_index;
+            follower.match_index = reply.last_entry.index;
+            follower.next_index = follower.match_index.next();
+
+            self.quorum.update_match_index(
+                &self.config,
+                reply.from,
+                old_match_index,
+                follower.match_index,
+            );
+
+            self.update_commit_index_if_possible();
+        }
+
+        if reply.last_entry.index == self.log.last.index {
+            // Up-to-date.
+            return;
+        }
+        if reply.last_entry.index < self.log.prev.index {
+            // send snapshot
+            todo!()
+        } else {
+            // send delta
+            let Some(delta) = self.log.since(reply.last_entry) else {
+                // Wrong reply.
+                return;
+            };
+            let msg = Message::append_entries_request(
+                self.current_term,
+                self.id,
+                self.commit_index,
+                delta,
+            );
+            self.unicast_message(reply.from, msg);
+        }
     }
 
     pub fn id(&self) -> NodeId {
