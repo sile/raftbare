@@ -74,20 +74,18 @@ fn create_two_nodes_cluster() {
     let prev_entry = node0.log().last;
     let next_index = node0.log().last.index.next();
     let new_config = joint(&[node0.id()], &[node0.id(), node1.id()]);
+    let msg = append_entries_request(
+        node0.current_term(),
+        node0.id(),
+        node0.commit_index(),
+        LogEntries::single(prev_entry, &cluster_config_entry(new_config.clone())),
+    );
     assert_eq!(Ok(next_index), node0.change_cluster_config(&new_config));
     assert_action!(
         node0,
         append_log_entry(prev_entry, cluster_config_entry(new_config.clone()))
     );
-    assert_action!(
-        node0,
-        broadcast_message(append_entries_request(
-            node0.current_term(),
-            node0.id(),
-            node0.commit_index(),
-            LogEntries::single(prev_entry, &cluster_config_entry(new_config.clone()))
-        ))
-    );
+    assert_action!(node0, broadcast_message(&msg));
     assert_no_action!(node0);
     assert_no_action!(node1);
 }
@@ -142,8 +140,8 @@ fn append_entries_request(
     Message::append_entries_request(term, leader_id, commit_index, entries)
 }
 
-fn broadcast_message(message: Message) -> Action {
-    Action::BroadcastMessage(message)
+fn broadcast_message(message: &Message) -> Action {
+    Action::BroadcastMessage(message.clone())
 }
 
 fn append_log_entry(prev: LogEntryRef, entry: LogEntry) -> Action {

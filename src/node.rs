@@ -1,7 +1,6 @@
 use crate::{
     action::Action,
     config::ClusterConfig,
-    event::Event,
     log::{LogEntries, LogEntry, LogEntryRef, LogIndex},
     message::Message,
     quorum::Quorum,
@@ -216,8 +215,6 @@ impl Node {
     pub fn log(&self) -> &LogEntries {
         &self.log
     }
-
-    pub fn handle_event(&mut self, _event: Event) {}
 
     pub fn next_action(&mut self) -> Option<Action> {
         self.action_queue.pop_front()

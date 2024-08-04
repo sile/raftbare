@@ -1,7 +1,6 @@
 // TODO: private
 pub mod action;
 pub mod config;
-pub mod event;
 pub mod log;
 pub mod message;
 pub mod node;
