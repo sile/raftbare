@@ -50,7 +50,7 @@ impl LogEntries {
     }
 
     pub fn contains(&self, entry: LogEntryRef) -> bool {
-        if !(self.prev.index..=self.last.index).contains(&entry.index) {
+        if !self.contains_index(entry.index) {
             return false;
         }
 
@@ -62,6 +62,14 @@ impl LogEntries {
             .map(|(_, term)| *term)
             .unwrap_or(self.prev.term);
         term == entry.term
+    }
+
+    pub fn contains_index(&self, index: LogIndex) -> bool {
+        (self.prev.index..=self.last.index).contains(&index)
+    }
+
+    pub fn strip_common_prefix(&mut self, other: &Self) {
+        todo!();
     }
 
     pub fn append_entry(&mut self, entry: &LogEntry) {

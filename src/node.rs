@@ -107,11 +107,6 @@ impl Node {
         // TODO: Create LogEnties instance only once
         let prev_entry = self.log.last;
         self.append_log_entry(&entry);
-        if let LogEntry::ClusterConfig(new_config) = &entry {
-            self.config = new_config.clone();
-            self.rebuild_followers();
-            self.rebuild_quorum();
-        }
         self.broadcast_message(Message::append_entries_request(
             self.current_term,
             self.id,
@@ -194,6 +189,34 @@ impl Node {
             self.quorum
                 .update_match_index(&self.config, self.id, prev_index, self.log.last.index);
         }
+
+        if let LogEntry::ClusterConfig(new_config) = entry {
+            self.config = new_config.clone();
+            if self.role.is_leader() {
+                self.rebuild_followers();
+                self.rebuild_quorum();
+            }
+        }
+    }
+
+    fn try_append_log_entries(&mut self, entries: &LogEntries) -> bool {
+        if self.log.contains(entries.last) {
+            // Already up-to-date.
+            return false;
+        }
+        if !self.log.contains_index(entries.prev.index) {
+            return false;
+        }
+        if self.log.last == entries.prev {
+            // Simple appending.
+            //self.append_log_entries(&request.entries);
+            // return true;
+            todo!();
+        }
+
+        // TODO: strip common prefix and diverging suffix
+
+        todo!();
     }
 
     fn set_current_term(&mut self, term: Term) {
@@ -229,6 +252,8 @@ impl Node {
         self.set_current_term(term);
         self.set_voted_for(Some(voted_for));
         self.role = Role::Follower;
+        // self.quorum = Quorum::new(&self.config); // TODO
+        self.followers.clear();
         // TODO: set election timeout
     }
 
@@ -244,14 +269,17 @@ impl Node {
             return;
         }
         if request.term < self.current_term {
+            // Stale request.
             self.reply_append_entries(request);
             return;
         }
-        if !self.log.contains(request.entries.prev) {
-            self.reply_append_entries(request);
-            return;
+
+        if self.try_append_log_entries(&request.entries) {
+            if self.commit_index < request.leader_commit.min(self.log.last.index) {
+                self.commit(request.leader_commit);
+            }
         }
-        todo!()
+        self.reply_append_entries(request);
     }
 
     fn handle_append_entries_reply(&mut self, reply: &AppendEntriesReply) {
@@ -269,31 +297,39 @@ impl Node {
             return;
         };
 
-        if reply.last_entry.index > follower.match_index {
-            let old_match_index = follower.match_index;
-            follower.match_index = reply.last_entry.index;
-            follower.next_index = follower.match_index.next();
+        let last_entry = if self.log.contains(reply.last_entry) {
+            if follower.match_index < reply.last_entry.index {
+                let old_match_index = follower.match_index;
+                follower.match_index = reply.last_entry.index;
+                follower.next_index = follower.match_index.next();
 
-            self.quorum.update_match_index(
-                &self.config,
-                reply.from,
-                old_match_index,
-                follower.match_index,
-            );
+                self.quorum.update_match_index(
+                    &self.config,
+                    reply.from,
+                    old_match_index,
+                    follower.match_index,
+                );
 
-            self.update_commit_index_if_possible();
-        }
+                self.update_commit_index_if_possible();
+            }
 
-        if reply.last_entry.index == self.log.last.index {
-            // Up-to-date.
-            return;
-        }
-        if reply.last_entry.index < self.log.prev.index {
+            if reply.last_entry.index == self.log.last.index {
+                // Up-to-date.
+                return;
+            }
+            reply.last_entry
+        } else {
+            // TODO: find matched log entry (decrement next_index and send empty entries)
+            todo!()
+        };
+        if last_entry.index < self.log.prev.index {
             // send snapshot
             todo!()
         } else {
             // send delta
-            let Some(delta) = self.log.since(reply.last_entry) else {
+            //
+            // TODO: use follower.next_index instead of reply.last_entry
+            let Some(delta) = self.log.since(last_entry) else {
                 // Wrong reply.
                 return;
             };
