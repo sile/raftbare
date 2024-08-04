@@ -6,6 +6,7 @@ use std::{
 
 #[derive(Debug, Default, Clone, PartialEq, Eq, Hash)]
 pub struct ClusterConfig {
+    // TODO: private
     pub voters: BTreeSet<NodeId>,
     pub new_voters: BTreeSet<NodeId>, // Empty means no voters are being added or removed.
     pub non_voters: BTreeSet<NodeId>,
