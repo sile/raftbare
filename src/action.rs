@@ -13,7 +13,7 @@ pub enum Action {
     AppendLogEntries(LogEntries),
     UnicastMessage(NodeId, Message),
     BroadcastMessage(Message),
-    SetTimeout,
+    SetElectionTimeout,
     InstallSnapshot, // {LogEntries)
     NotifyCommitted(LogIndex),
     // NotifyLogTruncated or NotifyRejected or NotifyCanceled

@@ -88,8 +88,6 @@ impl Node {
         self.append_log_entry(&LogEntry::ClusterConfig(self.config.clone()));
         self.commit(self.log.last.index);
 
-        // TODO: set heartbeat timeout
-
         debug_assert!(self.followers.is_empty());
         debug_assert_eq!(self.quorum.commit_index(), self.commit_index);
 
@@ -146,6 +144,7 @@ impl Node {
 
     fn broadcast_message(&mut self, message: Message) {
         self.enqueue_action(Action::BroadcastMessage(message));
+        self.enqueue_action(Action::SetElectionTimeout);
     }
 
     fn unicast_message(&mut self, destination: NodeId, message: Message) {
@@ -280,13 +279,18 @@ impl Node {
         }
     }
 
+    pub fn handle_election_timeout(&mut self) {
+        todo!();
+    }
+
     fn enter_follower_with_vote(&mut self, term: Term, voted_for: NodeId) {
         self.set_current_term(term);
         self.set_voted_for(Some(voted_for));
         self.role = Role::Follower;
         // self.quorum = Quorum::new(&self.config); // TODO
         self.followers.clear();
-        // TODO: set election timeout
+
+        self.enqueue_action(Action::SetElectionTimeout);
     }
 
     fn reply_append_entries(&mut self, request: &AppendEntriesRequest) {
