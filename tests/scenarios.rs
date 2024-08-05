@@ -86,12 +86,14 @@ fn create_two_nodes_cluster() {
         append_log_entry(prev_entry, cluster_config_entry(new_config.clone()))
     );
     assert_action!(node0, broadcast_message(&msg));
+    assert_action!(node0, set_election_timeout());
     assert_no_action!(node0);
 
     node1.handle_message(&msg);
     let reply = append_entries_reply(node1.current_term(), node1.id(), node1.log().last);
     assert_action!(node1, save_current_term(node0.current_term()));
     assert_action!(node1, save_voted_for(Some(node0.id())));
+    assert_action!(node1, set_election_timeout());
     assert_action!(node1, unicast_message(node0.id(), &reply));
     assert_no_action!(node1);
 
@@ -136,6 +138,7 @@ fn create_two_nodes_cluster() {
         append_log_entry(prev_entry, cluster_config_entry(new_config.clone()))
     );
     assert_action!(node0, broadcast_message(&request));
+    assert_action!(node0, set_election_timeout());
     assert_action!(node0, unicast_message(node1.id(), &request)); // TODO: Remove this redundant action if possible.
     assert_no_action!(node0);
 
@@ -221,6 +224,10 @@ fn unicast_message(destination: NodeId, message: &Message) -> Action {
 
 fn broadcast_message(message: &Message) -> Action {
     Action::BroadcastMessage(message.clone())
+}
+
+fn set_election_timeout() -> Action {
+    Action::SetElectionTimeout
 }
 
 fn append_log_entry(prev: LogEntryRef, entry: LogEntry) -> Action {
