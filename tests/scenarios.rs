@@ -133,14 +133,24 @@ fn create_two_nodes_cluster() {
     assert_action!(node0, committed(i(3)));
     assert_action!(
         node0,
-        append_log_entry(prev_entry, cluster_config_entry(new_config))
+        append_log_entry(prev_entry, cluster_config_entry(new_config.clone()))
     );
     assert_action!(node0, broadcast_message(&request));
     assert_action!(node0, unicast_message(node1.id(), &request)); // TODO: Remove this redundant action if possible.
     assert_no_action!(node0);
 
+    let reply = append_entries_reply(node1.current_term(), node1.id(), node1.log().last.next());
     node1.handle_message(&request);
+    assert_action!(
+        node1,
+        append_log_entry(prev_entry, cluster_config_entry(new_config.clone()))
+    );
+    assert_action!(node1, committed(i(3)));
+    assert_action!(node1, unicast_message(node0.id(), &reply));
     assert_no_action!(node1);
+
+    assert!(!node0.cluster_config().is_joint_consensus());
+    assert_eq!(node0.cluster_config(), node1.cluster_config());
 }
 
 fn entries(prev: LogEntryRef, entries: &[LogEntry]) -> LogEntries {
