@@ -22,16 +22,13 @@ macro_rules! assert_action {
 #[test]
 fn single_node_start() {
     let mut node = Node::start(id(0));
-    assert_eq!(node.role(), Role::Follower);
-    assert_action!(node, create_log());
-    assert_no_action!(node);
+    assert_node_start(&mut node);
 }
 
 #[test]
 fn create_single_node_cluster() {
     let mut node = Node::start(id(0));
-    assert_action!(node, create_log());
-    assert_no_action!(node);
+    assert_node_start(&mut node);
 
     // Create cluster.
     assert!(node.create_cluster());
@@ -63,8 +60,8 @@ fn create_single_node_cluster() {
 fn create_two_nodes_cluster() {
     let mut node0 = Node::start(id(0));
     let mut node1 = Node::start(id(1));
-    assert_eq!(node0.take_actions().count(), 1);
-    assert_eq!(node1.take_actions().count(), 1);
+    assert_node_start(&mut node0);
+    assert_node_start(&mut node1);
 
     // Create single node cluster.
     assert!(node0.create_cluster());
@@ -154,6 +151,14 @@ fn create_two_nodes_cluster() {
 
     assert!(!node0.cluster_config().is_joint_consensus());
     assert_eq!(node0.cluster_config(), node1.cluster_config());
+}
+
+fn assert_node_start(node: &mut Node) {
+    assert_eq!(node.role(), Role::Follower);
+    assert_eq!(node.current_term(), t(0));
+    assert_eq!(node.voted_for(), None);
+    assert_action!(node, create_log());
+    assert_no_action!(node);
 }
 
 fn entries(prev: LogEntryRef, entries: &[LogEntry]) -> LogEntries {
