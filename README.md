@@ -17,7 +17,7 @@ Differences with the paper
    - Add last_entry instead of success
 - Removed next_index in favor of ...
 
-### FAQ
+### FAQ (or out of scope of this library)
 
 - `Node::start()` after the local storage is cleared (but still in the cluster members)
 - Join the same node to multiple clusters
