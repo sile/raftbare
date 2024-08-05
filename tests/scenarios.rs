@@ -32,24 +32,7 @@ fn create_single_node_cluster() {
 
     // Create cluster.
     assert!(node.create_cluster());
-    assert_action!(node, save_current_term(t(1)));
-    assert_action!(node, save_voted_for(Some(node.id())));
-    assert_action!(node, append_log_entry(prev(t(0), i(0)), term_entry(t(1))));
-    assert_action!(
-        node,
-        append_log_entry(prev(t(1), i(1)), cluster_config_entry(voters(&[node.id()])))
-    );
-    assert_action!(node, committed(i(2)));
-    assert_no_action!(node);
-
-    assert_eq!(node.role(), Role::Leader);
-    assert_eq!(
-        node.cluster_config().members().collect::<Vec<_>>(),
-        &[node.id()]
-    );
-    assert_eq!(node.cluster_config().voters.len(), 1);
-    assert_eq!(node.cluster_config().non_voters.len(), 0);
-    assert_eq!(node.cluster_config().new_voters.len(), 0);
+    assert_create_cluster(&mut node);
 
     // Cannot create cluster again.
     assert!(!node.create_cluster());
@@ -65,7 +48,7 @@ fn create_two_nodes_cluster() {
 
     // Create single node cluster.
     assert!(node0.create_cluster());
-    assert_eq!(node0.take_actions().count(), 5);
+    assert_create_cluster(&mut node0);
 
     // Update cluster configuration.
     let prev_entry = node0.log().last;
@@ -159,6 +142,27 @@ fn assert_node_start(node: &mut Node) {
     assert_eq!(node.voted_for(), None);
     assert_action!(node, create_log());
     assert_no_action!(node);
+}
+
+fn assert_create_cluster(node: &mut Node) {
+    assert_action!(node, save_current_term(t(1)));
+    assert_action!(node, save_voted_for(Some(node.id())));
+    assert_action!(node, append_log_entry(prev(t(0), i(0)), term_entry(t(1))));
+    assert_action!(
+        node,
+        append_log_entry(prev(t(1), i(1)), cluster_config_entry(voters(&[node.id()])))
+    );
+    assert_action!(node, committed(i(2)));
+    assert_no_action!(node);
+
+    assert_eq!(node.role(), Role::Leader);
+    assert_eq!(
+        node.cluster_config().members().collect::<Vec<_>>(),
+        &[node.id()]
+    );
+    assert_eq!(node.cluster_config().voters.len(), 1);
+    assert_eq!(node.cluster_config().non_voters.len(), 0);
+    assert_eq!(node.cluster_config().new_voters.len(), 0);
 }
 
 fn entries(prev: LogEntryRef, entries: &[LogEntry]) -> LogEntries {
