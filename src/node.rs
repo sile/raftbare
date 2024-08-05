@@ -123,8 +123,7 @@ impl Node {
             if id == self.id {
                 continue;
             }
-            self.followers
-                .insert(id, Follower::new(self.log.last.index));
+            self.followers.insert(id, Follower::new());
         }
         self.followers.retain(|id, _| self.config.contains(*id));
     }
@@ -337,7 +336,6 @@ impl Node {
             if follower.match_index < reply.last_entry.index {
                 let old_match_index = follower.match_index;
                 follower.match_index = reply.last_entry.index;
-                follower.next_index = follower.match_index.next();
 
                 self.quorum.update_match_index(
                     &self.config,
@@ -450,14 +448,12 @@ pub enum ChangeClusterConfigError {
 
 #[derive(Debug, Clone)]
 pub struct Follower {
-    pub next_index: LogIndex, // TODO: remove
     pub match_index: LogIndex,
 }
 
 impl Follower {
-    pub fn new(next_index: LogIndex) -> Self {
+    pub fn new() -> Self {
         Self {
-            next_index,
             match_index: LogIndex::new(0),
         }
     }

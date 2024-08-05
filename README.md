@@ -16,3 +16,8 @@ Differences with the paper
 - AppendEntriesRPC reply (log entry ref)
    - Add last_entry instead of success
 - Removed next_index in favor of ...
+
+### FAQ
+
+- `Node::start()` after the local storage is cleared (but still in the cluster members)
+- Join the same node to multiple clusters

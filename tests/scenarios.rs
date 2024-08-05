@@ -136,6 +136,9 @@ fn create_two_nodes_cluster() {
     assert_eq!(node0.cluster_config(), node1.cluster_config());
 }
 
+// TODO: election
+// TODO: snapshot
+
 fn assert_node_start(node: &mut Node) {
     assert_eq!(node.role(), Role::Follower);
     assert_eq!(node.current_term(), t(0));

@@ -10,8 +10,13 @@ pub enum Action {
     SaveCurrentTerm(Term),
     SaveVotedFor(Option<NodeId>),
     CreateLog(LogEntry),
+
+    // Synchronous action (if async, the consistency is not guaranteed)
     AppendLogEntries(LogEntries),
+
+    // Can drop this message especially if there is another ongoing AppendEntriesRPC
     UnicastMessage(NodeId, Message),
+
     BroadcastMessage(Message),
     SetElectionTimeout,
     InstallSnapshot, // {LogEntries)
