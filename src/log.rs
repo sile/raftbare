@@ -34,6 +34,7 @@ impl LogEntries {
         this
     }
 
+    // TODO: add unit test
     pub fn since(&self, new_prev: LogEntryRef) -> Option<Self> {
         if !self.contains(new_prev) {
             return None;

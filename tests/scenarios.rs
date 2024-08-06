@@ -47,18 +47,13 @@ fn create_two_nodes_cluster() {
     node0.asserted_create_cluster();
 
     // Update cluster configuration.
-    let msg = node0.asserted_change_cluster_config(joint(&[node0.id()], &[node0.id(), node1.id()]));
+    let request =
+        node0.asserted_change_cluster_config(joint(&[node0.id()], &[node0.id(), node1.id()]));
+    let reply = node1.asserted_handle_first_append_entries_request(&request);
 
-    node1.handle_message(&msg);
-    let reply = append_entries_reply(node1.current_term(), node1.id(), node1.log().last);
-    assert_action!(node1, save_current_term(node0.current_term()));
-    assert_action!(node1, save_voted_for(Some(node0.id())));
-    assert_action!(node1, set_election_timeout());
-    assert_action!(node1, unicast_message(node0.id(), &reply));
-    assert_no_action!(node1);
-
-    node0.handle_message(&reply);
+    let request = node0.asserted_handle_append_entries_reply_failure(&reply);
     let entries = entries(
+        // TODO: delete
         prev(t(0), i(0)), // == node1.log().last
         &[
             term_entry(t(1)),
@@ -66,16 +61,8 @@ fn create_two_nodes_cluster() {
             cluster_config_entry(joint(&[node0.id()], &[node0.id(), node1.id()])),
         ],
     );
-    let msg = append_entries_request(
-        node0.current_term(),
-        node0.id(),
-        node0.commit_index(),
-        entries.clone(),
-    );
-    assert_action!(node0, unicast_message(node1.id(), &msg));
-    assert_no_action!(node0);
 
-    node1.handle_message(&msg);
+    node1.handle_message(&request);
     assert_eq!(node1.log().last, node0.log().last);
     let reply = append_entries_reply(node1.current_term(), node1.id(), node1.log().last);
     assert_action!(node1, append_log_entries(&entries));
@@ -136,49 +123,84 @@ impl TestNode {
     }
 
     fn asserted_create_cluster(&mut self) {
-        assert!(self.inner.create_cluster());
+        assert!(self.create_cluster());
 
-        let node = &mut self.inner;
-        assert_action!(node, save_current_term(t(1)));
-        assert_action!(node, save_voted_for(Some(node.id())));
-        assert_action!(node, append_log_entry(prev(t(0), i(0)), term_entry(t(1))));
+        assert_action!(self, save_current_term(t(1)));
+        assert_action!(self, save_voted_for(Some(self.id())));
+        assert_action!(self, append_log_entry(prev(t(0), i(0)), term_entry(t(1))));
         assert_action!(
-            node,
-            append_log_entry(prev(t(1), i(1)), cluster_config_entry(voters(&[node.id()])))
+            self,
+            append_log_entry(prev(t(1), i(1)), cluster_config_entry(voters(&[self.id()])))
         );
-        assert_action!(node, committed(i(2)));
-        assert_no_action!(node);
+        assert_action!(self, committed(i(2)));
+        assert_no_action!(self);
 
-        assert_eq!(node.role(), Role::Leader);
+        assert_eq!(self.role(), Role::Leader);
         assert_eq!(
-            node.cluster_config().members().collect::<Vec<_>>(),
-            &[node.id()]
+            self.cluster_config().members().collect::<Vec<_>>(),
+            &[self.id()]
         );
-        assert_eq!(node.cluster_config().voters.len(), 1);
-        assert_eq!(node.cluster_config().non_voters.len(), 0);
-        assert_eq!(node.cluster_config().new_voters.len(), 0);
+        assert_eq!(self.cluster_config().voters.len(), 1);
+        assert_eq!(self.cluster_config().non_voters.len(), 0);
+        assert_eq!(self.cluster_config().new_voters.len(), 0);
     }
 
     fn asserted_change_cluster_config(&mut self, new_config: ClusterConfig) -> Message {
-        let node = &mut self.inner;
-        let prev_entry = node.log().last;
-        let next_index = node.log().last.index.next();
+        let prev_entry = self.log().last;
+        let next_index = self.log().last.index.next();
         let msg = append_entries_request(
-            node.current_term(),
-            node.id(),
-            node.commit_index(),
+            self.current_term(),
+            self.id(),
+            self.commit_index(),
             LogEntries::single(prev_entry, &cluster_config_entry(new_config.clone())),
         );
-        assert_eq!(Ok(next_index), node.change_cluster_config(&new_config));
+        assert_eq!(Ok(next_index), self.change_cluster_config(&new_config));
         assert_action!(
-            node,
+            self,
             append_log_entry(prev_entry, cluster_config_entry(new_config.clone()))
         );
-        assert_action!(node, broadcast_message(&msg));
-        assert_action!(node, set_election_timeout());
-        assert_no_action!(node);
+        assert_action!(self, broadcast_message(&msg));
+        assert_action!(self, set_election_timeout());
+        assert_no_action!(self);
 
         msg
+    }
+
+    fn asserted_handle_first_append_entries_request(&mut self, msg: &Message) -> Message {
+        assert!(matches!(msg, Message::AppendEntriesRequest(_)));
+
+        self.handle_message(msg);
+        let reply = append_entries_reply(self.current_term(), self.id(), self.log().last);
+        assert_action!(self, save_current_term(msg.term()));
+        assert_action!(self, save_voted_for(Some(msg.from())));
+        assert_action!(self, set_election_timeout());
+        assert_action!(self, unicast_message(msg.from(), &reply));
+        assert_no_action!(self);
+
+        reply
+    }
+
+    fn asserted_handle_append_entries_reply_failure(&mut self, reply: &Message) -> Message {
+        assert!(matches!(reply, Message::AppendEntriesReply(_)));
+        self.handle_message(reply);
+
+        let Message::AppendEntriesReply(reply) = reply else {
+            unreachable!();
+        };
+        let Some(entries) = self.log().since(reply.last_entry) else {
+            panic!("Needs snapshot");
+        };
+
+        let request = append_entries_request(
+            self.current_term(),
+            self.id(),
+            self.commit_index(),
+            entries.clone(),
+        );
+        assert_action!(self, unicast_message(reply.from, &request));
+        assert_no_action!(self);
+
+        request
     }
 }
 
