@@ -56,21 +56,8 @@ fn create_two_nodes_cluster() {
 
     let new_config = voters(&[node0.id(), node1.id()]);
     let prev_entry = node0.log().last;
-    let request = append_entries_request(
-        node0.current_term(),
-        node0.id(),
-        i(3),
-        LogEntries::single(prev_entry, &cluster_config_entry(new_config.clone())),
-    );
-    node0.handle_message(&reply);
-    assert_action!(node0, committed(i(3)));
-    assert_action!(
-        node0,
-        append_log_entry(prev_entry, cluster_config_entry(new_config.clone()))
-    );
-    assert_action!(node0, broadcast_message(&request));
-    assert_action!(node0, set_election_timeout());
-    assert_no_action!(node0);
+    let request =
+        node0.asserted_handle_append_entries_reply_success_with_joint_config_committed(&reply);
 
     let reply = append_entries_reply(node1.current_term(), node1.id(), node1.log().last.next());
     node1.handle_message(&request);
@@ -204,6 +191,40 @@ impl TestNode {
             entries.clone(),
         );
         assert_action!(self, unicast_message(reply.from, &request));
+        assert_no_action!(self);
+
+        request
+    }
+
+    fn asserted_handle_append_entries_reply_success_with_joint_config_committed(
+        &mut self,
+        reply: &Message,
+    ) -> Message {
+        assert!(matches!(reply, Message::AppendEntriesReply(_)));
+        assert!(self.cluster_config().is_joint_consensus());
+
+        let prev_entry = self.log().last;
+        let mut new_config = self.cluster_config().clone();
+        new_config.voters = std::mem::take(&mut new_config.new_voters);
+
+        self.handle_message(reply);
+
+        let Message::AppendEntriesReply(reply) = reply else {
+            unreachable!();
+        };
+        let request = append_entries_request(
+            self.current_term(),
+            self.id(),
+            reply.last_entry.index,
+            LogEntries::single(prev_entry, &cluster_config_entry(new_config.clone())),
+        );
+        assert_action!(self, committed(reply.last_entry.index));
+        assert_action!(
+            self,
+            append_log_entry(prev_entry, cluster_config_entry(new_config.clone()))
+        );
+        assert_action!(self, broadcast_message(&request));
+        assert_action!(self, set_election_timeout());
         assert_no_action!(self);
 
         request
