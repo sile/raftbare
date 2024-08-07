@@ -4,7 +4,7 @@ use raftbare::{
     action::Action,
     config::ClusterConfig,
     log::{LogEntries, LogEntry, LogEntryRef, LogIndex},
-    message::Message,
+    message::{AppendEntriesRequest, Message},
     node::{Node, NodeId, Role},
     Term,
 };
@@ -52,23 +52,7 @@ fn create_two_nodes_cluster() {
     let reply = node1.asserted_handle_first_append_entries_request(&request);
 
     let request = node0.asserted_handle_append_entries_reply_failure(&reply);
-    let entries = entries(
-        // TODO: delete
-        prev(t(0), i(0)), // == node1.log().last
-        &[
-            term_entry(t(1)),
-            cluster_config_entry(voters(&[node0.id()])),
-            cluster_config_entry(joint(&[node0.id()], &[node0.id(), node1.id()])),
-        ],
-    );
-
-    node1.handle_message(&request);
-    assert_eq!(node1.log().last, node0.log().last);
-    let reply = append_entries_reply(node1.current_term(), node1.id(), node1.log().last);
-    assert_action!(node1, append_log_entries(&entries));
-    assert_action!(node1, committed(i(2)));
-    assert_action!(node1, unicast_message(node0.id(), &reply));
-    assert_no_action!(node1);
+    let reply = node1.asserted_handle_append_entries_request_success(&request);
 
     let new_config = voters(&[node0.id(), node1.id()]);
     let prev_entry = node0.log().last;
@@ -174,6 +158,29 @@ impl TestNode {
         assert_action!(self, save_current_term(msg.term()));
         assert_action!(self, save_voted_for(Some(msg.from())));
         assert_action!(self, set_election_timeout());
+        assert_action!(self, unicast_message(msg.from(), &reply));
+        assert_no_action!(self);
+
+        reply
+    }
+
+    fn asserted_handle_append_entries_request_success(&mut self, msg: &Message) -> Message {
+        assert!(matches!(msg, Message::AppendEntriesRequest(_)));
+
+        self.handle_message(msg);
+        let Message::AppendEntriesRequest(AppendEntriesRequest {
+            entries,
+            leader_commit,
+            ..
+        }) = msg
+        else {
+            unreachable!();
+        };
+        assert_eq!(self.log().last, entries.last);
+
+        let reply = append_entries_reply(self.current_term(), self.id(), self.log().last);
+        assert_action!(self, append_log_entries(&entries));
+        assert_action!(self, committed(*leader_commit));
         assert_action!(self, unicast_message(msg.from(), &reply));
         assert_no_action!(self);
 
