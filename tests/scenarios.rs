@@ -70,7 +70,6 @@ fn create_two_nodes_cluster() {
     );
     assert_action!(node0, broadcast_message(&request));
     assert_action!(node0, set_election_timeout());
-    assert_action!(node0, unicast_message(node1.id(), &request)); // TODO: Remove this redundant action if possible.
     assert_no_action!(node0);
 
     let reply = append_entries_reply(node1.current_term(), node1.id(), node1.log().last.next());
@@ -223,14 +222,6 @@ impl DerefMut for TestNode {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.inner
     }
-}
-
-fn entries(prev: LogEntryRef, entries: &[LogEntry]) -> LogEntries {
-    let mut log = LogEntries::new(prev);
-    for entry in entries {
-        log.append_entry(entry);
-    }
-    log
 }
 
 fn id(id: u64) -> NodeId {

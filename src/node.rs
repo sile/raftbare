@@ -332,6 +332,7 @@ impl Node {
             return;
         };
 
+        let self_last_entry = self.log.last; // Save the current last entry before (maybe) updating it.
         let last_entry = if self.log.contains(reply.last_entry) {
             if follower.match_index < reply.last_entry.index {
                 let old_match_index = follower.match_index;
@@ -359,10 +360,8 @@ impl Node {
         if last_entry.index < self.log.prev.index {
             // send snapshot
             todo!()
-        } else {
+        } else if last_entry.index < self_last_entry.index {
             // send delta
-            //
-            // TODO: use follower.next_index instead of reply.last_entry
             let Some(delta) = self.log.since(last_entry) else {
                 // Wrong reply.
                 return;
