@@ -54,20 +54,10 @@ fn create_two_nodes_cluster() {
     let request = node0.asserted_handle_append_entries_reply_failure(&reply);
     let reply = node1.asserted_handle_append_entries_request_success(&request);
 
-    let new_config = voters(&[node0.id(), node1.id()]);
-    let prev_entry = node0.log().last;
     let request =
         node0.asserted_handle_append_entries_reply_success_with_joint_config_committed(&reply);
-
-    let reply = append_entries_reply(node1.current_term(), node1.id(), node1.log().last.next());
-    node1.handle_message(&request);
-    assert_action!(
-        node1,
-        append_log_entry(prev_entry, cluster_config_entry(new_config.clone()))
-    );
-    assert_action!(node1, committed(i(3)));
-    assert_action!(node1, unicast_message(node0.id(), &reply));
-    assert_no_action!(node1);
+    let reply = node1.asserted_handle_append_entries_request_success(&request);
+    node0.asserted_handle_append_entries_reply_success(&reply, true);
 
     assert!(!node0.cluster_config().is_joint_consensus());
     assert_eq!(node0.cluster_config(), node1.cluster_config());
@@ -228,6 +218,23 @@ impl TestNode {
         assert_no_action!(self);
 
         request
+    }
+
+    fn asserted_handle_append_entries_reply_success(
+        &mut self,
+        reply: &Message,
+        commit_index_will_be_updated: bool,
+    ) {
+        assert!(matches!(reply, Message::AppendEntriesReply(_)));
+        self.handle_message(reply);
+
+        let Message::AppendEntriesReply(reply) = reply else {
+            unreachable!();
+        };
+        if commit_index_will_be_updated {
+            assert_action!(self, committed(reply.last_entry.index));
+        }
+        assert_no_action!(self);
     }
 }
 
