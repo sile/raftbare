@@ -63,6 +63,40 @@ fn create_two_nodes_cluster() {
     assert_eq!(node0.cluster_config(), node1.cluster_config());
 }
 
+#[test]
+fn create_three_nodes_cluster() {
+    let mut node0 = TestNode::asserted_start(id(0));
+    let mut node1 = TestNode::asserted_start(id(1));
+    let mut node2 = TestNode::asserted_start(id(2));
+
+    // Create single node cluster.
+    node0.asserted_create_cluster();
+
+    // Update cluster configuration.
+    let request = node0.asserted_change_cluster_config(joint(
+        &[node0.id()],
+        &[node0.id(), node1.id(), node2.id()],
+    ));
+
+    for node in &mut [&mut node1, &mut node2] {
+        let reply = node0.asserted_handle_first_append_entries_request(&request);
+        let request = node0.asserted_handle_append_entries_reply_failure(&reply);
+        let reply = node.asserted_handle_append_entries_request_success(&request);
+        if node.id() == id(1) {
+            let request = node0
+                .asserted_handle_append_entries_reply_success_with_joint_config_committed(&reply);
+            let reply = node.asserted_handle_append_entries_request_success(&request);
+            node0.asserted_handle_append_entries_reply_success(&reply, true);
+        } else {
+            node0.asserted_handle_append_entries_reply_success(&reply, false);
+        }
+    }
+
+    assert!(!node0.cluster_config().is_joint_consensus());
+    assert_eq!(node0.cluster_config(), node1.cluster_config());
+    assert_eq!(node0.cluster_config(), node2.cluster_config());
+}
+
 // TODO: election
 // TODO: snapshot
 
