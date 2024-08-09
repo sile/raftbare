@@ -79,7 +79,7 @@ fn create_three_nodes_cluster() {
     ));
 
     for node in &mut [&mut node1, &mut node2] {
-        let reply = node0.asserted_handle_first_append_entries_request(&request);
+        let reply = node.asserted_handle_first_append_entries_request(&request);
         let request = node0.asserted_handle_append_entries_reply_failure(&reply);
         let reply = node.asserted_handle_append_entries_request_success(&request);
         if node.id() == id(1) {
