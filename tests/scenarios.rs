@@ -99,7 +99,16 @@ fn election() {
     assert_no_action!(cluster.node1);
 
     cluster.node0.handle_message(&request);
+
+    let reply = request_vote_reply(cluster.node1.current_term(), cluster.node0.id(), true);
+    assert_action!(cluster.node0, save_current_term(t(2)));
+    assert_action!(cluster.node0, save_voted_for(Some(cluster.node1.id())));
+    assert_action!(cluster.node0, set_election_timeout());
+    assert_action!(cluster.node0, unicast_message(cluster.node1.id(), &reply));
     assert_no_action!(cluster.node0);
+
+    cluster.node1.handle_message(&reply);
+    assert_no_action!(cluster.node1);
 }
 
 // TODO: snapshot
@@ -382,6 +391,10 @@ fn create_log() -> Action {
 
 fn request_vote_request(term: Term, from: NodeId, last_entry: LogEntryRef) -> Message {
     Message::request_vote_request(term, from, last_entry)
+}
+
+fn request_vote_reply(term: Term, from: NodeId, vote_granted: bool) -> Message {
+    Message::request_vote_reply(term, from, vote_granted)
 }
 
 fn append_entries_request(

@@ -1,6 +1,7 @@
 use crate::{config::ClusterConfig, log::LogIndex, node::NodeId};
 use std::collections::BTreeSet;
 
+// TODO: s/Quorum/CommitQuorum/
 #[derive(Debug, Clone)]
 pub struct Quorum {
     majority_indices: BTreeSet<(LogIndex, NodeId)>,

@@ -2,11 +2,13 @@ use crate::{
     action::Action,
     config::ClusterConfig,
     log::{LogEntries, LogEntry, LogEntryRef, LogIndex},
-    message::{AppendEntriesReply, AppendEntriesRequest, Message, RequestVoteRequest},
+    message::{
+        AppendEntriesReply, AppendEntriesRequest, Message, RequestVoteReply, RequestVoteRequest,
+    },
     quorum::Quorum,
     Term,
 };
-use std::collections::{BTreeMap, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct NodeId(u64);
@@ -32,6 +34,9 @@ pub struct Node {
     config: ClusterConfig,
     commit_index: LogIndex,
 
+    // Candidate state
+    granted_votes: BTreeSet<NodeId>,
+
     // Leader state
     leader_index: LogIndex,
     followers: BTreeMap<NodeId, Follower>,
@@ -54,6 +59,9 @@ impl Node {
             log: LogEntries::new(LogEntryRef::new(term, index)),
             config,
             commit_index: LogIndex::new(0),
+
+            // candidate state
+            granted_votes: BTreeSet::new(),
 
             // leader state
             leader_index: LogIndex::new(0),
@@ -273,7 +281,7 @@ impl Node {
 
         match msg {
             Message::RequestVoteRequest(msg) => self.handle_request_vote_request(msg),
-            Message::RequestVoteReply(_msg) => todo!(),
+            Message::RequestVoteReply(msg) => self.handle_request_vote_reply(msg),
             Message::AppendEntriesRequest(msg) => self.handle_append_entries_request(msg),
             Message::AppendEntriesReply(msg) => self.handle_append_entries_reply(msg),
         }
@@ -296,6 +304,35 @@ impl Node {
         );
     }
 
+    fn handle_request_vote_reply(&mut self, reply: &RequestVoteReply) {
+        if !reply.vote_granted {
+            return;
+        }
+        self.granted_votes.insert(reply.from);
+
+        let n = self
+            .config
+            .voters
+            .iter()
+            .filter(|v| !self.granted_votes.contains(v))
+            .count();
+        if n < self.config.voter_majority_count() {
+            return;
+        }
+
+        let n = self
+            .config
+            .new_voters
+            .iter()
+            .filter(|v| !self.granted_votes.contains(v))
+            .count();
+        if n < self.config.new_voter_majority_count() {
+            return;
+        }
+
+        todo!();
+    }
+
     pub fn handle_election_timeout(&mut self) {
         match self.role {
             Role::Follower => {
@@ -310,6 +347,8 @@ impl Node {
         self.role = Role::Candidate;
         self.set_current_term(self.current_term.next());
         self.set_voted_for(Some(self.id));
+        self.granted_votes.clear();
+        self.granted_votes.insert(self.id);
 
         self.broadcast_message(Message::request_vote_request(
             self.current_term,

@@ -32,6 +32,18 @@ impl ClusterConfig {
     pub fn is_joint_consensus(&self) -> bool {
         !self.new_voters.is_empty()
     }
+
+    pub fn voter_majority_count(&self) -> usize {
+        self.voters.len() / 2 + 1
+    }
+
+    pub fn new_voter_majority_count(&self) -> usize {
+        if self.new_voters.is_empty() {
+            0
+        } else {
+            self.new_voters.len() / 2 + 1
+        }
+    }
 }
 
 #[derive(Debug)]
