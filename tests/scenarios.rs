@@ -65,40 +65,80 @@ fn create_two_nodes_cluster() {
 
 #[test]
 fn create_three_nodes_cluster() {
-    let mut node0 = TestNode::asserted_start(id(0));
-    let mut node1 = TestNode::asserted_start(id(1));
-    let mut node2 = TestNode::asserted_start(id(2));
+    let mut cluster = ThreeNodeCluster::new();
+    cluster.init_cluster();
 
-    // Create single node cluster.
-    node0.asserted_create_cluster();
+    assert!(!cluster.node0.cluster_config().is_joint_consensus());
+    assert_eq!(
+        cluster.node0.cluster_config(),
+        cluster.node1.cluster_config()
+    );
+    assert_eq!(
+        cluster.node0.cluster_config(),
+        cluster.node2.cluster_config()
+    );
+}
 
-    // Update cluster configuration.
-    let request = node0.asserted_change_cluster_config(joint(
-        &[node0.id()],
-        &[node0.id(), node1.id(), node2.id()],
-    ));
+#[test]
+fn election() {
+    let mut cluster = ThreeNodeCluster::new();
+    cluster.init_cluster();
 
-    for node in &mut [&mut node1, &mut node2] {
-        let reply = node.asserted_handle_first_append_entries_request(&request);
-        let request = node0.asserted_handle_append_entries_reply_failure(&reply);
-        let reply = node.asserted_handle_append_entries_request_success(&request);
-        if node.id() == id(1) {
-            let request = node0
-                .asserted_handle_append_entries_reply_success_with_joint_config_committed(&reply);
-            let reply = node.asserted_handle_append_entries_request_success(&request);
-            node0.asserted_handle_append_entries_reply_success(&reply, true);
-        } else {
-            node0.asserted_handle_append_entries_reply_success(&reply, false);
+    // Trigger a new election.
+    cluster.node1.handle_election_timeout();
+    assert_no_action!(cluster.node1);
+}
+
+// TODO: snapshot
+
+#[derive(Debug)]
+struct ThreeNodeCluster {
+    node0: TestNode,
+    node1: TestNode,
+    node2: TestNode,
+}
+
+impl ThreeNodeCluster {
+    fn new() -> Self {
+        Self {
+            node0: TestNode::asserted_start(id(0)),
+            node1: TestNode::asserted_start(id(1)),
+            node2: TestNode::asserted_start(id(2)),
         }
     }
 
-    assert!(!node0.cluster_config().is_joint_consensus());
-    assert_eq!(node0.cluster_config(), node1.cluster_config());
-    assert_eq!(node0.cluster_config(), node2.cluster_config());
-}
+    fn init_cluster(&mut self) {
+        // Create single node cluster.
+        self.node0.asserted_create_cluster();
 
-// TODO: election
-// TODO: snapshot
+        // Update cluster configuration.
+        let request = self.node0.asserted_change_cluster_config(joint(
+            &[self.node0.id()],
+            &[self.node0.id(), self.node1.id(), self.node2.id()],
+        ));
+
+        for node in &mut [&mut self.node1, &mut self.node2] {
+            let reply = node.asserted_handle_first_append_entries_request(&request);
+            let request = self
+                .node0
+                .asserted_handle_append_entries_reply_failure(&reply);
+            let reply = node.asserted_handle_append_entries_request_success(&request);
+            if node.id() == id(1) {
+                let request = self
+                    .node0
+                    .asserted_handle_append_entries_reply_success_with_joint_config_committed(
+                        &reply,
+                    );
+                let reply = node.asserted_handle_append_entries_request_success(&request);
+                self.node0
+                    .asserted_handle_append_entries_reply_success(&reply, true);
+            } else {
+                self.node0
+                    .asserted_handle_append_entries_reply_success(&reply, false);
+            }
+        }
+    }
+}
 
 #[derive(Debug)]
 struct TestNode {
