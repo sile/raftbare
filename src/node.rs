@@ -82,11 +82,12 @@ impl Node {
             return false;
         }
 
-        // TODO: factor out
+        // TODO: factor out (with enter_leader())
         self.role = Role::Leader;
         self.set_current_term(self.current_term.next());
         self.set_voted_for(Some(self.id));
         self.config.voters.insert(self.id);
+
         self.quorum = Quorum::new(&self.config);
 
         // Optimized propose
@@ -314,7 +315,7 @@ impl Node {
             .config
             .voters
             .iter()
-            .filter(|v| !self.granted_votes.contains(v))
+            .filter(|v| self.granted_votes.contains(v))
             .count();
         if n < self.config.voter_majority_count() {
             return;
@@ -324,13 +325,13 @@ impl Node {
             .config
             .new_voters
             .iter()
-            .filter(|v| !self.granted_votes.contains(v))
+            .filter(|v| self.granted_votes.contains(v))
             .count();
         if n < self.config.new_voter_majority_count() {
             return;
         }
 
-        todo!();
+        self.enter_leader();
     }
 
     pub fn handle_election_timeout(&mut self) {
@@ -358,11 +359,22 @@ impl Node {
         self.enqueue_action(Action::SetElectionTimeout);
     }
 
+    fn enter_leader(&mut self) {
+        debug_assert_eq!(self.voted_for, Some(self.id));
+
+        self.role = Role::Leader;
+        self.followers.clear();
+        self.rebuild_followers();
+        self.rebuild_quorum();
+
+        self.propose(LogEntry::Term(self.current_term));
+    }
+
     fn enter_follower_with_vote(&mut self, term: Term, voted_for: NodeId) {
+        self.role = Role::Follower;
         self.set_current_term(term);
         self.set_voted_for(Some(voted_for));
-        self.role = Role::Follower;
-        // self.quorum = Quorum::new(&self.config); // TODO
+        // self.quorum.clear();
         self.followers.clear();
 
         self.enqueue_action(Action::SetElectionTimeout);

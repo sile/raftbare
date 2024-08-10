@@ -107,8 +107,24 @@ fn election() {
     assert_action!(cluster.node0, unicast_message(cluster.node1.id(), &reply));
     assert_no_action!(cluster.node0);
 
+    let tail = cluster.node1.log().last;
+    let request = append_entries_request(
+        cluster.node1.current_term(),
+        cluster.node1.id(),
+        cluster.node1.commit_index(),
+        LogEntries::single(tail, &term_entry(cluster.node1.current_term())),
+    );
     cluster.node1.handle_message(&reply);
+    assert_action!(
+        cluster.node1,
+        append_log_entry(tail, term_entry(cluster.node1.current_term()))
+    );
+    assert_action!(cluster.node1, broadcast_message(&request));
+    assert_action!(cluster.node1, set_election_timeout());
     assert_no_action!(cluster.node1);
+
+    cluster.node2.handle_message(&request);
+    assert_no_action!(cluster.node2);
 }
 
 // TODO: snapshot
