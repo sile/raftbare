@@ -6,7 +6,7 @@ use crate::{
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Message {
-    RequestVoteRequest { from: NodeId, term: Term },
+    RequestVoteRequest(RequestVoteRequest),
     AppendEntriesRequest(AppendEntriesRequest),
     AppendEntriesReply(AppendEntriesReply),
 }
@@ -14,7 +14,7 @@ pub enum Message {
 impl Message {
     pub fn term(&self) -> Term {
         match self {
-            Self::RequestVoteRequest { term, .. } => *term,
+            Self::RequestVoteRequest(m) => m.term,
             Self::AppendEntriesRequest(m) => m.term,
             Self::AppendEntriesReply(m) => m.term,
         }
@@ -22,12 +22,18 @@ impl Message {
 
     pub fn from(&self) -> NodeId {
         match self {
-            Self::RequestVoteRequest {
-                from: sender_id, ..
-            } => *sender_id,
+            Self::RequestVoteRequest(m) => m.from,
             Self::AppendEntriesRequest(m) => m.from,
             Self::AppendEntriesReply(m) => m.from,
         }
+    }
+
+    pub fn request_vote_request(term: Term, candidate_id: NodeId, last_entry: LogEntryRef) -> Self {
+        Self::RequestVoteRequest(RequestVoteRequest {
+            term,
+            from: candidate_id,
+            last_entry,
+        })
     }
 
     pub fn append_entries_request(
@@ -51,6 +57,13 @@ impl Message {
             last_entry,
         })
     }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct RequestVoteRequest {
+    pub term: Term,
+    pub from: NodeId,
+    pub last_entry: LogEntryRef,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]

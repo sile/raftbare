@@ -279,7 +279,26 @@ impl Node {
     }
 
     pub fn handle_election_timeout(&mut self) {
-        todo!();
+        match self.role {
+            Role::Follower => {
+                self.start_new_election();
+            }
+            Role::Candidate => todo!(),
+            Role::Leader => todo!(),
+        }
+    }
+
+    fn start_new_election(&mut self) {
+        self.role = Role::Candidate;
+        self.set_current_term(self.current_term.next());
+        self.set_voted_for(Some(self.id));
+
+        self.broadcast_message(Message::request_vote_request(
+            self.current_term,
+            self.id,
+            self.log.last,
+        ));
+        self.enqueue_action(Action::SetElectionTimeout);
     }
 
     fn enter_follower_with_vote(&mut self, term: Term, voted_for: NodeId) {
