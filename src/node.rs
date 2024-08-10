@@ -273,13 +273,27 @@ impl Node {
 
         match msg {
             Message::RequestVoteRequest(msg) => self.handle_request_vote_request(msg),
+            Message::RequestVoteReply(_msg) => todo!(),
             Message::AppendEntriesRequest(msg) => self.handle_append_entries_request(msg),
             Message::AppendEntriesReply(msg) => self.handle_append_entries_reply(msg),
         }
     }
 
     fn handle_request_vote_request(&mut self, request: &RequestVoteRequest) {
-        todo!();
+        if request.term < self.current_term {
+            self.unicast_message(
+                request.from,
+                Message::request_vote_reply(self.current_term, self.id, false),
+            );
+            return;
+        }
+        if self.voted_for != Some(request.from) || self.log.last.index > request.last_entry.index {
+            return;
+        }
+        self.unicast_message(
+            request.from,
+            Message::request_vote_reply(self.current_term, self.id, true),
+        );
     }
 
     pub fn handle_election_timeout(&mut self) {
