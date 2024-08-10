@@ -2,7 +2,7 @@ use crate::{
     action::Action,
     config::ClusterConfig,
     log::{LogEntries, LogEntry, LogEntryRef, LogIndex},
-    message::{AppendEntriesReply, AppendEntriesRequest, Message},
+    message::{AppendEntriesReply, AppendEntriesRequest, Message, RequestVoteRequest},
     quorum::Quorum,
     Term,
 };
@@ -113,6 +113,7 @@ impl Node {
             self.commit_index,
             LogEntries::single(prev_entry, &entry),
         ));
+        self.enqueue_action(Action::SetElectionTimeout);
         self.update_commit_index_if_possible();
 
         self.log.last.index
@@ -143,7 +144,6 @@ impl Node {
 
     fn broadcast_message(&mut self, message: Message) {
         self.enqueue_action(Action::BroadcastMessage(message));
-        self.enqueue_action(Action::SetElectionTimeout);
     }
 
     fn unicast_message(&mut self, destination: NodeId, message: Message) {
@@ -272,10 +272,14 @@ impl Node {
         }
 
         match msg {
-            Message::RequestVoteRequest { .. } => todo!(),
+            Message::RequestVoteRequest(msg) => self.handle_request_vote_request(msg),
             Message::AppendEntriesRequest(msg) => self.handle_append_entries_request(msg),
             Message::AppendEntriesReply(msg) => self.handle_append_entries_reply(msg),
         }
+    }
+
+    fn handle_request_vote_request(&mut self, request: &RequestVoteRequest) {
+        todo!();
     }
 
     pub fn handle_election_timeout(&mut self) {

@@ -86,7 +86,20 @@ fn election() {
 
     // Trigger a new election.
     cluster.node1.handle_election_timeout();
+
+    let request = request_vote_request(
+        cluster.node1.current_term(),
+        cluster.node1.id(),
+        cluster.node1.log().last,
+    );
+    assert_action!(cluster.node1, save_current_term(t(2)));
+    assert_action!(cluster.node1, save_voted_for(Some(cluster.node1.id())));
+    assert_action!(cluster.node1, broadcast_message(&request));
+    assert_action!(cluster.node1, set_election_timeout());
     assert_no_action!(cluster.node1);
+
+    cluster.node0.handle_message(&request);
+    assert_no_action!(cluster.node0);
 }
 
 // TODO: snapshot
@@ -365,6 +378,10 @@ fn cluster_config_entry(config: ClusterConfig) -> LogEntry {
 
 fn create_log() -> Action {
     Action::CreateLog(LogEntry::Term(t(0)))
+}
+
+fn request_vote_request(term: Term, from: NodeId, last_entry: LogEntryRef) -> Message {
+    Message::request_vote_request(term, from, last_entry)
 }
 
 fn append_entries_request(
