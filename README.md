@@ -16,6 +16,7 @@ Differences with the paper
 - AppendEntriesRPC reply (log entry ref)
    - Add last_entry instead of success
 - Removed next_index in favor of ...
+- Sequence numbers in some messages (instead of strict RPC semantics)
 
 ### FAQ (or out of scope of this library)
 

@@ -4,6 +4,7 @@ use crate::{
     log::{LogEntries, LogEntry, LogEntryRef, LogIndex},
     message::{
         AppendEntriesReply, AppendEntriesRequest, Message, RequestVoteReply, RequestVoteRequest,
+        SequenceNumber,
     },
     quorum::Quorum,
     Term,
@@ -34,6 +35,7 @@ pub struct Node {
     config: ClusterConfig,
     commit_index: LogIndex,
 
+    // TODO: Factor out role specific states in an enum
     // Candidate state
     granted_votes: BTreeSet<NodeId>,
 
@@ -42,6 +44,7 @@ pub struct Node {
     followers: BTreeMap<NodeId, Follower>,
     quorum: Quorum,
     joint_consensus_index: Option<LogIndex>,
+    pub leader_sn: SequenceNumber, // TODO: priv
 }
 
 impl Node {
@@ -68,6 +71,7 @@ impl Node {
             followers: BTreeMap::new(),
             quorum,
             joint_consensus_index: None,
+            leader_sn: SequenceNumber::new(),
         };
         this.enqueue_action(Action::CreateLog(LogEntry::Term(term)));
         this
@@ -108,6 +112,17 @@ impl Node {
         self.enqueue_action(Action::NotifyCommitted(index));
     }
 
+    // TODOO: rename
+    // pub fn heartbeat(&mut self) -> Heartbeat {
+    //     let request = Message::append_entries_request(
+    //         self.current_term,
+    //         self.id,
+    //         self.commit_index,
+    //         LogEntries::new(self.log.last),
+    //     );
+    //     self.broadcast_message(&request);
+    // }
+
     // TODO: fn propose_command(&mut self, n: usize) -> Result<()>;
 
     fn propose(&mut self, entry: LogEntry) -> LogIndex {
@@ -120,8 +135,10 @@ impl Node {
             self.current_term,
             self.id,
             self.commit_index,
+            self.leader_sn,
             LogEntries::single(prev_entry, &entry),
         ));
+        self.leader_sn = self.leader_sn.next();
         self.enqueue_action(Action::SetElectionTimeout);
         self.update_commit_index_if_possible();
 
@@ -366,6 +383,7 @@ impl Node {
         self.followers.clear();
         self.rebuild_followers();
         self.rebuild_quorum();
+        self.leader_sn = SequenceNumber::new();
 
         self.propose(LogEntry::Term(self.current_term));
     }
@@ -383,7 +401,12 @@ impl Node {
     fn reply_append_entries(&mut self, request: &AppendEntriesRequest) {
         self.unicast_message(
             request.from,
-            Message::append_entries_reply(self.current_term, self.id, self.log.last),
+            Message::append_entries_reply(
+                self.current_term,
+                self.id,
+                request.leader_sn,
+                self.log.last,
+            ),
         );
     }
 
@@ -458,9 +481,11 @@ impl Node {
                 self.current_term,
                 self.id,
                 self.commit_index,
+                self.leader_sn,
                 delta,
             );
             self.unicast_message(reply.from, msg);
+            self.leader_sn = self.leader_sn.next();
         }
     }
 

@@ -2,7 +2,7 @@ use raftbare::{
     action::Action,
     config::ClusterConfig,
     log::{LogEntries, LogEntry, LogEntryRef, LogIndex},
-    message::{AppendEntriesRequest, Message},
+    message::{AppendEntriesRequest, Message, SequenceNumber},
     node::{Node, NodeId, Role},
     Term,
 };
@@ -107,13 +107,11 @@ fn election() {
     assert_no_action!(cluster.node0);
 
     let tail = cluster.node1.log().last;
+    cluster.node1.handle_message(&reply);
     let request = append_entries_request(
-        cluster.node1.current_term(),
-        cluster.node1.id(),
-        cluster.node1.commit_index(),
+        &cluster.node1,
         LogEntries::single(tail, &term_entry(cluster.node1.current_term())),
     );
-    cluster.node1.handle_message(&reply);
     assert_action!(
         cluster.node1,
         append_log_entry(tail, term_entry(cluster.node1.current_term()))
@@ -123,11 +121,7 @@ fn election() {
     assert_no_action!(cluster.node1);
 
     cluster.node2.handle_message(&request);
-    let reply_from_node2 = append_entries_reply(
-        cluster.node2.current_term(),
-        cluster.node2.id(),
-        cluster.node2.log().last,
-    );
+    let reply_from_node2 = append_entries_reply(&request, &cluster.node2);
     assert_action!(cluster.node2, save_current_term(t(2)));
     assert_action!(cluster.node2, save_voted_for(Some(cluster.node1.id())));
     assert_action!(cluster.node2, set_election_timeout());
@@ -142,11 +136,7 @@ fn election() {
     assert_no_action!(cluster.node2);
 
     cluster.node0.handle_message(&request);
-    let reply_from_node0 = append_entries_reply(
-        cluster.node0.current_term(),
-        cluster.node0.id(),
-        cluster.node0.log().last,
-    );
+    let reply_from_node0 = append_entries_reply(&request, &cluster.node0);
     assert_action!(
         cluster.node0,
         append_log_entry(tail, term_entry(cluster.node1.current_term()))
@@ -257,13 +247,12 @@ impl TestNode {
     fn asserted_change_cluster_config(&mut self, new_config: ClusterConfig) -> Message {
         let prev_entry = self.log().last;
         let next_index = self.log().last.index.next();
+        assert_eq!(Ok(next_index), self.change_cluster_config(&new_config));
         let msg = append_entries_request(
-            self.current_term(),
-            self.id(),
-            self.commit_index(),
+            self,
             LogEntries::single(prev_entry, &cluster_config_entry(new_config.clone())),
         );
-        assert_eq!(Ok(next_index), self.change_cluster_config(&new_config));
+
         assert_action!(
             self,
             append_log_entry(prev_entry, cluster_config_entry(new_config.clone()))
@@ -279,7 +268,7 @@ impl TestNode {
         assert!(matches!(msg, Message::AppendEntriesRequest(_)));
 
         self.handle_message(msg);
-        let reply = append_entries_reply(self.current_term(), self.id(), self.log().last);
+        let reply = append_entries_reply(msg, self);
         assert_action!(self, save_current_term(msg.term()));
         assert_action!(self, save_voted_for(Some(msg.from())));
         assert_action!(self, set_election_timeout());
@@ -303,7 +292,7 @@ impl TestNode {
         };
         assert_eq!(self.log().last, entries.last);
 
-        let reply = append_entries_reply(self.current_term(), self.id(), self.log().last);
+        let reply = append_entries_reply(msg, self);
         assert_action!(self, append_log_entries(&entries));
         assert_action!(self, committed(*leader_commit));
         assert_action!(self, unicast_message(msg.from(), &reply));
@@ -312,23 +301,19 @@ impl TestNode {
         reply
     }
 
-    fn asserted_handle_append_entries_reply_failure(&mut self, reply: &Message) -> Message {
-        assert!(matches!(reply, Message::AppendEntriesReply(_)));
-        self.handle_message(reply);
+    fn asserted_handle_append_entries_reply_failure(&mut self, msg: &Message) -> Message {
+        assert!(matches!(msg, Message::AppendEntriesReply(_)));
 
-        let Message::AppendEntriesReply(reply) = reply else {
+        let Message::AppendEntriesReply(reply) = msg else {
             unreachable!();
         };
         let Some(entries) = self.log().since(reply.last_entry) else {
             panic!("Needs snapshot");
         };
 
-        let request = append_entries_request(
-            self.current_term(),
-            self.id(),
-            self.commit_index(),
-            entries.clone(),
-        );
+        self.handle_message(msg);
+        let request = append_entries_request(self, entries.clone());
+
         assert_action!(self, unicast_message(reply.from, &request));
         assert_no_action!(self);
 
@@ -337,24 +322,22 @@ impl TestNode {
 
     fn asserted_handle_append_entries_reply_success_with_joint_config_committed(
         &mut self,
-        reply: &Message,
+        msg: &Message,
     ) -> Message {
-        assert!(matches!(reply, Message::AppendEntriesReply(_)));
+        assert!(matches!(msg, Message::AppendEntriesReply(_)));
         assert!(self.cluster_config().is_joint_consensus());
 
         let prev_entry = self.log().last;
         let mut new_config = self.cluster_config().clone();
         new_config.voters = std::mem::take(&mut new_config.new_voters);
 
-        self.handle_message(reply);
-
-        let Message::AppendEntriesReply(reply) = reply else {
+        let Message::AppendEntriesReply(reply) = msg else {
             unreachable!();
         };
+
+        self.handle_message(msg);
         let request = append_entries_request(
-            self.current_term(),
-            self.id(),
-            reply.last_entry.index,
+            self,
             LogEntries::single(prev_entry, &cluster_config_entry(new_config.clone())),
         );
         assert_action!(self, committed(reply.last_entry.index));
@@ -450,17 +433,26 @@ fn request_vote_reply(term: Term, from: NodeId, vote_granted: bool) -> Message {
     Message::request_vote_reply(term, from, vote_granted)
 }
 
-fn append_entries_request(
-    term: Term,
-    leader_id: NodeId,
-    commit_index: LogIndex,
-    entries: LogEntries,
-) -> Message {
-    Message::append_entries_request(term, leader_id, commit_index, entries)
+fn append_entries_request(leader: &Node, entries: LogEntries) -> Message {
+    Message::append_entries_request(
+        leader.current_term(),
+        leader.id(),
+        leader.commit_index(),
+        SequenceNumber::from_u64(leader.leader_sn.get() - 1),
+        entries,
+    )
 }
 
-fn append_entries_reply(term: Term, from: NodeId, entry: LogEntryRef) -> Message {
-    Message::append_entries_reply(term, from, entry)
+fn append_entries_reply(request: &Message, node: &Node) -> Message {
+    let Message::AppendEntriesRequest(request) = request else {
+        panic!();
+    };
+    Message::append_entries_reply(
+        node.current_term(),
+        node.id(),
+        request.leader_sn,
+        node.log().last,
+    )
 }
 
 fn unicast_message(destination: NodeId, message: &Message) -> Action {
