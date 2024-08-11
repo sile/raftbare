@@ -126,6 +126,8 @@ impl Node {
             sn,
             LogEntries::new(self.log.last),
         );
+        self.quorum
+            .update_seqnum(&self.config, self.id, self.leader_sn, self.leader_sn.next());
         self.leader_sn = sn.next();
         self.broadcast_message(request);
 
@@ -150,7 +152,10 @@ impl Node {
             self.leader_sn,
             LogEntries::single(prev_entry, &entry),
         ));
+        self.quorum
+            .update_seqnum(&self.config, self.id, self.leader_sn, self.leader_sn.next());
         self.leader_sn = self.leader_sn.next();
+        self.check_heartbeat();
         self.enqueue_action(Action::SetElectionTimeout);
         self.update_commit_index_if_possible();
 
@@ -173,10 +178,14 @@ impl Node {
         let zero = LogIndex::new(0);
         self.quorum
             .update_match_index(&self.config, self.id, zero, self.log.last.index);
+        self.quorum
+            .update_seqnum(&self.config, self.id, SequenceNumber::new(), self.leader_sn);
 
         for (&id, follower) in &mut self.followers {
             self.quorum
                 .update_match_index(&self.config, id, zero, follower.match_index);
+            self.quorum
+                .update_seqnum(&self.config, id, SequenceNumber::new(), follower.max_sn);
         }
     }
 
@@ -313,7 +322,10 @@ impl Node {
             Message::RequestVoteRequest(msg) => self.handle_request_vote_request(msg),
             Message::RequestVoteReply(msg) => self.handle_request_vote_reply(msg),
             Message::AppendEntriesRequest(msg) => self.handle_append_entries_request(msg),
-            Message::AppendEntriesReply(msg) => self.handle_append_entries_reply(msg),
+            Message::AppendEntriesReply(msg) => {
+                self.handle_append_entries_reply(msg);
+                self.check_heartbeat(); // TODO: call only if needed
+            }
         }
     }
 
@@ -453,7 +465,11 @@ impl Node {
             // Replies from unknown nodes are ignored.
             return;
         };
-        follower.max_sn = reply.leader_sn.max(follower.max_sn);
+        if follower.max_sn < reply.leader_sn {
+            self.quorum
+                .update_seqnum(&self.config, reply.from, follower.max_sn, reply.leader_sn);
+            follower.max_sn = reply.leader_sn;
+        }
 
         if reply.last_entry.index < follower.match_index {
             // Maybe delayed reply.
@@ -504,7 +520,26 @@ impl Node {
                 delta,
             );
             self.unicast_message(reply.from, msg);
+            self.quorum
+                .update_seqnum(&self.config, self.id, self.leader_sn, self.leader_sn.next());
+            self.check_heartbeat();
             self.leader_sn = self.leader_sn.next();
+        }
+    }
+
+    fn check_heartbeat(&mut self) {
+        if self.ongoing_heartbeats.is_empty() {
+            return;
+        }
+
+        let accepted_sn = self.quorum.smallest_majority_seqnum();
+        while let Some(h) = self.ongoing_heartbeats.front().copied() {
+            if accepted_sn <= h.sn {
+                self.ongoing_heartbeats.pop_front();
+                self.enqueue_action(Action::NotifyHeartbeatSucceeded(h));
+            } else {
+                break;
+            }
         }
     }
 

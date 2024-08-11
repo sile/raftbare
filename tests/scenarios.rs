@@ -154,7 +154,18 @@ fn election() {
     assert_no_action!(cluster.node1);
 
     //
-    let _heartbeat = cluster.node1.heartbeat();
+    let heartbeat = cluster.node1.heartbeat();
+    let request = append_entries_request(&cluster.node1, LogEntries::new(cluster.node1.log().last));
+    assert_action!(cluster.node1, broadcast_message(&request));
+    assert_no_action!(cluster.node1);
+
+    cluster.node0.handle_message(&request);
+    let reply = append_entries_reply(&request, &cluster.node0);
+    assert_action!(cluster.node0, unicast_message(cluster.node1.id(), &reply));
+    assert_no_action!(cluster.node0);
+
+    cluster.node1.handle_message(&reply);
+    assert_action!(cluster.node1, Action::NotifyHeartbeatSucceeded(heartbeat));
     assert_no_action!(cluster.node1);
 }
 
