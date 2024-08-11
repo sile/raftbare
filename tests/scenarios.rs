@@ -154,7 +154,9 @@ fn truncate_log() {
 
     // Propose a command, but not broadcast the message.
     assert_eq!(cluster.node0.role(), Role::Leader);
-    cluster.node0.propose_command();
+    let Some(command_index) = cluster.node0.propose_command() else {
+        unreachable!()
+    };
     while let Some(_) = cluster.node0.next_action() {}
 
     // Make node2 the leader.
@@ -181,6 +183,14 @@ fn truncate_log() {
     let reply = cluster
         .node0
         .asserted_handle_append_entries_request_success(&request);
+    assert_ne!(
+        Some(LogEntry::Command),
+        cluster.node0.log().get_entry(command_index)
+    );
+
+    cluster
+        .node2
+        .asserted_handle_append_entries_reply_success(&reply, true);
 }
 
 // TODO: snapshot
@@ -370,16 +380,20 @@ impl TestNode {
             unreachable!();
         };
 
-        let commit_index = self.commit_index();
+        let prev_commit_index = self.commit_index();
+        let prev_voted_for = self.voted_for();
 
         self.handle_message(msg);
         assert_eq!(self.log().last, entries.last);
+        if prev_voted_for != Some(msg.from()) {
+            assert_action!(self, save_voted_for(Some(msg.from())));
+        }
 
         let reply = append_entries_reply(msg, self);
         if !entries.is_empty() {
             assert_action!(self, append_log_entries(&entries));
         }
-        if commit_index < *leader_commit && commit_index <= self.log().last.index {
+        if prev_commit_index < *leader_commit && prev_commit_index <= self.log().last.index {
             assert_action!(self, committed(self.log().last.index.min(*leader_commit)));
         }
         assert_action!(self, unicast_message(msg.from(), &reply));

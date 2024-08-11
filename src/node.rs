@@ -32,7 +32,7 @@ pub struct Node {
     voted_for: Option<NodeId>,
     current_term: Term,
     log: LogEntries,
-    config: ClusterConfig,
+    config: ClusterConfig, // TODO: leader state
     commit_index: LogIndex,
 
     // TODO: Factor out role specific states in an enum
@@ -81,9 +81,10 @@ impl Node {
         id: NodeId,
         current_term: Term,
         voted_for: Option<NodeId>,
-        config: ClusterConfig,
+        config: ClusterConfig, // TODO: remove(?)
         log: LogEntries,
     ) -> Self {
+        // TODO: Return Err(_) if the log doesn't contain cluster config
         let mut node = Self::start(id);
         node.action_queue.clear();
 
@@ -149,6 +150,7 @@ impl Node {
     }
 
     pub fn propose_command(&mut self) -> Option<LogIndex> {
+        // TODO: Return CommitPromise or else
         if self.role != Role::Leader {
             return None;
         }
@@ -288,22 +290,23 @@ impl Node {
             // Already up-to-date.
             return true;
         }
-        if !self.log.contains_index(entries.prev.index) {
+        if !self.log.contains(entries.prev) {
+            // Cannot append.
             return false;
         }
-        if self.log.last == entries.prev {
-            // Simple appending.
-            self.enqueue_action(Action::AppendLogEntries(entries.clone()));
-            self.log.append_entries(entries);
-            if let Some((_, new_config)) = entries.configs.last_key_value() {
-                self.config = new_config.clone();
+
+        // Append.
+        let truncated = self.log.last.index != entries.prev.index;
+        self.enqueue_action(Action::AppendLogEntries(entries.clone()));
+        self.log.append_entries(entries);
+        if let Some((_, new_config)) = entries.configs.last_key_value() {
+            self.config = new_config.clone();
+        } else if truncated {
+            if let Some(latest_config) = self.log.configs.last_key_value().map(|x| x.1.clone()) {
+                self.config = latest_config;
             }
-            return true;
         }
-
-        // TODO: strip common prefix and diverging suffix
-
-        todo!();
+        true
     }
 
     fn set_current_term(&mut self, term: Term) {
@@ -489,6 +492,7 @@ impl Node {
         // TODO(?): Don't reply if request.leader_sn is old
         //          (the reply will be discarded in the leader side anyway)
         self.reply_append_entries(request);
+        // TODO: reset election timeout
     }
 
     fn handle_append_entries_reply(&mut self, reply: &AppendEntriesReply) {
@@ -664,6 +668,7 @@ impl Follower {
     }
 }
 
+// TODO: s/../HeartbeatPromise (or else)/
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Heartbeat {
     pub term: Term,

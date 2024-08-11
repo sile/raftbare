@@ -32,6 +32,19 @@ impl LogEntries {
         self.prev == self.last
     }
 
+    pub fn get_entry(&self, i: LogIndex) -> Option<LogEntry> {
+        if !self.contains_index(i) {
+            return None;
+        }
+        if let Some(term) = self.terms.get(&i) {
+            Some(LogEntry::Term(*term))
+        } else if let Some(config) = self.configs.get(&i) {
+            Some(LogEntry::ClusterConfig(config.clone()))
+        } else {
+            Some(LogEntry::Command)
+        }
+    }
+
     pub fn latest_config_index(&self) -> LogIndex {
         self.configs
             .last_key_value()
@@ -61,7 +74,7 @@ impl LogEntries {
         let mut this = self.clone();
         this.prev = new_prev;
 
-        // TODO: optimize(?)
+        // TODO: optimize(?) => use split_off()
         this.terms.retain(|index, _| index > &new_prev.index);
         this.configs.retain(|index, _| index > &new_prev.index);
 
@@ -87,10 +100,6 @@ impl LogEntries {
         (self.prev.index..=self.last.index).contains(&index)
     }
 
-    pub fn strip_common_prefix(&mut self, _other: &Self) {
-        todo!();
-    }
-
     pub fn append_entry(&mut self, entry: &LogEntry) {
         self.last = self.last.next();
         match entry {
@@ -106,7 +115,14 @@ impl LogEntries {
     }
 
     pub fn append_entries(&mut self, entries: &Self) {
-        debug_assert_eq!(self.last, entries.prev);
+        if self.last != entries.prev {
+            // Truncate
+            debug_assert!(self.contains(entries.prev));
+            self.last = entries.prev;
+            self.terms.split_off(&self.last.index);
+            self.configs.split_off(&self.last.index);
+        }
+
         // TODO: use append()
         self.terms.extend(&entries.terms);
         self.configs
