@@ -28,6 +28,10 @@ impl LogEntries {
         this
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.prev == self.last
+    }
+
     pub fn single(prev: LogEntryRef, entry: &LogEntry) -> Self {
         let mut this = Self::new(prev);
         this.append_entry(&entry);

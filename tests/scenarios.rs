@@ -3,7 +3,7 @@ use raftbare::{
     config::ClusterConfig,
     log::{LogEntries, LogEntry, LogEntryRef, LogIndex},
     message::{AppendEntriesRequest, Message, SequenceNumber},
-    node::{Node, NodeId, Role},
+    node::{Heartbeat, Node, NodeId, Role},
     Term,
 };
 use std::ops::{Deref, DerefMut};
@@ -99,22 +99,19 @@ fn election() {
         .node0
         .asserted_handle_append_entries_request_success(&request, false);
 
-    //
-    cluster.node1.handle_message(&reply_from_node0);
-    assert_action!(cluster.node1, committed(cluster.node0.log().last.index));
-    cluster.node1.handle_message(&reply_from_node2);
-    assert_no_action!(cluster.node1);
+    cluster
+        .node1
+        .asserted_handle_append_entries_reply_success(&reply_from_node0, true);
+    cluster
+        .node1
+        .asserted_handle_append_entries_reply_success(&reply_from_node2, false);
 
-    //
-    let heartbeat = cluster.node1.heartbeat();
-    let request = append_entries_request(&cluster.node1, LogEntries::new(cluster.node1.log().last));
-    assert_action!(cluster.node1, broadcast_message(&request));
-    assert_no_action!(cluster.node1);
+    // Heartbeat.
+    let (heartbeat, request) = cluster.node1.asserted_heartbeat();
 
-    cluster.node0.handle_message(&request);
-    let reply = append_entries_reply(&request, &cluster.node0);
-    assert_action!(cluster.node0, unicast_message(cluster.node1.id(), &reply));
-    assert_no_action!(cluster.node0);
+    let reply = cluster
+        .node0
+        .asserted_handle_append_entries_request_success(&request, false);
 
     cluster.node1.handle_message(&reply);
     assert_action!(cluster.node1, Action::NotifyHeartbeatSucceeded(heartbeat));
@@ -264,7 +261,9 @@ impl TestNode {
         assert_eq!(self.log().last, entries.last);
 
         let reply = append_entries_reply(msg, self);
-        assert_action!(self, append_log_entries(&entries));
+        if !entries.is_empty() {
+            assert_action!(self, append_log_entries(&entries));
+        }
         if will_be_committed {
             assert_action!(self, committed(*leader_commit));
         }
@@ -415,6 +414,14 @@ impl TestNode {
         assert_no_action!(self);
 
         reply
+    }
+
+    fn asserted_heartbeat(&mut self) -> (Heartbeat, Message) {
+        let heartbeat = self.heartbeat();
+        let request = append_entries_request(self, LogEntries::new(self.log().last));
+        assert_action!(self, broadcast_message(&request));
+        assert_no_action!(self);
+        (heartbeat, request)
     }
 }
 
