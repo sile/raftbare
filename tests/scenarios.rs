@@ -106,15 +106,24 @@ fn election() {
         .node1
         .asserted_handle_append_entries_reply_success(&reply_from_node2, false);
 
-    // Heartbeat.
+    // Manual heartbeat.
     let (heartbeat, request) = cluster.node1.asserted_heartbeat();
-
     let reply = cluster
         .node0
         .asserted_handle_append_entries_request_success(&request);
-
     cluster.node1.handle_message(&reply);
     assert_action!(cluster.node1, Action::NotifyHeartbeatSucceeded(heartbeat));
+    assert_no_action!(cluster.node1);
+
+    // Periodic heartbeat.
+    cluster.node1.handle_election_timeout();
+    let request = append_entries_request(&cluster.node1, LogEntries::new(cluster.node1.log().last));
+    assert_action!(cluster.node1, broadcast_message(&request));
+
+    let reply = cluster
+        .node2
+        .asserted_handle_append_entries_request_success(&request);
+    cluster.node1.handle_message(&reply);
     assert_no_action!(cluster.node1);
 }
 

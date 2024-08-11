@@ -406,7 +406,10 @@ impl Node {
             Role::Candidate => {
                 self.start_new_election();
             }
-            Role::Leader => todo!(),
+            Role::Leader => {
+                self.heartbeat();
+                self.ongoing_heartbeats.pop_back(); // TODO: optimize
+            }
         }
     }
 
