@@ -51,11 +51,11 @@ fn create_two_nodes_cluster() {
     let reply = node1.asserted_handle_first_append_entries_request(&request);
 
     let request = node0.asserted_handle_append_entries_reply_failure(&reply);
-    let reply = node1.asserted_handle_append_entries_request_success(&request, true);
+    let reply = node1.asserted_handle_append_entries_request_success(&request);
 
     let request =
         node0.asserted_handle_append_entries_reply_success_with_joint_config_committed(&reply);
-    let reply = node1.asserted_handle_append_entries_request_success(&request, true);
+    let reply = node1.asserted_handle_append_entries_request_success(&request);
     node0.asserted_handle_append_entries_reply_success(&reply, true);
 
     assert!(!node0.cluster_config().is_joint_consensus());
@@ -97,7 +97,7 @@ fn election() {
         .asserted_handle_append_entries_request_success_new_leader(&request);
     let reply_from_node0 = cluster
         .node0
-        .asserted_handle_append_entries_request_success(&request, false);
+        .asserted_handle_append_entries_request_success(&request);
 
     cluster
         .node1
@@ -111,11 +111,30 @@ fn election() {
 
     let reply = cluster
         .node0
-        .asserted_handle_append_entries_request_success(&request, false);
+        .asserted_handle_append_entries_request_success(&request);
 
     cluster.node1.handle_message(&reply);
     assert_action!(cluster.node1, Action::NotifyHeartbeatSucceeded(heartbeat));
     assert_no_action!(cluster.node1);
+}
+
+#[test]
+fn restart() {
+    let mut cluster = ThreeNodeCluster::new();
+    cluster.init_cluster();
+    cluster.propose_command();
+
+    // Restart node1.
+    assert_eq!(cluster.node1.role(), Role::Follower);
+    cluster.node1.inner = Node::restart(
+        cluster.node1.id(),
+        cluster.node1.current_term(),
+        cluster.node1.voted_for(),
+        cluster.node1.cluster_config().clone(),
+        cluster.node1.log().clone(),
+    );
+
+    cluster.propose_command();
 }
 
 // TODO: snapshot
@@ -151,20 +170,71 @@ impl ThreeNodeCluster {
             let request = self
                 .node0
                 .asserted_handle_append_entries_reply_failure(&reply);
-            let reply = node.asserted_handle_append_entries_request_success(&request, true);
+            let reply = node.asserted_handle_append_entries_request_success(&request);
             if node.id() == id(1) {
                 let request = self
                     .node0
                     .asserted_handle_append_entries_reply_success_with_joint_config_committed(
                         &reply,
                     );
-                let reply = node.asserted_handle_append_entries_request_success(&request, true);
+                let reply = node.asserted_handle_append_entries_request_success(&request);
                 self.node0
                     .asserted_handle_append_entries_reply_success(&reply, true);
             } else {
                 self.node0
                     .asserted_handle_append_entries_reply_success(&reply, false);
             }
+        }
+    }
+
+    fn propose_command(&mut self) {
+        let mut commit_index = None;
+        let mut request = None;
+        for node in &mut [&mut self.node0, &mut self.node1, &mut self.node2] {
+            if node.role() != Role::Leader {
+                continue;
+            }
+            commit_index = node.inner.propose_command();
+            assert_action!(
+                node.inner,
+                append_log_entry(node.inner.log().last.prev(), LogEntry::Command)
+            );
+            let msg = append_entries_request(
+                &node.inner,
+                LogEntries::single(node.inner.log().last.prev(), &LogEntry::Command),
+            );
+            assert_action!(node.inner, broadcast_message(&msg));
+            assert_action!(node.inner, set_election_timeout());
+            assert_no_action!(node.inner);
+            request = Some(msg);
+            break;
+        }
+
+        let (Some(commit_index), Some(request)) = (commit_index, request) else {
+            panic!("No leader found.");
+        };
+
+        let mut replies = Vec::new();
+        for node in &mut [&mut self.node0, &mut self.node1, &mut self.node2] {
+            if node.role() == Role::Leader {
+                continue;
+            }
+
+            replies.push(node.asserted_handle_append_entries_request_success(&request));
+        }
+
+        let mut first = true;
+        for node in &mut [&mut self.node0, &mut self.node1, &mut self.node2] {
+            if node.role() != Role::Leader {
+                continue;
+            }
+
+            for reply in replies {
+                node.asserted_handle_append_entries_reply_success(&reply, first);
+                assert_eq!(node.commit_index(), commit_index);
+                first = false;
+            }
+            break;
         }
     }
 }
@@ -242,14 +312,9 @@ impl TestNode {
         reply
     }
 
-    fn asserted_handle_append_entries_request_success(
-        &mut self,
-        msg: &Message,
-        will_be_committed: bool,
-    ) -> Message {
+    fn asserted_handle_append_entries_request_success(&mut self, msg: &Message) -> Message {
         assert!(matches!(msg, Message::AppendEntriesRequest(_)));
 
-        self.handle_message(msg);
         let Message::AppendEntriesRequest(AppendEntriesRequest {
             entries,
             leader_commit,
@@ -258,14 +323,18 @@ impl TestNode {
         else {
             unreachable!();
         };
+
+        let commit_index = self.commit_index();
+
+        self.handle_message(msg);
         assert_eq!(self.log().last, entries.last);
 
         let reply = append_entries_reply(msg, self);
         if !entries.is_empty() {
             assert_action!(self, append_log_entries(&entries));
         }
-        if will_be_committed {
-            assert_action!(self, committed(*leader_commit));
+        if commit_index < *leader_commit && commit_index <= self.log().last.index {
+            assert_action!(self, committed(self.log().last.index.min(*leader_commit)));
         }
         assert_action!(self, unicast_message(msg.from(), &reply));
         assert_no_action!(self);

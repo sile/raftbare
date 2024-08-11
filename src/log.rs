@@ -39,6 +39,13 @@ impl LogEntries {
             .unwrap_or(self.prev.index)
     }
 
+    pub fn term_index(&self) -> LogIndex {
+        self.terms
+            .last_key_value()
+            .map(|(k, _)| *k)
+            .unwrap_or(self.prev.index)
+    }
+
     pub fn single(prev: LogEntryRef, entry: &LogEntry) -> Self {
         let mut this = Self::new(prev);
         this.append_entry(&entry);
@@ -139,6 +146,10 @@ impl LogEntryRef {
 
     pub const fn next(self) -> Self {
         Self::new(self.term, self.index.next())
+    }
+
+    pub const fn prev(self) -> Self {
+        Self::new(self.term, LogIndex::new(self.index.get() - 1))
     }
 }
 

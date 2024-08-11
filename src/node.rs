@@ -85,6 +85,8 @@ impl Node {
         log: LogEntries,
     ) -> Self {
         let mut node = Self::start(id);
+        node.action_queue.clear();
+
         node.current_term = current_term;
         node.voted_for = voted_for;
         node.log = log;
@@ -171,7 +173,7 @@ impl Node {
         self.leader_sn = self.leader_sn.next();
         self.check_heartbeat();
         self.enqueue_action(Action::SetElectionTimeout); // TODO: merge the same kind actions
-        self.update_commit_index_if_possible();
+        self.update_commit_index_if_possible(); // TODO: check single node
 
         self.log.last.index
     }
@@ -215,7 +217,7 @@ impl Node {
         debug_assert!(self.role.is_leader());
 
         let new_commit_index = self.quorum.commit_index();
-        if self.commit_index < new_commit_index {
+        if self.commit_index < new_commit_index && self.log.term_index() <= new_commit_index {
             self.commit(new_commit_index);
 
             if self.config.is_joint_consensus()
@@ -284,7 +286,7 @@ impl Node {
 
         if self.log.contains(entries.last) {
             // Already up-to-date.
-            return false;
+            return true;
         }
         if !self.log.contains_index(entries.prev.index) {
             return false;
@@ -454,8 +456,12 @@ impl Node {
         }
 
         if self.try_append_log_entries(&request.entries) {
-            if self.commit_index < request.leader_commit.min(self.log.last.index) {
-                self.commit(request.leader_commit);
+            let next_commit_index = request
+                .leader_commit
+                .min(self.log.last.index)
+                .min(request.entries.last.index); // TODO: Add note comment (entries could be truncated by action implementor)
+            if self.commit_index < next_commit_index {
+                self.commit(next_commit_index);
             }
         }
 
@@ -499,7 +505,9 @@ impl Node {
                     follower.match_index,
                 );
 
-                self.update_commit_index_if_possible();
+                if self.commit_index < follower.match_index {
+                    self.update_commit_index_if_possible();
+                }
             }
 
             if reply.last_entry.index == self.log.last.index {
