@@ -80,8 +80,6 @@ impl Node {
     }
 
     // TODO: restart (id: NodeId, current_term, voted_for, log_since_snapshot: LogEntries) -> Self
-    // TODO: consistent_query() or heartbeat() -> Heartbeat
-    // impl Heartbeat { pub fn handle_event(&mut self,.. ); pub fn is_latest_leader(&self) -> Option<bool>; }
 
     pub fn create_cluster(&mut self) -> bool {
         if self.current_term != Term::new(0) {
@@ -137,14 +135,19 @@ impl Node {
         heartbeat
     }
 
-    // TODO: fn propose_command(&mut self, n: usize) -> Result<()>;
+    pub fn propose_command(&mut self) -> Option<LogIndex> {
+        if self.role != Role::Leader {
+            return None;
+        }
+        Some(self.propose(LogEntry::Command))
+    }
 
     fn propose(&mut self, entry: LogEntry) -> LogIndex {
         debug_assert_eq!(self.role, Role::Leader);
 
         // TODO: Create LogEnties instance only once
         let prev_entry = self.log.last;
-        self.append_log_entry(&entry);
+        self.append_log_entry(&entry); // TODO: merge the same kind actions
         self.broadcast_message(Message::append_entries_request(
             self.current_term,
             self.id,
@@ -156,7 +159,7 @@ impl Node {
             .update_seqnum(&self.config, self.id, self.leader_sn, self.leader_sn.next());
         self.leader_sn = self.leader_sn.next();
         self.check_heartbeat();
-        self.enqueue_action(Action::SetElectionTimeout);
+        self.enqueue_action(Action::SetElectionTimeout); // TODO: merge the same kind actions
         self.update_commit_index_if_possible();
 
         self.log.last.index
