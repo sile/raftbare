@@ -79,7 +79,18 @@ impl Node {
         this
     }
 
-    // TODO: restart (id: NodeId, current_term, voted_for, log_since_snapshot: LogEntries) -> Self
+    pub fn restart(
+        id: NodeId,
+        current_term: Term,
+        voted_for: Option<NodeId>,
+        log: LogEntries,
+    ) -> Self {
+        let mut node = Self::start(id);
+        node.current_term = current_term;
+        node.voted_for = voted_for;
+        node.log = log;
+        node
+    }
 
     pub fn create_cluster(&mut self) -> bool {
         if self.current_term != Term::new(0) {
