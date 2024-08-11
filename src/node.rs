@@ -405,7 +405,9 @@ impl Node {
             Role::Follower => {
                 self.start_new_election();
             }
-            Role::Candidate => todo!(),
+            Role::Candidate => {
+                self.start_new_election();
+            }
             Role::Leader => todo!(),
         }
     }
