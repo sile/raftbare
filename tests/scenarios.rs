@@ -51,11 +51,11 @@ fn create_two_nodes_cluster() {
     let reply = node1.asserted_handle_first_append_entries_request(&request);
 
     let request = node0.asserted_handle_append_entries_reply_failure(&reply);
-    let reply = node1.asserted_handle_append_entries_request_success(&request);
+    let reply = node1.asserted_handle_append_entries_request_success(&request, true);
 
     let request =
         node0.asserted_handle_append_entries_reply_success_with_joint_config_committed(&reply);
-    let reply = node1.asserted_handle_append_entries_request_success(&request);
+    let reply = node1.asserted_handle_append_entries_request_success(&request, true);
     node0.asserted_handle_append_entries_reply_success(&reply, true);
 
     assert!(!node0.cluster_config().is_joint_consensus());
@@ -84,68 +84,20 @@ fn election() {
     cluster.init_cluster();
 
     // Trigger a new election.
-    cluster.node1.handle_election_timeout();
+    let request = cluster.node1.asserted_follower_election_timeout();
+    let reply = cluster
+        .node0
+        .asserted_handle_request_vote_request_success(&request);
 
-    let request = request_vote_request(
-        cluster.node1.current_term(),
-        cluster.node1.id(),
-        cluster.node1.log().last,
-    );
-    assert_action!(cluster.node1, save_current_term(t(2)));
-    assert_action!(cluster.node1, save_voted_for(Some(cluster.node1.id())));
-    assert_action!(cluster.node1, broadcast_message(&request));
-    assert_action!(cluster.node1, set_election_timeout());
-    assert_no_action!(cluster.node1);
-
-    cluster.node0.handle_message(&request);
-
-    let reply = request_vote_reply(cluster.node1.current_term(), cluster.node0.id(), true);
-    assert_action!(cluster.node0, save_current_term(t(2)));
-    assert_action!(cluster.node0, save_voted_for(Some(cluster.node1.id())));
-    assert_action!(cluster.node0, set_election_timeout());
-    assert_action!(cluster.node0, unicast_message(cluster.node1.id(), &reply));
-    assert_no_action!(cluster.node0);
-
-    let tail = cluster.node1.log().last;
-    cluster.node1.handle_message(&reply);
-    let request = append_entries_request(
-        &cluster.node1,
-        LogEntries::single(tail, &term_entry(cluster.node1.current_term())),
-    );
-    assert_action!(
-        cluster.node1,
-        append_log_entry(tail, term_entry(cluster.node1.current_term()))
-    );
-    assert_action!(cluster.node1, broadcast_message(&request));
-    assert_action!(cluster.node1, set_election_timeout());
-    assert_no_action!(cluster.node1);
-
-    cluster.node2.handle_message(&request);
-    let reply_from_node2 = append_entries_reply(&request, &cluster.node2);
-    assert_action!(cluster.node2, save_current_term(t(2)));
-    assert_action!(cluster.node2, save_voted_for(Some(cluster.node1.id())));
-    assert_action!(cluster.node2, set_election_timeout());
-    assert_action!(
-        cluster.node2,
-        append_log_entry(tail, term_entry(cluster.node1.current_term()))
-    );
-    assert_action!(
-        cluster.node2,
-        unicast_message(cluster.node1.id(), &reply_from_node2)
-    );
-    assert_no_action!(cluster.node2);
-
-    cluster.node0.handle_message(&request);
-    let reply_from_node0 = append_entries_reply(&request, &cluster.node0);
-    assert_action!(
-        cluster.node0,
-        append_log_entry(tail, term_entry(cluster.node1.current_term()))
-    );
-    assert_action!(
-        cluster.node0,
-        unicast_message(cluster.node1.id(), &reply_from_node0)
-    );
-    assert_no_action!(cluster.node0);
+    let request = cluster
+        .node1
+        .asserted_handle_request_vote_reply_majority_vote_granted(&reply);
+    let reply_from_node2 = cluster
+        .node2
+        .asserted_handle_append_entries_request_success_new_leader(&request);
+    let reply_from_node0 = cluster
+        .node0
+        .asserted_handle_append_entries_request_success(&request, false);
 
     //
     cluster.node1.handle_message(&reply_from_node0);
@@ -202,14 +154,14 @@ impl ThreeNodeCluster {
             let request = self
                 .node0
                 .asserted_handle_append_entries_reply_failure(&reply);
-            let reply = node.asserted_handle_append_entries_request_success(&request);
+            let reply = node.asserted_handle_append_entries_request_success(&request, true);
             if node.id() == id(1) {
                 let request = self
                     .node0
                     .asserted_handle_append_entries_reply_success_with_joint_config_committed(
                         &reply,
                     );
-                let reply = node.asserted_handle_append_entries_request_success(&request);
+                let reply = node.asserted_handle_append_entries_request_success(&request, true);
                 self.node0
                     .asserted_handle_append_entries_reply_success(&reply, true);
             } else {
@@ -293,7 +245,11 @@ impl TestNode {
         reply
     }
 
-    fn asserted_handle_append_entries_request_success(&mut self, msg: &Message) -> Message {
+    fn asserted_handle_append_entries_request_success(
+        &mut self,
+        msg: &Message,
+        will_be_committed: bool,
+    ) -> Message {
         assert!(matches!(msg, Message::AppendEntriesRequest(_)));
 
         self.handle_message(msg);
@@ -309,7 +265,9 @@ impl TestNode {
 
         let reply = append_entries_reply(msg, self);
         assert_action!(self, append_log_entries(&entries));
-        assert_action!(self, committed(*leader_commit));
+        if will_be_committed {
+            assert_action!(self, committed(*leader_commit));
+        }
         assert_action!(self, unicast_message(msg.from(), &reply));
         assert_no_action!(self);
 
@@ -382,6 +340,81 @@ impl TestNode {
             assert_action!(self, committed(reply.last_entry.index));
         }
         assert_no_action!(self);
+    }
+
+    fn asserted_follower_election_timeout(&mut self) -> Message {
+        assert_eq!(self.role(), Role::Follower);
+
+        let prev_term = self.current_term();
+        self.handle_election_timeout();
+        assert_eq!(self.role(), Role::Candidate);
+        assert_eq!(self.current_term(), prev_term.next());
+
+        let request = request_vote_request(self.current_term(), self.id(), self.log().last);
+        assert_action!(self, save_current_term(prev_term.next()));
+        assert_action!(self, save_voted_for(Some(self.id())));
+        assert_action!(self, broadcast_message(&request));
+        assert_action!(self, set_election_timeout());
+        assert_no_action!(self);
+
+        request
+    }
+
+    fn asserted_handle_request_vote_request_success(&mut self, msg: &Message) -> Message {
+        assert!(matches!(msg, Message::RequestVoteRequest(_)));
+
+        self.handle_message(&msg);
+
+        let reply = request_vote_reply(msg.term(), self.id(), true);
+        assert_action!(self, save_current_term(msg.term()));
+        assert_action!(self, save_voted_for(Some(msg.from())));
+        assert_action!(self, set_election_timeout());
+        assert_action!(self, unicast_message(msg.from(), &reply));
+        assert_no_action!(self);
+
+        reply
+    }
+
+    fn asserted_handle_request_vote_reply_majority_vote_granted(
+        &mut self,
+        msg: &Message,
+    ) -> Message {
+        assert!(matches!(msg, Message::RequestVoteReply(_)));
+
+        let tail = self.log().last;
+        self.handle_message(&msg);
+        let request = append_entries_request(
+            self,
+            LogEntries::single(tail, &term_entry(self.current_term())),
+        );
+        assert_action!(
+            self,
+            append_log_entry(tail, term_entry(self.current_term()))
+        );
+        assert_action!(self, broadcast_message(&request));
+        assert_action!(self, set_election_timeout());
+        assert_no_action!(self);
+
+        request
+    }
+
+    fn asserted_handle_append_entries_request_success_new_leader(
+        &mut self,
+        msg: &Message,
+    ) -> Message {
+        assert!(matches!(msg, Message::AppendEntriesRequest(_)));
+
+        let tail = self.log().last;
+        self.handle_message(&msg);
+        let reply = append_entries_reply(&msg, self);
+        assert_action!(self, save_current_term(msg.term()));
+        assert_action!(self, save_voted_for(Some(msg.from())));
+        assert_action!(self, set_election_timeout());
+        assert_action!(self, append_log_entry(tail, term_entry(msg.term())));
+        assert_action!(self, unicast_message(msg.from(), &reply));
+        assert_no_action!(self);
+
+        reply
     }
 }
 
