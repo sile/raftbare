@@ -1,5 +1,3 @@
-use std::ops::{Deref, DerefMut};
-
 use raftbare::{
     action::Action,
     config::ClusterConfig,
@@ -8,6 +6,7 @@ use raftbare::{
     node::{Node, NodeId, Role},
     Term,
 };
+use std::ops::{Deref, DerefMut};
 
 macro_rules! assert_no_action {
     ($node:expr) => {
@@ -124,7 +123,45 @@ fn election() {
     assert_no_action!(cluster.node1);
 
     cluster.node2.handle_message(&request);
+    let reply_from_node2 = append_entries_reply(
+        cluster.node2.current_term(),
+        cluster.node2.id(),
+        cluster.node2.log().last,
+    );
+    assert_action!(cluster.node2, save_current_term(t(2)));
+    assert_action!(cluster.node2, save_voted_for(Some(cluster.node1.id())));
+    assert_action!(cluster.node2, set_election_timeout());
+    assert_action!(
+        cluster.node2,
+        append_log_entry(tail, term_entry(cluster.node1.current_term()))
+    );
+    assert_action!(
+        cluster.node2,
+        unicast_message(cluster.node1.id(), &reply_from_node2)
+    );
     assert_no_action!(cluster.node2);
+
+    cluster.node0.handle_message(&request);
+    let reply_from_node0 = append_entries_reply(
+        cluster.node0.current_term(),
+        cluster.node0.id(),
+        cluster.node0.log().last,
+    );
+    assert_action!(
+        cluster.node0,
+        append_log_entry(tail, term_entry(cluster.node1.current_term()))
+    );
+    assert_action!(
+        cluster.node0,
+        unicast_message(cluster.node1.id(), &reply_from_node0)
+    );
+    assert_no_action!(cluster.node0);
+
+    //
+    cluster.node1.handle_message(&reply_from_node0);
+    assert_action!(cluster.node1, committed(cluster.node0.log().last.index));
+    cluster.node1.handle_message(&reply_from_node2);
+    assert_no_action!(cluster.node1);
 }
 
 // TODO: snapshot
