@@ -163,6 +163,15 @@ fn truncate_log() {
     let reply = cluster
         .node1
         .asserted_handle_request_vote_request_success(&request);
+    let request = cluster
+        .node2
+        .asserted_handle_request_vote_reply_majority_vote_granted(&reply);
+    assert_eq!(cluster.node2.role(), Role::Leader);
+
+    // The uncommitted log entries on node0 are truncated.
+    let reply = cluster
+        .node0
+        .asserted_handle_append_entries_request_success(&request);
 }
 
 // TODO: snapshot

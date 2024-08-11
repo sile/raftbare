@@ -329,7 +329,6 @@ impl Node {
                 && self.role.is_follower()
                 && self.voted_for.map_or(false, |id| id != msg.from())
             {
-                dbg!("here1");
                 return;
             }
             self.enter_follower(msg.term());
@@ -347,7 +346,6 @@ impl Node {
     }
 
     fn handle_request_vote_request(&mut self, request: &RequestVoteRequest) {
-        dbg!("here2");
         if request.term < self.current_term {
             self.unicast_message(
                 request.from,
