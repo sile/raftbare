@@ -32,6 +32,13 @@ impl LogEntries {
         self.prev == self.last
     }
 
+    pub fn latest_config_index(&self) -> LogIndex {
+        self.configs
+            .last_key_value()
+            .map(|(k, _)| *k)
+            .unwrap_or(self.prev.index)
+    }
+
     pub fn single(prev: LogEntryRef, entry: &LogEntry) -> Self {
         let mut this = Self::new(prev);
         this.append_entry(&entry);

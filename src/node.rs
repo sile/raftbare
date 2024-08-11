@@ -43,7 +43,6 @@ pub struct Node {
     leader_index: LogIndex,
     followers: BTreeMap<NodeId, Follower>,
     quorum: Quorum,
-    joint_consensus_index: Option<LogIndex>,
     pub leader_sn: SequenceNumber, // TODO: priv
     ongoing_heartbeats: VecDeque<Heartbeat>,
 }
@@ -71,7 +70,6 @@ impl Node {
             leader_index: LogIndex::new(0),
             followers: BTreeMap::new(),
             quorum,
-            joint_consensus_index: None,
             leader_sn: SequenceNumber::new(),
             ongoing_heartbeats: VecDeque::new(),
         };
@@ -83,12 +81,14 @@ impl Node {
         id: NodeId,
         current_term: Term,
         voted_for: Option<NodeId>,
+        config: ClusterConfig,
         log: LogEntries,
     ) -> Self {
         let mut node = Self::start(id);
         node.current_term = current_term;
         node.voted_for = voted_for;
         node.log = log;
+        node.config = config;
         node
     }
 
@@ -218,9 +218,8 @@ impl Node {
         if self.commit_index < new_commit_index {
             self.commit(new_commit_index);
 
-            if self
-                .joint_consensus_index
-                .map_or(false, |i| i <= new_commit_index)
+            if self.config.is_joint_consensus()
+                && self.log.latest_config_index() <= new_commit_index
             {
                 self.finalize_joint_consensus();
             }
@@ -230,8 +229,6 @@ impl Node {
     fn finalize_joint_consensus(&mut self) {
         debug_assert!(self.role.is_leader());
         debug_assert!(self.config.is_joint_consensus());
-
-        self.joint_consensus_index = None;
 
         let mut new_config = self.config.clone();
         new_config.voters = std::mem::take(&mut new_config.new_voters);
@@ -253,9 +250,6 @@ impl Node {
         }
 
         let index = self.propose(LogEntry::ClusterConfig(new_config.clone()));
-        if self.config.is_joint_consensus() {
-            self.joint_consensus_index = Some(index);
-        }
         Ok(index)
     }
 
