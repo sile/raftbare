@@ -45,6 +45,7 @@ pub struct Node {
     quorum: Quorum,
     joint_consensus_index: Option<LogIndex>,
     pub leader_sn: SequenceNumber, // TODO: priv
+    ongoing_heartbeats: VecDeque<Heartbeat>,
 }
 
 impl Node {
@@ -72,6 +73,7 @@ impl Node {
             quorum,
             joint_consensus_index: None,
             leader_sn: SequenceNumber::new(),
+            ongoing_heartbeats: VecDeque::new(),
         };
         this.enqueue_action(Action::CreateLog(LogEntry::Term(term)));
         this
@@ -112,16 +114,26 @@ impl Node {
         self.enqueue_action(Action::NotifyCommitted(index));
     }
 
-    // TODOO: rename
-    // pub fn heartbeat(&mut self) -> Heartbeat {
-    //     let request = Message::append_entries_request(
-    //         self.current_term,
-    //         self.id,
-    //         self.commit_index,
-    //         LogEntries::new(self.log.last),
-    //     );
-    //     self.broadcast_message(&request);
-    // }
+    // TODOO: rename(?)
+    pub fn heartbeat(&mut self) -> Heartbeat {
+        // TODO: handle single node case
+
+        let sn = self.leader_sn;
+        let request = Message::append_entries_request(
+            self.current_term,
+            self.id,
+            self.commit_index,
+            sn,
+            LogEntries::new(self.log.last),
+        );
+        self.leader_sn = sn.next();
+        self.broadcast_message(request);
+
+        let heartbeat = Heartbeat::new(self.current_term, sn);
+        self.ongoing_heartbeats.push_back(heartbeat);
+
+        heartbeat
+    }
 
     // TODO: fn propose_command(&mut self, n: usize) -> Result<()>;
 
@@ -384,6 +396,7 @@ impl Node {
         self.rebuild_followers();
         self.rebuild_quorum();
         self.leader_sn = SequenceNumber::new();
+        self.ongoing_heartbeats = VecDeque::new();
 
         self.propose(LogEntry::Term(self.current_term));
     }
@@ -425,6 +438,9 @@ impl Node {
                 self.commit(request.leader_commit);
             }
         }
+
+        // TODO(?): Don't reply if request.leader_sn is old
+        //          (the reply will be discarded in the leader side anyway)
         self.reply_append_entries(request);
     }
 
@@ -437,9 +453,12 @@ impl Node {
             // Replies from unknown nodes are ignored.
             return;
         };
+        follower.max_sn = reply.leader_sn.max(follower.max_sn);
+
         if reply.last_entry.index < follower.match_index {
             // Maybe delayed reply.
             // (or the follower's storage has been corrupted. Raft does not handle this case though.)
+            // TODO: consider follower.last_sn instead of match index here
             return;
         };
 
@@ -561,12 +580,26 @@ pub enum ChangeClusterConfigError {
 #[derive(Debug, Clone)]
 pub struct Follower {
     pub match_index: LogIndex,
+    pub max_sn: SequenceNumber,
 }
 
 impl Follower {
     pub fn new() -> Self {
         Self {
             match_index: LogIndex::new(0),
+            max_sn: SequenceNumber::from_u64(0),
         }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct Heartbeat {
+    pub term: Term,
+    pub sn: SequenceNumber,
+}
+
+impl Heartbeat {
+    fn new(term: Term, sn: SequenceNumber) -> Self {
+        Self { term, sn }
     }
 }

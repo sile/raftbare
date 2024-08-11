@@ -83,7 +83,7 @@ pub struct SequenceNumber(u64);
 
 impl SequenceNumber {
     pub const fn new() -> Self {
-        Self(0)
+        Self(1)
     }
 
     pub const fn get(self) -> u64 {

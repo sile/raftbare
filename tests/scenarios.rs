@@ -152,6 +152,10 @@ fn election() {
     assert_action!(cluster.node1, committed(cluster.node0.log().last.index));
     cluster.node1.handle_message(&reply_from_node2);
     assert_no_action!(cluster.node1);
+
+    //
+    let _heartbeat = cluster.node1.heartbeat();
+    assert_no_action!(cluster.node1);
 }
 
 // TODO: snapshot

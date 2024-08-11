@@ -1,7 +1,7 @@
 use crate::{
     log::{LogEntries, LogEntry, LogIndex},
     message::Message,
-    node::NodeId,
+    node::{Heartbeat, NodeId},
     Term,
 };
 
@@ -21,5 +21,6 @@ pub enum Action {
     SetElectionTimeout,
     InstallSnapshot, // {LogEntries)
     NotifyCommitted(LogIndex),
+    NotifyHeartbeatSucceeded(Heartbeat),
     // NotifyLogTruncated or NotifyRejected or NotifyCanceled
 }
