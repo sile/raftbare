@@ -137,6 +137,34 @@ fn restart() {
     cluster.propose_command();
 }
 
+#[test]
+fn truncate_log() {
+    let mut cluster = ThreeNodeCluster::new();
+    cluster.init_cluster();
+    cluster.propose_command();
+
+    // Propose a command, but not broadcast the message.
+    assert_eq!(cluster.node0.role(), Role::Leader);
+    cluster.node0.propose_command();
+    while let Some(_) = cluster.node0.next_action() {}
+
+    // Make node2 the leader.
+    let _request = cluster.node2.asserted_follower_election_timeout();
+    let request = cluster.node2.asserted_candidate_election_timeout(); // Increase term.
+
+    // The log index of node0 is greater than node2 => failed.
+    cluster
+        .node0
+        .asserted_handle_request_vote_request_failed(&request);
+    assert_eq!(cluster.node0.role(), Role::Follower);
+
+    // The log index of node1 is equal to node2 => granted.
+    let _ = cluster.node1.asserted_follower_election_timeout();
+    let reply = cluster
+        .node1
+        .asserted_handle_request_vote_request_success(&request);
+}
+
 // TODO: snapshot
 
 #[derive(Debug)]
@@ -428,6 +456,24 @@ impl TestNode {
         request
     }
 
+    fn asserted_candidate_election_timeout(&mut self) -> Message {
+        assert_eq!(self.role(), Role::Candidate);
+
+        let prev_term = self.current_term();
+        self.handle_election_timeout();
+        assert_eq!(self.role(), Role::Candidate);
+        assert_eq!(self.current_term(), prev_term.next());
+
+        let request = request_vote_request(self.current_term(), self.id(), self.log().last);
+        assert_action!(self, save_current_term(prev_term.next()));
+        assert_action!(self, save_voted_for(Some(self.id())));
+        assert_action!(self, broadcast_message(&request));
+        assert_action!(self, set_election_timeout());
+        assert_no_action!(self);
+
+        request
+    }
+
     fn asserted_handle_request_vote_request_success(&mut self, msg: &Message) -> Message {
         assert!(matches!(msg, Message::RequestVoteRequest(_)));
 
@@ -441,6 +487,16 @@ impl TestNode {
         assert_no_action!(self);
 
         reply
+    }
+
+    fn asserted_handle_request_vote_request_failed(&mut self, msg: &Message) {
+        assert!(matches!(msg, Message::RequestVoteRequest(_)));
+
+        self.handle_message(&msg);
+        assert_action!(self, save_current_term(msg.term()));
+        assert_action!(self, Action::SaveVotedFor(None));
+        assert_action!(self, set_election_timeout());
+        assert_no_action!(self);
     }
 
     fn asserted_handle_request_vote_reply_majority_vote_granted(

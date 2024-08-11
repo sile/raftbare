@@ -27,7 +27,7 @@ impl NodeId {
 #[derive(Debug, Clone)]
 pub struct Node {
     id: NodeId,
-    action_queue: VecDeque<Action>,
+    action_queue: VecDeque<Action>, // TODO: BTreeMap<ActionKind,Action>
     role: Role,
     voted_for: Option<NodeId>,
     current_term: Term,
@@ -313,6 +313,13 @@ impl Node {
 
     fn set_voted_for(&mut self, voted_for: Option<NodeId>) {
         self.voted_for = voted_for;
+
+        for action in &mut self.action_queue {
+            if matches!(action, Action::SaveVotedFor(..)) {
+                *action = Action::SaveVotedFor(voted_for);
+                return;
+            }
+        }
         self.enqueue_action(Action::SaveVotedFor(voted_for));
     }
 
@@ -322,10 +329,10 @@ impl Node {
                 && self.role.is_follower()
                 && self.voted_for.map_or(false, |id| id != msg.from())
             {
+                dbg!("here1");
                 return;
             }
-
-            self.enter_follower_with_vote(msg.term(), msg.from());
+            self.enter_follower(msg.term());
         }
 
         match msg {
@@ -340,6 +347,7 @@ impl Node {
     }
 
     fn handle_request_vote_request(&mut self, request: &RequestVoteRequest) {
+        dbg!("here2");
         if request.term < self.current_term {
             self.unicast_message(
                 request.from,
@@ -347,7 +355,14 @@ impl Node {
             );
             return;
         }
-        if self.voted_for != Some(request.from) || self.log.last.index > request.last_entry.index {
+        if self.log.last.index > request.last_entry.index {
+            return;
+        }
+
+        if self.voted_for.is_none() {
+            self.set_voted_for(Some(request.from));
+        }
+        if self.voted_for != Some(request.from) {
             return;
         }
         self.unicast_message(
@@ -423,13 +438,12 @@ impl Node {
         self.propose(LogEntry::Term(self.current_term));
     }
 
-    fn enter_follower_with_vote(&mut self, term: Term, voted_for: NodeId) {
+    fn enter_follower(&mut self, term: Term) {
         self.role = Role::Follower;
         self.set_current_term(term);
-        self.set_voted_for(Some(voted_for));
+        self.set_voted_for(None);
         // self.quorum.clear();
         self.followers.clear();
-
         self.enqueue_action(Action::SetElectionTimeout);
     }
 
@@ -453,6 +467,10 @@ impl Node {
             // Stale request.
             self.reply_append_entries(request);
             return;
+        }
+
+        if self.voted_for.is_none() {
+            self.set_voted_for(Some(request.from));
         }
 
         if self.try_append_log_entries(&request.entries) {
