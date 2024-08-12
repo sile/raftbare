@@ -566,10 +566,10 @@ impl TestNode {
         let prev_term = self.current_term();
         self.handle_election_timeout();
         assert_eq!(self.role(), Role::Candidate);
-        assert_eq!(self.current_term(), prev_term.next());
+        assert_eq!(self.current_term(), next_term(prev_term));
 
         let request = request_vote_request(self.current_term(), self.id(), self.log().last);
-        assert_action!(self, save_current_term(prev_term.next()));
+        assert_action!(self, save_current_term(next_term(prev_term)));
         assert_action!(self, save_voted_for(Some(self.id())));
         assert_action!(self, broadcast_message(&request));
         assert_action!(self, set_election_timeout());
@@ -584,10 +584,10 @@ impl TestNode {
         let prev_term = self.current_term();
         self.handle_election_timeout();
         assert_eq!(self.role(), Role::Candidate);
-        assert_eq!(self.current_term(), prev_term.next());
+        assert_eq!(self.current_term(), next_term(prev_term));
 
         let request = request_vote_request(self.current_term(), self.id(), self.log().last);
-        assert_action!(self, save_current_term(prev_term.next()));
+        assert_action!(self, save_current_term(next_term(prev_term)));
         assert_action!(self, save_voted_for(Some(self.id())));
         assert_action!(self, broadcast_message(&request));
         assert_action!(self, set_election_timeout());
@@ -787,4 +787,8 @@ fn save_voted_for(voted_for: Option<NodeId>) -> Action {
 
 fn committed(index: LogIndex) -> Action {
     Action::NotifyCommitted(index)
+}
+
+fn next_term(term: Term) -> Term {
+    Term::new(term.get() + 1)
 }

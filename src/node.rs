@@ -243,6 +243,7 @@ impl Node {
         &mut self,
         new_config: &ClusterConfig,
     ) -> Result<LogIndex, ChangeClusterConfigError> {
+        // return: s/LogIndex/CommitPromise/
         if !self.role.is_leader() {
             return Err(ChangeClusterConfigError::NotLeader);
         }
