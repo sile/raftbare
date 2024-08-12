@@ -11,14 +11,23 @@ use crate::{
 };
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
+/// Node identifier ([`u64`]).
+///
+/// Note that if you want to distinguish nodes by their names (not integers),
+/// mapping node names to identifiers is out of the scope of this crate.
+///
+/// Besides, each [`Node`] in a cluster can have a different mapping of names to identifiers.
+/// In this case, it is necessary to remap [`NodeId`]s in [`Message`]s before delivering them to other nodes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct NodeId(u64);
 
 impl NodeId {
+    /// Makes a new [`NodeId`] instance.
     pub const fn new(id: u64) -> Self {
         NodeId(id)
     }
 
+    /// Returns the value of this identifier.
     pub const fn get(self) -> u64 {
         self.0
     }
