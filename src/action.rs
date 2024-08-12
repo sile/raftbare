@@ -1,7 +1,7 @@
 use crate::{
     log::{LogEntries, LogEntry, LogIndex, Snapshot},
     message::Message,
-    node::{Heartbeat, NodeId},
+    node::{HeartbeatPromise, NodeId},
     Term,
 };
 
@@ -17,12 +17,12 @@ pub enum Action {
 
     // TODO: delete
     NotifyCommitted(LogIndex),
-    NotifyHeartbeatSucceeded(Heartbeat),
+    NotifyHeartbeatSucceeded(HeartbeatPromise),
 
     // Can drop this message especially if there is another ongoing AppendEntriesRPC
     BroadcastMessage(Message),
     UnicastMessage(NodeId, Message),
-    InstallSnapshot(NodeId, Snapshot),
+    InstallSnapshot(NodeId, Snapshot), // TODO: Remove the second parameter
 }
 
 // TODO

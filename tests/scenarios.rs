@@ -1,10 +1,7 @@
 use raftbare::{
-    action::Action,
-    config::ClusterConfig,
-    log::{LogEntries, LogEntry, LogEntryRef, LogIndex, Snapshot},
-    message::{AppendEntriesRequest, Message, SequenceNumber},
-    node::{Heartbeat, Node, NodeId, Role},
-    Term,
+    message::AppendEntriesRequest,
+    Action, ClusterConfig, HeartbeatPromise, Message, MessageSeqNum, Node, NodeId, Role, Term,
+    {LogEntries, LogEntry, LogEntryRef, LogIndex, Snapshot},
 };
 use std::ops::{Deref, DerefMut};
 
@@ -666,7 +663,7 @@ impl TestNode {
         reply
     }
 
-    fn asserted_heartbeat(&mut self) -> (Heartbeat, Message) {
+    fn asserted_heartbeat(&mut self) -> (HeartbeatPromise, Message) {
         let heartbeat = self.heartbeat();
         let request = append_entries_request(self, LogEntries::new(self.log().last));
         assert_action!(self, broadcast_message(&request));
@@ -743,7 +740,7 @@ fn append_entries_request(leader: &Node, entries: LogEntries) -> Message {
         leader.current_term(),
         leader.id(),
         leader.commit_index(),
-        SequenceNumber::from_u64(leader.leader_sn.get() - 1),
+        MessageSeqNum::from_u64(leader.leader_sn.get() - 1),
         entries,
     )
 }

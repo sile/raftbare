@@ -51,7 +51,7 @@ impl Message {
         term: Term,
         leader_id: NodeId,
         leader_commit: LogIndex,
-        leader_sn: SequenceNumber,
+        leader_sn: MessageSeqNum,
         entries: LogEntries,
     ) -> Self {
         Self::AppendEntriesRequest(AppendEntriesRequest {
@@ -66,7 +66,7 @@ impl Message {
     pub fn append_entries_reply(
         term: Term,
         from: NodeId,
-        leader_sn: SequenceNumber,
+        leader_sn: MessageSeqNum,
         last_entry: LogEntryRef,
     ) -> Self {
         Self::AppendEntriesReply(AppendEntriesReply {
@@ -79,9 +79,9 @@ impl Message {
 }
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub struct SequenceNumber(u64);
+pub struct MessageSeqNum(u64);
 
-impl SequenceNumber {
+impl MessageSeqNum {
     pub const fn new() -> Self {
         Self(1)
     }
@@ -118,7 +118,7 @@ pub struct AppendEntriesRequest {
     pub term: Term,
     pub from: NodeId,
     pub leader_commit: LogIndex,
-    pub leader_sn: SequenceNumber,
+    pub leader_sn: MessageSeqNum,
     pub entries: LogEntries,
 }
 
@@ -126,6 +126,8 @@ pub struct AppendEntriesRequest {
 pub struct AppendEntriesReply {
     pub term: Term,
     pub from: NodeId,
-    pub leader_sn: SequenceNumber,
+    pub leader_sn: MessageSeqNum,
     pub last_entry: LogEntryRef,
 }
+
+// TODO: MessageHeader

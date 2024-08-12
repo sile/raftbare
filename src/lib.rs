@@ -1,10 +1,15 @@
-// TODO: private
-pub mod action;
-pub mod config;
-pub mod log;
-pub mod message;
-pub mod node;
-pub mod quorum;
+mod action;
+mod config;
+mod log;
+pub mod message; // TODO:
+mod node;
+mod quorum;
+
+pub use action::Action;
+pub use config::ClusterConfig;
+pub use log::{LogEntries, LogEntry, LogEntryRef, LogIndex, Snapshot};
+pub use message::{Message, MessageSeqNum};
+pub use node::{ChangeClusterConfigError, HeartbeatPromise, Node, NodeId, Role};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct Term(u64);

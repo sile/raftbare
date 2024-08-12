@@ -3,8 +3,8 @@ use crate::{
     config::ClusterConfig,
     log::{LogEntries, LogEntry, LogEntryRef, LogIndex, Snapshot},
     message::{
-        AppendEntriesReply, AppendEntriesRequest, Message, RequestVoteReply, RequestVoteRequest,
-        SequenceNumber,
+        AppendEntriesReply, AppendEntriesRequest, Message, MessageSeqNum, RequestVoteReply,
+        RequestVoteRequest,
     },
     quorum::Quorum,
     Term,
@@ -43,8 +43,8 @@ pub struct Node {
     leader_index: LogIndex,
     followers: BTreeMap<NodeId, Follower>,
     quorum: Quorum,
-    pub leader_sn: SequenceNumber, // TODO: priv
-    ongoing_heartbeats: VecDeque<Heartbeat>,
+    pub leader_sn: MessageSeqNum, // TODO: priv
+    ongoing_heartbeats: VecDeque<HeartbeatPromise>,
 }
 
 impl Node {
@@ -70,7 +70,7 @@ impl Node {
             leader_index: LogIndex::new(0),
             followers: BTreeMap::new(),
             quorum,
-            leader_sn: SequenceNumber::new(),
+            leader_sn: MessageSeqNum::new(),
             ongoing_heartbeats: VecDeque::new(),
         };
         this.enqueue_action(Action::CreateLog(LogEntry::Term(term)));
@@ -127,7 +127,7 @@ impl Node {
     }
 
     // TODOO: rename(?)
-    pub fn heartbeat(&mut self) -> Heartbeat {
+    pub fn heartbeat(&mut self) -> HeartbeatPromise {
         // TODO: handle single node case
 
         let sn = self.leader_sn;
@@ -143,7 +143,7 @@ impl Node {
         self.leader_sn = sn.next();
         self.broadcast_message(request);
 
-        let heartbeat = Heartbeat::new(self.current_term, sn);
+        let heartbeat = HeartbeatPromise::new(self.current_term, sn);
         self.ongoing_heartbeats.push_back(heartbeat);
 
         heartbeat
@@ -197,13 +197,13 @@ impl Node {
         self.quorum
             .update_match_index(&self.config, self.id, zero, self.log.last.index);
         self.quorum
-            .update_seqnum(&self.config, self.id, SequenceNumber::new(), self.leader_sn);
+            .update_seqnum(&self.config, self.id, MessageSeqNum::new(), self.leader_sn);
 
         for (&id, follower) in &mut self.followers {
             self.quorum
                 .update_match_index(&self.config, id, zero, follower.match_index);
             self.quorum
-                .update_seqnum(&self.config, id, SequenceNumber::new(), follower.max_sn);
+                .update_seqnum(&self.config, id, MessageSeqNum::new(), follower.max_sn);
         }
     }
 
@@ -466,7 +466,7 @@ impl Node {
         self.followers.clear();
         self.rebuild_followers();
         self.rebuild_quorum();
-        self.leader_sn = SequenceNumber::new();
+        self.leader_sn = MessageSeqNum::new();
         self.ongoing_heartbeats = VecDeque::new();
 
         self.propose(LogEntry::Term(self.current_term));
@@ -683,27 +683,30 @@ pub enum ChangeClusterConfigError {
 #[derive(Debug, Clone)]
 pub struct Follower {
     pub match_index: LogIndex,
-    pub max_sn: SequenceNumber,
+    pub max_sn: MessageSeqNum,
 }
 
 impl Follower {
     pub fn new() -> Self {
         Self {
             match_index: LogIndex::new(0),
-            max_sn: SequenceNumber::from_u64(0),
+            max_sn: MessageSeqNum::from_u64(0),
         }
     }
 }
 
+// TODO: move
 // TODO: s/../HeartbeatPromise (or else)/
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct Heartbeat {
+pub struct HeartbeatPromise {
     pub term: Term,
-    pub sn: SequenceNumber,
+    pub sn: MessageSeqNum,
 }
 
-impl Heartbeat {
-    fn new(term: Term, sn: SequenceNumber) -> Self {
+impl HeartbeatPromise {
+    fn new(term: Term, sn: MessageSeqNum) -> Self {
         Self { term, sn }
     }
 }
+
+// TODO: PromiseState { Pending, Accepted, Rejected }
