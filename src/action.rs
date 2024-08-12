@@ -1,5 +1,5 @@
 use crate::{
-    log::{LogEntries, LogEntry, LogIndex},
+    log::{LogEntries, LogEntry, LogIndex, Snapshot},
     message::Message,
     node::{Heartbeat, NodeId},
     Term,
@@ -12,19 +12,17 @@ pub enum Action {
     // Synchronous actions (if async, the consistency is not guaranteed)
     SaveCurrentTerm(Term),
     SaveVotedFor(Option<NodeId>),
-    // SaveClusterConfig
     CreateLog(LogEntry),
     AppendLogEntries(LogEntries),
-    //InstallSnapshot, // {LogEntries)
 
     // TODO: delete
     NotifyCommitted(LogIndex),
     NotifyHeartbeatSucceeded(Heartbeat),
-    // NotifyLogTruncated or NotifyRejected or NotifyCanceled
 
     // Can drop this message especially if there is another ongoing AppendEntriesRPC
     BroadcastMessage(Message),
     UnicastMessage(NodeId, Message),
+    InstallSnapshot(NodeId, Snapshot),
 }
 
 // TODO

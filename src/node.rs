@@ -1,7 +1,7 @@
 use crate::{
     action::Action,
     config::ClusterConfig,
-    log::{LogEntries, LogEntry, LogEntryRef, LogIndex},
+    log::{LogEntries, LogEntry, LogEntryRef, LogIndex, Snapshot},
     message::{
         AppendEntriesReply, AppendEntriesRequest, Message, RequestVoteReply, RequestVoteRequest,
         SequenceNumber,
@@ -416,6 +416,34 @@ impl Node {
         }
     }
 
+    pub fn is_valid_snapshot(&self, snapshot: &Snapshot) -> bool {
+        if snapshot.last_entry.index < self.log.prev.index {
+            return false;
+        }
+        if self.log.last.index < snapshot.last_entry.index {
+            return self.role != Role::Leader;
+        }
+        if !self.log.contains(snapshot.last_entry) {
+            return false;
+        }
+        self.log.get_config(snapshot.last_entry.index) == Some(&snapshot.cluster_config)
+    }
+
+    pub fn handle_snapshot_installed(&mut self, snapshot: Snapshot) -> bool {
+        if !self.is_valid_snapshot(&snapshot) {
+            return false;
+        }
+        if let Some(log) = self.log.since(snapshot.last_entry) {
+            self.log = log;
+            self.log
+                .configs
+                .insert(snapshot.last_entry.index, snapshot.cluster_config);
+        } else {
+            self.log = LogEntries::from_snapshot(snapshot);
+        }
+        true
+    }
+
     fn start_new_election(&mut self) {
         self.role = Role::Candidate;
         self.set_current_term(self.current_term.next());
@@ -518,7 +546,7 @@ impl Node {
         };
 
         let self_last_entry = self.log.last; // Save the current last entry before (maybe) updating it.
-        let last_entry = if self.log.contains(reply.last_entry) {
+        if self.log.contains(reply.last_entry) {
             if follower.match_index < reply.last_entry.index {
                 let old_match_index = follower.match_index;
                 follower.match_index = reply.last_entry.index;
@@ -539,14 +567,13 @@ impl Node {
                 // Up-to-date.
                 return;
             }
-            reply.last_entry
-        } else {
-            // TODO: find matched log entry (decrement next_index and send empty entries)
-            todo!()
-        };
+        }
+
+        let last_entry = reply.last_entry;
         if last_entry.index < self.log.prev.index {
-            // send snapshot
-            todo!()
+            // Send snapshot
+            let snapshot = self.log.current_snapshot();
+            self.enqueue_action(Action::InstallSnapshot(reply.from, snapshot));
         } else if last_entry.index < self_last_entry.index {
             // send delta
             let Some(delta) = self.log.since(last_entry) else {

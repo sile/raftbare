@@ -191,6 +191,10 @@ fn truncate_log() {
     cluster
         .node2
         .asserted_handle_append_entries_reply_success(&reply, true);
+
+    assert_no_action!(cluster.node0);
+    assert_no_action!(cluster.node1);
+    assert_no_action!(cluster.node2);
 }
 
 // TODO: snapshot

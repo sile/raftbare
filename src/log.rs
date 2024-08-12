@@ -22,9 +22,10 @@ impl LogEntries {
     }
 
     // TODO: rename
-    pub fn new_at_snapshot(prev: LogEntryRef, config: ClusterConfig) -> Self {
-        let mut this = Self::new(prev);
-        this.configs.insert(prev.index, config);
+    pub fn from_snapshot(snapshot: Snapshot) -> Self {
+        let mut this = Self::new(snapshot.last_entry);
+        this.configs
+            .insert(snapshot.last_entry.index, snapshot.cluster_config);
         this
     }
 
@@ -43,6 +44,10 @@ impl LogEntries {
         } else {
             Some(LogEntry::Command)
         }
+    }
+
+    pub fn get_config(&self, i: LogIndex) -> Option<&ClusterConfig> {
+        self.configs.range(..=i).map(|x| x.1).rev().next()
     }
 
     pub fn latest_config_index(&self) -> LogIndex {
@@ -129,6 +134,18 @@ impl LogEntries {
             .extend(entries.configs.iter().map(|(k, v)| (k.clone(), v.clone())));
         self.last = entries.last;
     }
+
+    // TODO: move to Node (or add struct Log)
+    pub fn current_snapshot(&self) -> Snapshot {
+        Snapshot {
+            last_entry: self.prev,
+            cluster_config: self // TODO
+                .configs
+                .first_key_value()
+                .map(|(_, v)| v.clone())
+                .unwrap_or_else(|| ClusterConfig::new()),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -174,4 +191,10 @@ pub enum LogEntry {
     Term(Term),
     ClusterConfig(ClusterConfig),
     Command,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct Snapshot {
+    pub last_entry: LogEntryRef,
+    pub cluster_config: ClusterConfig,
 }
