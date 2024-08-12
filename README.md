@@ -17,6 +17,7 @@ Differences with the paper
    - Add last_entry instead of success
 - Removed next_index in favor of ...
 - Sequence numbers in some messages (instead of strict RPC semantics)
+- InstallSnapshotRPC
 
 ### FAQ (or out of scope of this library)
 

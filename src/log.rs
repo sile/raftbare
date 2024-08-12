@@ -146,6 +146,17 @@ impl LogEntries {
                 .unwrap_or_else(|| ClusterConfig::new()),
         }
     }
+
+    pub fn snapshot_at_last_entry(&self) -> Snapshot {
+        Snapshot {
+            last_entry: self.last,
+            cluster_config: self // TODO
+                .configs
+                .last_key_value()
+                .map(|(_, v)| v.clone())
+                .unwrap_or_else(|| ClusterConfig::new()),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]

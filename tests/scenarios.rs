@@ -1,7 +1,7 @@
 use raftbare::{
     action::Action,
     config::ClusterConfig,
-    log::{LogEntries, LogEntry, LogEntryRef, LogIndex},
+    log::{LogEntries, LogEntry, LogEntryRef, LogIndex, Snapshot},
     message::{AppendEntriesRequest, Message, SequenceNumber},
     node::{Heartbeat, Node, NodeId, Role},
     Term,
@@ -197,7 +197,48 @@ fn truncate_log() {
     assert_no_action!(cluster.node2);
 }
 
-// TODO: snapshot
+#[test]
+fn snapshot() {
+    let mut cluster = ThreeNodeCluster::new();
+    cluster.init_cluster();
+    cluster.propose_command();
+    assert_eq!(cluster.node0.role(), Role::Leader);
+
+    // Take a snapshot.
+    for node in &mut [&mut cluster.node0, &mut cluster.node1, &mut cluster.node2] {
+        assert_eq!(node.log().prev.index, LogIndex::new(0));
+        let snapshot = node.log().snapshot_at_last_entry();
+        assert!(node.handle_snapshot_installed(snapshot));
+        assert_ne!(node.log().prev.index, LogIndex::new(0));
+    }
+
+    // Add a new node.
+    let mut node3 = TestNode::asserted_start(id(3));
+    let config = joint(
+        &[cluster.node0.id(), cluster.node1.id(), cluster.node2.id()],
+        &[cluster.node0.id(), node3.id()],
+    );
+    let request = cluster.node0.asserted_change_cluster_config(config);
+    for node in &mut [&mut cluster.node1, &mut cluster.node2] {
+        let reply = node.asserted_handle_append_entries_request_success(&request);
+        cluster
+            .node0
+            .asserted_handle_append_entries_reply_success(&reply, false);
+    }
+
+    // Cannot append (need snapshot).
+    let reply = node3.asserted_handle_append_entries_request_failure(&request);
+    let snapshot = cluster
+        .node0
+        .asserted_handle_append_entries_reply_failure_need_snapshot(&reply);
+    assert!(node3.handle_snapshot_installed(snapshot));
+
+    // Append after snapshot.
+    let reply = node3.asserted_handle_append_entries_request_success(&request);
+    cluster
+        .node0
+        .asserted_handle_append_entries_reply_success_with_joint_config_committed(&reply);
+}
 
 #[derive(Debug)]
 struct ThreeNodeCluster {
@@ -406,6 +447,33 @@ impl TestNode {
         reply
     }
 
+    fn asserted_handle_append_entries_request_failure(&mut self, msg: &Message) -> Message {
+        assert!(matches!(msg, Message::AppendEntriesRequest(_)));
+
+        let Message::AppendEntriesRequest(AppendEntriesRequest { entries, .. }) = msg else {
+            unreachable!();
+        };
+
+        let prev_voted_for = self.voted_for();
+        let prev_term = self.current_term();
+
+        self.handle_message(msg);
+        assert_ne!(self.log().last, entries.last);
+        if prev_term < msg.term() {
+            assert_action!(self, save_current_term(msg.term()));
+        }
+        if prev_voted_for != Some(msg.from()) {
+            assert_action!(self, save_voted_for(Some(msg.from())));
+        }
+        assert_action!(self, set_election_timeout());
+
+        let reply = append_entries_reply(msg, self);
+        assert_action!(self, unicast_message(msg.from(), &reply));
+        assert_no_action!(self);
+
+        reply
+    }
+
     fn asserted_handle_append_entries_reply_failure(&mut self, msg: &Message) -> Message {
         assert!(matches!(msg, Message::AppendEntriesReply(_)));
 
@@ -423,6 +491,27 @@ impl TestNode {
         assert_no_action!(self);
 
         request
+    }
+
+    fn asserted_handle_append_entries_reply_failure_need_snapshot(
+        &mut self,
+        msg: &Message,
+    ) -> Snapshot {
+        assert!(matches!(msg, Message::AppendEntriesReply(_)));
+
+        let Message::AppendEntriesReply(reply) = msg else {
+            unreachable!();
+        };
+        assert!(self.log().since(reply.last_entry).is_none());
+
+        self.handle_message(msg);
+        assert_action!(
+            self,
+            Action::InstallSnapshot(reply.from, self.log().current_snapshot())
+        );
+        assert_no_action!(self);
+
+        self.log().current_snapshot()
     }
 
     fn asserted_handle_append_entries_reply_success_with_joint_config_committed(
