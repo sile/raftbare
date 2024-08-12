@@ -1,3 +1,5 @@
+#![forbid(unsafe_code)]
+
 mod action;
 mod config;
 mod log;
@@ -17,11 +19,11 @@ pub struct Term(u64);
 
 impl Term {
     /// Makes a new [`Term`] instance.
-    pub const fn new(v: u64) -> Self {
-        Self(v)
+    pub const fn new(t: u64) -> Self {
+        Self(t)
     }
 
-    /// Returns the value of the term.
+    /// Returns the value of this term.
     pub const fn get(self) -> u64 {
         self.0
     }

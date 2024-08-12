@@ -378,7 +378,7 @@ impl TestNode {
 
     fn asserted_change_cluster_config(&mut self, new_config: ClusterConfig) -> Message {
         let prev_entry = self.log().last;
-        let next_index = self.log().last.index.next();
+        let next_index = next_index(self.log().last.index);
         assert_eq!(Ok(next_index), self.change_cluster_config(&new_config));
         let msg = append_entries_request(
             self,
@@ -791,4 +791,8 @@ fn committed(index: LogIndex) -> Action {
 
 fn next_term(term: Term) -> Term {
     Term::new(term.get() + 1)
+}
+
+fn next_index(index: LogIndex) -> LogIndex {
+    LogIndex::new(index.get() + 1)
 }

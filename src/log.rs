@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct LogEntries {
     // TODO: private
-    pub prev: LogEntryRef, // TODO: LogIndex
+    pub prev: LogEntryRef,
     pub last: LogEntryRef,
     pub terms: BTreeMap<LogIndex, Term>,
     pub configs: BTreeMap<LogIndex, ClusterConfig>,
@@ -159,19 +159,24 @@ impl LogEntries {
     }
 }
 
+/// Log index.
+///
+/// Unlike the Raft paper, this index is 0-based, with a sentinel entry at index 0.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct LogIndex(u64);
 
 impl LogIndex {
+    /// Makes a new [`LogIndex`] instance.
     pub const fn new(i: u64) -> Self {
         Self(i)
     }
 
+    /// Returns the inner of this index.
     pub const fn get(self) -> u64 {
         self.0
     }
 
-    pub const fn next(self) -> Self {
+    pub(crate) const fn next(self) -> Self {
         Self(self.0 + 1)
     }
 }
