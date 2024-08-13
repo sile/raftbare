@@ -295,11 +295,11 @@ impl ThreeNodeCluster {
             commit_index = node.inner.propose_command();
             assert_action!(
                 node.inner,
-                append_log_entry(node.inner.log().last.prev(), LogEntry::Command)
+                append_log_entry(entry_ref_prev(node.inner.log().last), LogEntry::Command)
             );
             let msg = append_entries_request(
                 &node.inner,
-                LogEntries::single(node.inner.log().last.prev(), &LogEntry::Command),
+                LogEntries::single(entry_ref_prev(node.inner.log().last), &LogEntry::Command),
             );
             assert_action!(node.inner, broadcast_message(&msg));
             assert_action!(node.inner, set_election_timeout());
@@ -699,7 +699,7 @@ fn i(index: u64) -> LogIndex {
 }
 
 fn prev(term: Term, index: LogIndex) -> LogEntryRef {
-    LogEntryRef::new(term, index)
+    entry_ref(term, index)
 }
 
 fn joint(old: &[NodeId], new: &[NodeId]) -> ClusterConfig {
@@ -795,4 +795,12 @@ fn next_term(term: Term) -> Term {
 
 fn next_index(index: LogIndex) -> LogIndex {
     LogIndex::new(index.get() + 1)
+}
+
+fn entry_ref(term: Term, index: LogIndex) -> LogEntryRef {
+    LogEntryRef { term, index }
+}
+
+fn entry_ref_prev(entry: LogEntryRef) -> LogEntryRef {
+    entry_ref(entry.term, LogIndex::new(entry.index.get() - 1))
 }

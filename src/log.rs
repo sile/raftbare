@@ -181,24 +181,23 @@ impl LogIndex {
     }
 }
 
-// TODO(?): Remove
+/// Refecence to a log entry (a pair of [`Term`] and [`LogIndex`]).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct LogEntryRef {
+    /// Term of the log entry.
     pub term: Term,
+
+    /// Index of the log entry.
     pub index: LogIndex,
 }
 
 impl LogEntryRef {
-    pub const fn new(term: Term, index: LogIndex) -> Self {
+    pub(crate) const fn new(term: Term, index: LogIndex) -> Self {
         Self { term, index }
     }
 
-    pub const fn next(self) -> Self {
+    pub(crate) const fn next(self) -> Self {
         Self::new(self.term, self.index.next())
-    }
-
-    pub const fn prev(self) -> Self {
-        Self::new(self.term, LogIndex::new(self.index.get() - 1))
     }
 }
 
