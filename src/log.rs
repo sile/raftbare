@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct LogEntries {
     // TODO: private
-    pub prev: LogEntryRef,
+    pub prev: LogEntryRef, // TODO: prev_entry
     pub last: LogEntryRef,
     pub terms: BTreeMap<LogIndex, Term>,
     pub configs: BTreeMap<LogIndex, ClusterConfig>,
@@ -214,16 +214,27 @@ pub enum LogEntry {
 
     /// A log entry for a user-defined command.
     ///
+    /// # Note
+    ///
     /// This crate does not handle the content of user-defined commands.
     /// Therefore, this variant is represented as a unit.
-    ///
     /// It is the user's responsibility to manage the mapping from each [`LogEntry::Command`] to
     /// an actual command data.
     Command,
 }
 
+/// Snapshot of a state machine replicated using Raft.
+///
+/// # Note
+///
+/// This crate does not handle the content of snapshots.
+/// Consequently, this struct does not contain the actual snapshot data.
+/// Users are responsible for managing their own snapshot data.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Snapshot {
+    /// Last log entry included in this snapshot.
     pub last_entry: LogEntryRef,
+
+    /// Cluster configuration at the time of this snapshot was taken.
     pub cluster_config: ClusterConfig,
 }
