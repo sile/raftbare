@@ -4,15 +4,15 @@ use std::collections::BTreeMap;
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct LogEntries {
     // TODO: private
-    pub prev: LogEntryId, // TODO: prev_entry
-    pub last: LogEntryId,
+    pub prev: LogPosition, // TODO: prev_entry
+    pub last: LogPosition,
     pub terms: BTreeMap<LogIndex, Term>,
     pub configs: BTreeMap<LogIndex, ClusterConfig>,
 }
 
 impl LogEntries {
     // TODO: remove
-    pub fn new(prev: LogEntryId) -> Self {
+    pub fn new(prev: LogPosition) -> Self {
         Self {
             prev,
             last: prev,
@@ -64,14 +64,14 @@ impl LogEntries {
             .unwrap_or(self.prev.index)
     }
 
-    pub fn single(prev: LogEntryId, entry: &LogEntry) -> Self {
+    pub fn single(prev: LogPosition, entry: &LogEntry) -> Self {
         let mut this = Self::new(prev);
         this.append_entry(&entry);
         this
     }
 
     // TODO: add unit test
-    pub fn since(&self, new_prev: LogEntryId) -> Option<Self> {
+    pub fn since(&self, new_prev: LogPosition) -> Option<Self> {
         if !self.contains(new_prev) {
             return None;
         }
@@ -86,7 +86,7 @@ impl LogEntries {
         Some(this)
     }
 
-    pub fn contains(&self, entry: LogEntryId) -> bool {
+    pub fn contains(&self, entry: LogPosition) -> bool {
         if !self.contains_index(entry.index) {
             return false;
         }
@@ -181,9 +181,11 @@ impl LogIndex {
     }
 }
 
-/// Identifier that uniquely indicates a [`LogEntry`] stored within a cluster.
+/// Log position ([`Term`] and [`LogIndex`]).
+///
+/// A [`LogPosition`] uniquely identifies a [`LogEntry`] stored within a cluster.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct LogEntryId {
+pub struct LogPosition {
     /// Term of the log entry.
     pub term: Term,
 
@@ -191,7 +193,7 @@ pub struct LogEntryId {
     pub index: LogIndex,
 }
 
-impl LogEntryId {
+impl LogPosition {
     pub(crate) const fn new(term: Term, index: LogIndex) -> Self {
         Self { term, index }
     }
@@ -203,7 +205,7 @@ impl LogEntryId {
 
 /// Log entry.
 ///
-/// Each log entry within a cluster is uniquely identified by a [`LogEntryId`].
+/// Each log entry within a cluster is uniquely identified by a [`LogPosition`].
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum LogEntry {
     /// A log entry to indicate the start of a new term with a new leader.
@@ -232,8 +234,8 @@ pub enum LogEntry {
 /// Users are responsible for managing their own snapshot data.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Snapshot {
-    /// Last log entry included in this snapshot.
-    pub last_entry: LogEntryId,
+    /// Last log position included in this snapshot.
+    pub last_position: LogPosition,
 
     /// Cluster configuration at the time of this snapshot was taken.
     pub cluster_config: ClusterConfig,
