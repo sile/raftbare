@@ -1,6 +1,9 @@
 use crate::node::NodeId;
 use std::{
-    collections::{btree_set::Iter, BTreeSet},
+    collections::{
+        btree_set::{Iter, Union},
+        BTreeSet,
+    },
     iter::Peekable,
 };
 
@@ -56,11 +59,10 @@ impl ClusterConfig {
         !self.new_voters.is_empty()
     }
 
-    /// Gets an iterator over all unique [`NodeId`]s in this configuration.
+    /// Gets an iterator over all unique [`NodeId`]s in this configuration, in sorted order.
     pub fn unique_nodes(&self) -> impl '_ + Iterator<Item = NodeId> {
         UniqueNodes {
-            voters: self.voters.iter().peekable(),
-            new_voters: self.new_voters.iter().peekable(),
+            voters: self.voters.union(&self.new_voters).peekable(),
             non_voters: self.non_voters.iter().peekable(),
         }
     }
@@ -80,8 +82,7 @@ impl ClusterConfig {
 
 #[derive(Debug)]
 pub struct UniqueNodes<'a> {
-    voters: Peekable<Iter<'a, NodeId>>,
-    new_voters: Peekable<Iter<'a, NodeId>>,
+    voters: Peekable<Union<'a, NodeId>>,
     non_voters: Peekable<Iter<'a, NodeId>>,
 }
 
@@ -90,61 +91,54 @@ impl<'a> Iterator for UniqueNodes<'a> {
 
     fn next(&mut self) -> Option<Self::Item> {
         let a = self.voters.peek().copied();
-        let b = self.new_voters.peek().copied();
-        let c = self.non_voters.peek().copied();
-        match (a, b, c) {
-            (None, None, None) => None,
-            (Some(a), None, None) => {
+        let b = self.non_voters.peek().copied();
+        match (a, b) {
+            (None, None) => None,
+            (Some(a), None) => {
                 self.voters.next();
                 Some(*a)
             }
-            (None, Some(b), None) => {
-                self.new_voters.next();
+            (None, Some(b)) => {
+                self.non_voters.next();
                 Some(*b)
             }
-            (None, None, Some(c)) => {
+            (Some(a), Some(b)) if a == b => {
+                self.voters.next();
                 self.non_voters.next();
-                Some(*c)
+                Some(*a)
             }
-            (Some(a), Some(b), None) => {
-                if a < b {
-                    self.voters.next();
-                    Some(*a)
-                } else {
-                    self.new_voters.next();
-                    Some(*b)
-                }
+            (Some(a), Some(b)) if a < b => {
+                self.voters.next();
+                Some(*a)
             }
-            (Some(a), None, Some(c)) => {
-                if a < c {
-                    self.voters.next();
-                    Some(*a)
-                } else {
-                    self.non_voters.next();
-                    Some(*c)
-                }
-            }
-            (None, Some(b), Some(c)) => {
-                if b < c {
-                    self.new_voters.next();
-                    Some(*b)
-                } else {
-                    self.non_voters.next();
-                    Some(*c)
-                }
-            }
-            (Some(a), Some(b), Some(c)) => {
-                if a < b && a < c {
-                    self.voters.next();
-                    Some(*a)
-                } else if b < a && b < c {
-                    self.new_voters.next();
-                    Some(*b)
-                } else {
-                    self.non_voters.next();
-                    Some(*c)
-                }
+            (Some(_), Some(b)) => {
+                self.non_voters.next();
+                Some(*b)
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn unique_nodes() {
+        let mut config = ClusterConfig::new();
+        config.voters.insert(id(1));
+        config.voters.insert(id(2));
+        config.new_voters.insert(id(2));
+        config.new_voters.insert(id(3));
+        config.non_voters.insert(id(4));
+        config.non_voters.insert(id(5));
+        config.non_voters.insert(id(6));
+
+        let nodes: Vec<_> = config.unique_nodes().map(|n| n.get()).collect();
+        assert_eq!(nodes, vec![1, 2, 3, 4, 5, 6]);
+    }
+
+    fn id(n: u64) -> NodeId {
+        NodeId::new(n)
     }
 }
