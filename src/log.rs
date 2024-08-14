@@ -201,10 +201,24 @@ impl LogEntryRef {
     }
 }
 
+/// Log entry.
+///
+/// Each log entry within a cluster is uniquely identified by a [`LogEntryRef`].
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum LogEntry {
+    /// A log entry to indicate the start of a new term with a new leader.
     Term(Term),
+
+    /// A log entry for a new cluster configuration.
     ClusterConfig(ClusterConfig),
+
+    /// A log entry for a user-defined command.
+    ///
+    /// This crate does not handle the content of user-defined commands.
+    /// Therefore, this variant is represented as a unit.
+    ///
+    /// It is the user's responsibility to manage the mapping from each [`LogEntry::Command`] to
+    /// an actual command data.
     Command,
 }
 
