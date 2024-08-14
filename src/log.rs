@@ -4,33 +4,48 @@ use std::collections::BTreeMap;
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct LogEntries {
     // TODO: private
-    pub prev: LogPosition, // TODO: prev_entry
-    pub last: LogPosition,
+    pub prev_position: LogPosition,
+    pub last_position: LogPosition,
     pub terms: BTreeMap<LogIndex, Term>,
     pub configs: BTreeMap<LogIndex, ClusterConfig>,
 }
 
 impl LogEntries {
-    // TODO: remove
-    pub fn new(prev: LogPosition) -> Self {
+    /// Makes a new empty [`LogEntries`] instance at the given position.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use raftbare::{LogEntries, LogPosition};
+    ///
+    /// let entries = LogEntries::empty(LogPosition::ZERO);
+    /// assert!(entries.is_empty());
+    /// ```
+    pub fn empty(prev_position: LogPosition) -> Self {
         Self {
-            prev,
-            last: prev,
+            prev_position,
+            last_position: prev_position,
             terms: BTreeMap::new(),
             configs: BTreeMap::new(),
         }
     }
 
+    pub fn single(prev: LogPosition, entry: &LogEntry) -> Self {
+        let mut this = Self::empty(prev);
+        this.append_entry(&entry);
+        this
+    }
+
     // TODO: rename
     pub fn from_snapshot(snapshot: Snapshot) -> Self {
-        let mut this = Self::new(snapshot.last_entry);
+        let mut this = Self::empty(snapshot.last_position);
         this.configs
-            .insert(snapshot.last_entry.index, snapshot.cluster_config);
+            .insert(snapshot.last_position.index, snapshot.cluster_config);
         this
     }
 
     pub fn is_empty(&self) -> bool {
-        self.prev == self.last
+        self.prev_position == self.last_position
     }
 
     pub fn get_entry(&self, i: LogIndex) -> Option<LogEntry> {
@@ -54,20 +69,14 @@ impl LogEntries {
         self.configs
             .last_key_value()
             .map(|(k, _)| *k)
-            .unwrap_or(self.prev.index)
+            .unwrap_or(self.prev_position.index)
     }
 
     pub fn term_index(&self) -> LogIndex {
         self.terms
             .last_key_value()
             .map(|(k, _)| *k)
-            .unwrap_or(self.prev.index)
-    }
-
-    pub fn single(prev: LogPosition, entry: &LogEntry) -> Self {
-        let mut this = Self::new(prev);
-        this.append_entry(&entry);
-        this
+            .unwrap_or(self.prev_position.index)
     }
 
     // TODO: add unit test
@@ -77,7 +86,7 @@ impl LogEntries {
         }
 
         let mut this = self.clone();
-        this.prev = new_prev;
+        this.prev_position = new_prev;
 
         // TODO: optimize(?) => use split_off()
         this.terms.retain(|index, _| index > &new_prev.index);
@@ -97,48 +106,49 @@ impl LogEntries {
             .rev()
             .next()
             .map(|(_, term)| *term)
-            .unwrap_or(self.prev.term);
+            .unwrap_or(self.prev_position.term);
         term == entry.term
     }
 
     pub fn contains_index(&self, index: LogIndex) -> bool {
-        (self.prev.index..=self.last.index).contains(&index)
+        (self.prev_position.index..=self.last_position.index).contains(&index)
     }
 
     pub fn append_entry(&mut self, entry: &LogEntry) {
-        self.last = self.last.next();
+        self.last_position = self.last_position.next();
         match entry {
             LogEntry::Term(term) => {
-                self.terms.insert(self.last.index, *term);
-                self.last.term = *term;
+                self.terms.insert(self.last_position.index, *term);
+                self.last_position.term = *term;
             }
             LogEntry::ClusterConfig(config) => {
-                self.configs.insert(self.last.index, config.clone());
+                self.configs
+                    .insert(self.last_position.index, config.clone());
             }
             LogEntry::Command => {}
         }
     }
 
     pub fn append_entries(&mut self, entries: &Self) {
-        if self.last != entries.prev {
+        if self.last_position != entries.prev_position {
             // Truncate
-            debug_assert!(self.contains(entries.prev));
-            self.last = entries.prev;
-            self.terms.split_off(&self.last.index);
-            self.configs.split_off(&self.last.index);
+            debug_assert!(self.contains(entries.prev_position));
+            self.last_position = entries.prev_position;
+            self.terms.split_off(&self.last_position.index);
+            self.configs.split_off(&self.last_position.index);
         }
 
         // TODO: use append()
         self.terms.extend(&entries.terms);
         self.configs
             .extend(entries.configs.iter().map(|(k, v)| (k.clone(), v.clone())));
-        self.last = entries.last;
+        self.last_position = entries.last_position;
     }
 
     // TODO: move to Node (or add struct Log)
     pub fn current_snapshot(&self) -> Snapshot {
         Snapshot {
-            last_entry: self.prev,
+            last_position: self.prev_position,
             cluster_config: self // TODO
                 .configs
                 .first_key_value()
@@ -149,7 +159,7 @@ impl LogEntries {
 
     pub fn snapshot_at_last_entry(&self) -> Snapshot {
         Snapshot {
-            last_entry: self.last,
+            last_position: self.last_position,
             cluster_config: self // TODO
                 .configs
                 .last_key_value()
@@ -166,6 +176,9 @@ impl LogEntries {
 pub struct LogIndex(u64);
 
 impl LogIndex {
+    /// The initial log index, where the sentinel entry `LogEntry::Term(Term::ZERO)` is always located.
+    pub const ZERO: Self = Self(0);
+
     /// Makes a new [`LogIndex`] instance.
     pub const fn new(i: u64) -> Self {
         Self(i)
@@ -194,6 +207,9 @@ pub struct LogPosition {
 }
 
 impl LogPosition {
+    /// The initial log position ([`Term::ZERO`] and [`LogIndex::ZERO`]).
+    pub const ZERO: Self = Self::new(Term::ZERO, LogIndex::ZERO);
+
     pub(crate) const fn new(term: Term, index: LogIndex) -> Self {
         Self { term, index }
     }

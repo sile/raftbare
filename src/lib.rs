@@ -18,6 +18,9 @@ pub use node::{ChangeClusterConfigError, HeartbeatPromise, Node, NodeId, Role};
 pub struct Term(u64);
 
 impl Term {
+    /// The initial term.
+    pub const ZERO: Self = Self(0);
+
     /// Makes a new [`Term`] instance.
     pub const fn new(t: u64) -> Self {
         Self(t)

@@ -68,7 +68,7 @@ impl Node {
             role: Role::Follower,
             voted_for: None,
             current_term: term,
-            log: LogEntries::new(LogPosition::new(term, index)),
+            log: LogEntries::empty(LogPosition::new(term, index)),
             config,
             commit_index: LogIndex::new(0),
 
@@ -119,10 +119,10 @@ impl Node {
 
         // Optimized propose
         self.append_log_entry(&LogEntry::Term(self.current_term));
-        self.leader_index = self.log.last.index;
+        self.leader_index = self.log.last_position.index;
 
         self.append_log_entry(&LogEntry::ClusterConfig(self.config.clone()));
-        self.commit(self.log.last.index);
+        self.commit(self.log.last_position.index);
 
         debug_assert!(self.followers.is_empty());
         debug_assert_eq!(self.quorum.commit_index(), self.commit_index);
@@ -145,7 +145,7 @@ impl Node {
             self.id,
             self.commit_index,
             sn,
-            LogEntries::new(self.log.last),
+            LogEntries::empty(self.log.last_position),
         );
         self.quorum
             .update_seqnum(&self.config, self.id, self.leader_sn, self.leader_sn.next());
@@ -170,7 +170,7 @@ impl Node {
         debug_assert_eq!(self.role, Role::Leader);
 
         // TODO: Create LogEnties instance only once
-        let prev_entry = self.log.last;
+        let prev_entry = self.log.last_position;
         self.append_log_entry(&entry); // TODO: merge the same kind actions
         self.broadcast_message(Message::append_entries_request(
             self.current_term,
@@ -186,7 +186,7 @@ impl Node {
         self.enqueue_action(Action::SetElectionTimeout); // TODO: merge the same kind actions
         self.update_commit_index_if_possible(); // TODO: check single node
 
-        self.log.last.index
+        self.log.last_position.index
     }
 
     fn rebuild_followers(&mut self) {
@@ -204,7 +204,7 @@ impl Node {
 
         let zero = LogIndex::new(0);
         self.quorum
-            .update_match_index(&self.config, self.id, zero, self.log.last.index);
+            .update_match_index(&self.config, self.id, zero, self.log.last_position.index);
         self.quorum
             .update_seqnum(&self.config, self.id, MessageSeqNum::new(), self.leader_sn);
 
@@ -272,17 +272,21 @@ impl Node {
     fn append_log_entry(&mut self, entry: &LogEntry) {
         debug_assert!(self.role.is_leader());
 
-        let prev_index = self.log.last.index;
+        let prev_index = self.log.last_position.index;
         self.enqueue_action(Action::AppendLogEntries(LogEntries::single(
-            self.log.last,
+            self.log.last_position,
             entry,
         )));
         self.log.append_entry(entry);
 
         // TODO: unnecessary condition?
         if self.role.is_leader() {
-            self.quorum
-                .update_match_index(&self.config, self.id, prev_index, self.log.last.index);
+            self.quorum.update_match_index(
+                &self.config,
+                self.id,
+                prev_index,
+                self.log.last_position.index,
+            );
         }
 
         if let LogEntry::ClusterConfig(new_config) = entry {
@@ -298,17 +302,17 @@ impl Node {
     fn try_append_log_entries(&mut self, entries: &LogEntries) -> bool {
         debug_assert!(self.role.is_follower());
 
-        if self.log.contains(entries.last) {
+        if self.log.contains(entries.last_position) {
             // Already up-to-date.
             return true;
         }
-        if !self.log.contains(entries.prev) {
+        if !self.log.contains(entries.prev_position) {
             // Cannot append.
             return false;
         }
 
         // Append.
-        let truncated = self.log.last.index != entries.prev.index;
+        let truncated = self.log.last_position.index != entries.prev_position.index;
         self.enqueue_action(Action::AppendLogEntries(entries.clone()));
         self.log.append_entries(entries);
         if let Some((_, new_config)) = entries.configs.last_key_value() {
@@ -368,7 +372,7 @@ impl Node {
             );
             return;
         }
-        if self.log.last.index > request.last_entry.index {
+        if self.log.last_position.index > request.last_entry.index {
             return;
         }
 
@@ -429,27 +433,27 @@ impl Node {
     }
 
     pub fn is_valid_snapshot(&self, snapshot: &Snapshot) -> bool {
-        if snapshot.last_entry.index < self.log.prev.index {
+        if snapshot.last_position.index < self.log.prev_position.index {
             return false;
         }
-        if self.log.last.index < snapshot.last_entry.index {
+        if self.log.last_position.index < snapshot.last_position.index {
             return self.role != Role::Leader;
         }
-        if !self.log.contains(snapshot.last_entry) {
+        if !self.log.contains(snapshot.last_position) {
             return false;
         }
-        self.log.get_config(snapshot.last_entry.index) == Some(&snapshot.cluster_config)
+        self.log.get_config(snapshot.last_position.index) == Some(&snapshot.cluster_config)
     }
 
     pub fn handle_snapshot_installed(&mut self, snapshot: Snapshot) -> bool {
         if !self.is_valid_snapshot(&snapshot) {
             return false;
         }
-        if let Some(log) = self.log.since(snapshot.last_entry) {
+        if let Some(log) = self.log.since(snapshot.last_position) {
             self.log = log;
             self.log
                 .configs
-                .insert(snapshot.last_entry.index, snapshot.cluster_config);
+                .insert(snapshot.last_position.index, snapshot.cluster_config);
         } else {
             self.log = LogEntries::from_snapshot(snapshot);
         }
@@ -466,7 +470,7 @@ impl Node {
         self.broadcast_message(Message::request_vote_request(
             self.current_term,
             self.id,
-            self.log.last,
+            self.log.last_position,
         ));
         self.enqueue_action(Action::SetElectionTimeout);
     }
@@ -500,7 +504,7 @@ impl Node {
                 self.current_term,
                 self.id,
                 request.leader_sn,
-                self.log.last,
+                self.log.last_position,
             ),
         );
     }
@@ -522,8 +526,8 @@ impl Node {
         if self.try_append_log_entries(&request.entries) {
             let next_commit_index = request
                 .leader_commit
-                .min(self.log.last.index)
-                .min(request.entries.last.index); // TODO: Add note comment (entries could be truncated by action implementor)
+                .min(self.log.last_position.index)
+                .min(request.entries.last_position.index); // TODO: Add note comment (entries could be truncated by action implementor)
             if self.commit_index < next_commit_index {
                 self.commit(next_commit_index);
             }
@@ -557,7 +561,7 @@ impl Node {
             return;
         };
 
-        let self_last_entry = self.log.last; // Save the current last entry before (maybe) updating it.
+        let self_last_entry = self.log.last_position; // Save the current last entry before (maybe) updating it.
         if self.log.contains(reply.last_entry) {
             if follower.match_index < reply.last_entry.index {
                 let old_match_index = follower.match_index;
@@ -575,14 +579,14 @@ impl Node {
                 }
             }
 
-            if reply.last_entry.index == self.log.last.index {
+            if reply.last_entry.index == self.log.last_position.index {
                 // Up-to-date.
                 return;
             }
         }
 
         let last_entry = reply.last_entry;
-        if last_entry.index < self.log.prev.index {
+        if last_entry.index < self.log.prev_position.index {
             // Send snapshot
             let snapshot = self.log.current_snapshot();
             self.enqueue_action(Action::InstallSnapshot(reply.from, snapshot));
