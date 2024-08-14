@@ -1,5 +1,5 @@
 use crate::{
-    log::{LogEntries, LogEntryRef, LogIndex},
+    log::{LogEntries, LogEntryId, LogIndex},
     node::NodeId,
     Term,
 };
@@ -31,7 +31,7 @@ impl Message {
         }
     }
 
-    pub fn request_vote_request(term: Term, candidate_id: NodeId, last_entry: LogEntryRef) -> Self {
+    pub fn request_vote_request(term: Term, candidate_id: NodeId, last_entry: LogEntryId) -> Self {
         Self::RequestVoteRequest(RequestVoteRequest {
             term,
             from: candidate_id,
@@ -67,7 +67,7 @@ impl Message {
         term: Term,
         from: NodeId,
         leader_sn: MessageSeqNum,
-        last_entry: LogEntryRef,
+        last_entry: LogEntryId,
     ) -> Self {
         Self::AppendEntriesReply(AppendEntriesReply {
             term,
@@ -103,7 +103,7 @@ impl MessageSeqNum {
 pub struct RequestVoteRequest {
     pub term: Term,
     pub from: NodeId,
-    pub last_entry: LogEntryRef,
+    pub last_entry: LogEntryId,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -127,7 +127,7 @@ pub struct AppendEntriesReply {
     pub term: Term,
     pub from: NodeId,
     pub leader_sn: MessageSeqNum,
-    pub last_entry: LogEntryRef,
+    pub last_entry: LogEntryId,
 }
 
 // TODO: MessageHeader

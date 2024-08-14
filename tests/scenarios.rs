@@ -1,7 +1,7 @@
 use raftbare::{
     message::AppendEntriesRequest,
     Action, ClusterConfig, HeartbeatPromise, Message, MessageSeqNum, Node, NodeId, Role, Term,
-    {LogEntries, LogEntry, LogEntryRef, LogIndex, Snapshot},
+    {LogEntries, LogEntry, LogEntryId, LogIndex, Snapshot},
 };
 use std::ops::{Deref, DerefMut};
 
@@ -295,11 +295,11 @@ impl ThreeNodeCluster {
             commit_index = node.inner.propose_command();
             assert_action!(
                 node.inner,
-                append_log_entry(entry_ref_prev(node.inner.log().last), LogEntry::Command)
+                append_log_entry(entry_id_prev(node.inner.log().last), LogEntry::Command)
             );
             let msg = append_entries_request(
                 &node.inner,
-                LogEntries::single(entry_ref_prev(node.inner.log().last), &LogEntry::Command),
+                LogEntries::single(entry_id_prev(node.inner.log().last), &LogEntry::Command),
             );
             assert_action!(node.inner, broadcast_message(&msg));
             assert_action!(node.inner, set_election_timeout());
@@ -698,8 +698,8 @@ fn i(index: u64) -> LogIndex {
     LogIndex::new(index)
 }
 
-fn prev(term: Term, index: LogIndex) -> LogEntryRef {
-    entry_ref(term, index)
+fn prev(term: Term, index: LogIndex) -> LogEntryId {
+    entry_id(term, index)
 }
 
 fn joint(old: &[NodeId], new: &[NodeId]) -> ClusterConfig {
@@ -727,7 +727,7 @@ fn create_log() -> Action {
     Action::CreateLog(LogEntry::Term(t(0)))
 }
 
-fn request_vote_request(term: Term, from: NodeId, last_entry: LogEntryRef) -> Message {
+fn request_vote_request(term: Term, from: NodeId, last_entry: LogEntryId) -> Message {
     Message::request_vote_request(term, from, last_entry)
 }
 
@@ -769,7 +769,7 @@ fn set_election_timeout() -> Action {
     Action::SetElectionTimeout
 }
 
-fn append_log_entry(prev: LogEntryRef, entry: LogEntry) -> Action {
+fn append_log_entry(prev: LogEntryId, entry: LogEntry) -> Action {
     Action::AppendLogEntries(LogEntries::single(prev, &entry))
 }
 
@@ -797,10 +797,10 @@ fn next_index(index: LogIndex) -> LogIndex {
     LogIndex::new(index.get() + 1)
 }
 
-fn entry_ref(term: Term, index: LogIndex) -> LogEntryRef {
-    LogEntryRef { term, index }
+fn entry_id(term: Term, index: LogIndex) -> LogEntryId {
+    LogEntryId { term, index }
 }
 
-fn entry_ref_prev(entry: LogEntryRef) -> LogEntryRef {
-    entry_ref(entry.term, LogIndex::new(entry.index.get() - 1))
+fn entry_id_prev(entry: LogEntryId) -> LogEntryId {
+    entry_id(entry.term, LogIndex::new(entry.index.get() - 1))
 }

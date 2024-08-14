@@ -1,7 +1,7 @@
 use crate::{
     action::Action,
     config::ClusterConfig,
-    log::{LogEntries, LogEntry, LogEntryRef, LogIndex, Snapshot},
+    log::{LogEntries, LogEntry, LogEntryId, LogIndex, Snapshot},
     message::{
         AppendEntriesReply, AppendEntriesRequest, Message, MessageSeqNum, RequestVoteReply,
         RequestVoteRequest,
@@ -68,7 +68,7 @@ impl Node {
             role: Role::Follower,
             voted_for: None,
             current_term: term,
-            log: LogEntries::new(LogEntryRef::new(term, index)),
+            log: LogEntries::new(LogEntryId::new(term, index)),
             config,
             commit_index: LogIndex::new(0),
 
