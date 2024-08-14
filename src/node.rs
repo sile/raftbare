@@ -190,7 +190,7 @@ impl Node {
     }
 
     fn rebuild_followers(&mut self) {
-        for id in self.config.members() {
+        for id in self.config.unique_nodes() {
             if id == self.id {
                 continue;
             }
@@ -246,6 +246,8 @@ impl Node {
         let mut new_config = self.config.clone();
         new_config.voters = std::mem::take(&mut new_config.new_voters);
         self.propose(LogEntry::ClusterConfig(new_config));
+
+        // TODO: leader not in new config steps down when the new config is committed
     }
 
     pub fn change_cluster_config(

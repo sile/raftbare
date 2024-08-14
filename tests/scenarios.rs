@@ -368,7 +368,7 @@ impl TestNode {
 
         assert_eq!(self.role(), Role::Leader);
         assert_eq!(
-            self.cluster_config().members().collect::<Vec<_>>(),
+            self.cluster_config().unique_nodes().collect::<Vec<_>>(),
             &[self.id()]
         );
         assert_eq!(self.cluster_config().voters.len(), 1);
