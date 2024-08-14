@@ -8,6 +8,30 @@ use std::{
 };
 
 /// Cluster configuration (membership).
+///
+/// # Examples
+///
+/// ```
+/// use raftbare::{ClusterConfig, NodeId};
+///
+/// // Makes a new cluster configuration with two voting nodes.
+/// let mut config = ClusterConfig::new();
+/// config.voters.insert(NodeId::new(0));
+/// config.voters.insert(NodeId::new(1));
+/// assert!(!config.is_joint_consensus());
+///
+/// // Adds a new non-voting node.
+/// config.non_voters.insert(NodeId::new(2));
+/// assert!(!config.is_joint_consensus());
+///
+/// // Updates the configuration to add a new voting node.
+/// config.new_voters = config.voters.clone();
+/// config.new_voters.insert(NodeId::new(3));
+/// assert!(config.is_joint_consensus());
+/// ```
+///
+/// The `config` value in the example above can be applied to a cluster via [`Node::change_cluster_config()`][crate::Node::change_cluster_config].
+///
 #[derive(Debug, Default, Clone, PartialEq, Eq, Hash)]
 pub struct ClusterConfig {
     /// Voting nodes.
