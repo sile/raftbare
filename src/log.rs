@@ -20,6 +20,7 @@ impl LogEntries {
     ///
     /// let entries = LogEntries::new(LogPosition::ZERO);
     /// assert!(entries.is_empty());
+    /// assert_eq!(entries.iter().count(), 0);
     /// assert_eq!(entries.prev_position(), LogPosition::ZERO);
     /// assert_eq!(entries.last_position(), LogPosition::ZERO);
     /// ```
@@ -32,13 +33,36 @@ impl LogEntries {
         }
     }
 
+    pub fn from_iter<I>(prev_position: LogPosition, entries: I) -> Self
+    where
+        I: IntoIterator<Item = LogEntry>,
+    {
+        let mut this = Self::new(prev_position);
+        this.extend(entries);
+        this
+    }
+
+    pub fn iter(&self) -> impl '_ + Iterator<Item = LogEntry> {
+        (self.prev_position.index.get() + 1..=self.last_position.index.get()).map(|i| {
+            let i = LogIndex::new(i);
+            if let Some(term) = self.terms.get(&i).copied() {
+                LogEntry::Term(term)
+            } else if let Some(config) = self.configs.get(&i).cloned() {
+                LogEntry::ClusterConfig(config)
+            } else {
+                LogEntry::Command
+            }
+        })
+    }
+
+    // TODO: remove
     pub fn single(prev_position: LogPosition, entry: &LogEntry) -> Self {
         let mut this = Self::new(prev_position);
         this.append_entry(&entry);
         this
     }
 
-    // TODO: rename
+    // TODO: remove
     pub fn from_snapshot(snapshot: Snapshot) -> Self {
         let mut this = Self::new(snapshot.last_position);
         this.configs
@@ -46,12 +70,12 @@ impl LogEntries {
         this
     }
 
-    // TODO: from_entries()
-
+    /// Returns the position immediately before the first entry in this [`LogEntries`] instance.
     pub fn prev_position(&self) -> LogPosition {
         self.prev_position
     }
 
+    /// Returns the position of the last entry in this [`LogEntries`] instance.
     pub fn last_position(&self) -> LogPosition {
         self.last_position
     }
@@ -178,6 +202,14 @@ impl LogEntries {
                 .last_key_value()
                 .map(|(_, v)| v.clone())
                 .unwrap_or_else(|| ClusterConfig::new()),
+        }
+    }
+}
+
+impl std::iter::Extend<LogEntry> for LogEntries {
+    fn extend<T: IntoIterator<Item = LogEntry>>(&mut self, iter: T) {
+        for entry in iter {
+            self.append_entry(&entry);
         }
     }
 }
