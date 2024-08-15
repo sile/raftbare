@@ -68,7 +68,7 @@ impl Node {
             role: Role::Follower,
             voted_for: None,
             current_term: term,
-            log: LogEntries::empty(LogPosition::new(term, index)),
+            log: LogEntries::new(LogPosition::new(term, index)),
             config,
             commit_index: LogIndex::new(0),
 
@@ -145,7 +145,7 @@ impl Node {
             self.id,
             self.commit_index,
             sn,
-            LogEntries::empty(self.log.last_position),
+            LogEntries::new(self.log.last_position),
         );
         self.quorum
             .update_seqnum(&self.config, self.id, self.leader_sn, self.leader_sn.next());

@@ -18,10 +18,12 @@ impl LogEntries {
     /// ```
     /// use raftbare::{LogEntries, LogPosition};
     ///
-    /// let entries = LogEntries::empty(LogPosition::ZERO);
+    /// let entries = LogEntries::new(LogPosition::ZERO);
     /// assert!(entries.is_empty());
+    /// assert_eq!(entries.prev_position(), LogPosition::ZERO);
+    /// assert_eq!(entries.last_position(), LogPosition::ZERO);
     /// ```
-    pub fn empty(prev_position: LogPosition) -> Self {
+    pub const fn new(prev_position: LogPosition) -> Self {
         Self {
             prev_position,
             last_position: prev_position,
@@ -30,20 +32,31 @@ impl LogEntries {
         }
     }
 
-    pub fn single(prev: LogPosition, entry: &LogEntry) -> Self {
-        let mut this = Self::empty(prev);
+    pub fn single(prev_position: LogPosition, entry: &LogEntry) -> Self {
+        let mut this = Self::new(prev_position);
         this.append_entry(&entry);
         this
     }
 
     // TODO: rename
     pub fn from_snapshot(snapshot: Snapshot) -> Self {
-        let mut this = Self::empty(snapshot.last_position);
+        let mut this = Self::new(snapshot.last_position);
         this.configs
             .insert(snapshot.last_position.index, snapshot.cluster_config);
         this
     }
 
+    // TODO: from_entries()
+
+    pub fn prev_position(&self) -> LogPosition {
+        self.prev_position
+    }
+
+    pub fn last_position(&self) -> LogPosition {
+        self.last_position
+    }
+
+    /// Returns `true` if the log entries is empty (i.e., the previous and last positions are the same).
     pub fn is_empty(&self) -> bool {
         self.prev_position == self.last_position
     }

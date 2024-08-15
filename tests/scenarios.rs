@@ -116,7 +116,7 @@ fn election() {
     cluster.node1.handle_election_timeout();
     let request = append_entries_request(
         &cluster.node1,
-        LogEntries::empty(cluster.node1.log().last_position),
+        LogEntries::new(cluster.node1.log().last_position),
     );
     assert_action!(cluster.node1, broadcast_message(&request));
 
@@ -674,7 +674,7 @@ impl TestNode {
 
     fn asserted_heartbeat(&mut self) -> (HeartbeatPromise, Message) {
         let heartbeat = self.heartbeat();
-        let request = append_entries_request(self, LogEntries::empty(self.log().last_position));
+        let request = append_entries_request(self, LogEntries::new(self.log().last_position));
         assert_action!(self, broadcast_message(&request));
         assert_no_action!(self);
         (heartbeat, request)
