@@ -22,8 +22,7 @@ impl Log {
         &self.entries
     }
 
-    /// Returns a mutable reference to the entries in this log.
-    pub fn entries_mut(&mut self) -> &mut LogEntries {
+    pub(crate) fn entries_mut(&mut self) -> &mut LogEntries {
         &mut self.entries
     }
 
