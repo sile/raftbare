@@ -1,6 +1,33 @@
 use crate::{config::ClusterConfig, Term};
 use std::collections::BTreeMap;
 
+/// Compact in-memory representation of a [`Node`][crate::Node] local log.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct Log {
+    prev_config: ClusterConfig,
+    entries: LogEntries,
+}
+
+impl Log {
+    /// Makes a new [`Log`] instance with the given cluster configuration and entries.
+    ///
+    /// `prev_config` holds the latest configuration up to the log entry located at `entries.prev_position.index`.
+    pub const fn new(prev_config: ClusterConfig, entries: LogEntries) -> Self {
+        Self {
+            prev_config,
+            entries,
+        }
+    }
+
+    pub fn entries(&self) -> &LogEntries {
+        &self.entries
+    }
+
+    pub fn entries_mut(&mut self) -> &mut LogEntries {
+        &mut self.entries
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct LogEntries {
     // TODO: private
@@ -33,6 +60,15 @@ impl LogEntries {
         }
     }
 
+    /// Makes a new [`LogEntries`] instance with the given entries.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use raftbare::{LogEntries, LogEntry, LogPosition};
+    ///
+    /// # let entries = LogEntries::from_iter(LogPosition::ZERO, vec![]);
+    /// ```
     pub fn from_iter<I>(prev_position: LogPosition, entries: I) -> Self
     where
         I: IntoIterator<Item = LogEntry>,
@@ -293,6 +329,8 @@ pub enum LogEntry {
 /// This crate does not handle the content of snapshots.
 /// Consequently, this struct does not contain the actual snapshot data.
 /// Users are responsible for managing their own snapshot data.
+///
+/// TODO: remove
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Snapshot {
     /// Last log position included in this snapshot.
