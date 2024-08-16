@@ -59,9 +59,9 @@ pub struct ClusterConfig {
     /// Non-voting nodes do not participate in the leader election and log entry commit quorum,
     /// but they do replicate log entries from the leader.
     ///
-    /// When adding a new node to a cluster with a large snapshot or many log entries,
-    /// it is recommended to first add the node as a non-voter.
-    /// Allow the node to catch up with the leader, and then promote it to a voter.
+    /// When adding more than half of the current number of nodes to a cluster that has a large snapshot or many log entries,
+    /// it is recommended to first add the new nodes as non-voters to avoid blocking subsequent log commits.
+    /// Allow these nodes to catch up with the leader before promoting them to voters.
     ///
     /// Note that adding or removing non-voters does not require a joint consensus.
     pub non_voters: BTreeSet<NodeId>,
