@@ -1,7 +1,7 @@
 use crate::{
     action::Action,
     config::ClusterConfig,
-    log::{LogEntries, LogEntry, LogIndex, LogPosition, Snapshot},
+    log::{LogEntries, LogEntry, LogIndex, LogPosition},
     message::{
         AppendEntriesReply, AppendEntriesRequest, Message, MessageSeqNum, RequestVoteReply,
         RequestVoteRequest,
@@ -432,31 +432,37 @@ impl Node {
         }
     }
 
-    // TODO: remove(?)
-    pub fn is_valid_snapshot(&self, snapshot: &Snapshot) -> bool {
-        if snapshot.last_position.index < self.log.entries().prev_position.index {
+    fn is_valid_snapshot(
+        &self,
+        last_included_config: &ClusterConfig,
+        last_included_position: LogPosition,
+    ) -> bool {
+        if last_included_position.index < self.log.entries().prev_position.index {
             return false;
         }
-        if self.log.entries().last_position.index < snapshot.last_position.index {
+        if self.log.entries().last_position.index < last_included_position.index {
             return self.role != Role::Leader;
         }
-        if !self.log.entries().contains(snapshot.last_position) {
+        if !self.log.entries().contains(last_included_position) {
             return false;
         }
-        self.log.entries().get_config(snapshot.last_position.index)
-            == Some(&snapshot.cluster_config)
+        self.log.entries().get_config(last_included_position.index) == Some(last_included_config)
     }
 
-    pub fn handle_snapshot_installed(&mut self, snapshot: Snapshot) -> bool {
-        if !self.is_valid_snapshot(&snapshot) {
+    pub fn handle_snapshot_installed(
+        &mut self,
+        last_included_config: ClusterConfig,
+        last_included_position: LogPosition,
+    ) -> bool {
+        if !self.is_valid_snapshot(&last_included_config, last_included_position) {
             return false;
         }
-        if let Some(entries) = self.log.entries().since(snapshot.last_position) {
-            self.log = Log::new(snapshot.cluster_config, entries);
+        if let Some(entries) = self.log.entries().since(last_included_position) {
+            self.log = Log::new(last_included_config, entries);
         } else {
             self.log = Log::new(
-                snapshot.cluster_config,
-                LogEntries::new(snapshot.last_position),
+                last_included_config,
+                LogEntries::new(last_included_position),
             );
         }
         true

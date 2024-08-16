@@ -1,7 +1,7 @@
 use raftbare::{
     message::AppendEntriesRequest,
     Action, ClusterConfig, HeartbeatPromise, Message, MessageSeqNum, Node, NodeId, Role, Term,
-    {LogEntries, LogEntry, LogIndex, LogPosition, Snapshot},
+    {LogEntries, LogEntry, LogIndex, LogPosition},
 };
 use std::ops::{Deref, DerefMut};
 
@@ -200,8 +200,9 @@ fn snapshot() {
     // Take a snapshot.
     for node in &mut [&mut cluster.node0, &mut cluster.node1, &mut cluster.node2] {
         assert_eq!(node.log().entries().prev_position.index, LogIndex::new(0));
-        let snapshot = node.log().entries().snapshot_at_last_entry();
-        assert!(node.handle_snapshot_installed(snapshot));
+        let snapshot_config = node.log().latest_config().clone();
+        let snapshot_position = node.log().entries().last_position;
+        assert!(node.handle_snapshot_installed(snapshot_config, snapshot_position));
         assert_ne!(node.log().entries().prev_position.index, LogIndex::new(0));
     }
 
@@ -221,10 +222,10 @@ fn snapshot() {
 
     // Cannot append (need snapshot).
     let reply = node3.asserted_handle_append_entries_request_failure(&request);
-    let snapshot = cluster
+    let (snapshot_config, snapshot_position) = cluster
         .node0
         .asserted_handle_append_entries_reply_failure_need_snapshot(&reply);
-    assert!(node3.handle_snapshot_installed(snapshot));
+    assert!(node3.handle_snapshot_installed(snapshot_config, snapshot_position));
 
     // Append after snapshot.
     let reply = node3.asserted_handle_append_entries_request_success(&request);
@@ -500,7 +501,7 @@ impl TestNode {
     fn asserted_handle_append_entries_reply_failure_need_snapshot(
         &mut self,
         msg: &Message,
-    ) -> Snapshot {
+    ) -> (ClusterConfig, LogPosition) {
         assert!(matches!(msg, Message::AppendEntriesReply(_)));
 
         let Message::AppendEntriesReply(reply) = msg else {
@@ -512,7 +513,10 @@ impl TestNode {
         assert_action!(self, Action::InstallSnapshot(reply.from));
         assert_no_action!(self);
 
-        self.log().entries().current_snapshot()
+        (
+            self.log().prev_config().clone(),
+            self.log().entries().prev_position,
+        )
     }
 
     fn asserted_handle_append_entries_reply_success_with_joint_config_committed(

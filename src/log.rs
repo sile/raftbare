@@ -4,17 +4,15 @@ use std::collections::BTreeMap;
 /// Compact in-memory representation of a [`Node`][crate::Node] local log.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Log {
-    prev_config: ClusterConfig,
+    snapshot_config: ClusterConfig,
     entries: LogEntries,
 }
 
 impl Log {
     /// Makes a new [`Log`] instance with the given cluster configuration and entries.
-    ///
-    /// `prev_config` holds the latest configuration up to the log entry located at `entries.prev_position.index`.
-    pub const fn new(prev_config: ClusterConfig, entries: LogEntries) -> Self {
+    pub const fn new(snapshot_config: ClusterConfig, entries: LogEntries) -> Self {
         Self {
-            prev_config,
+            snapshot_config,
             entries,
         }
     }
@@ -29,17 +27,28 @@ impl Log {
         &mut self.entries
     }
 
-    /// Returns a reference to the cluster configuration located at the higest index in this log.
+    /// Returns the log position where the snapshot was taken.
+    ///
+    /// This is equivalent to `self.entries().prev_position`.
+    pub fn snapshot_position(&self) -> LogPosition {
+        self.entries.prev_position
+    }
+
+    /// Returns a reference to the cluster configuration at the time the snapshot was taken.
+    pub fn snapshot_config(&self) -> &ClusterConfig {
+        &self.snapshot_config
+    }
+
+    /// Returns a reference to the cluster configuration located at the highest index in this log.
     pub fn latest_config(&self) -> &ClusterConfig {
         self.entries
             .configs
             .last_key_value()
             .map(|(_, v)| v)
-            .unwrap_or(&self.prev_config)
+            .unwrap_or(&self.snapshot_config)
     }
 
-    /// Returns the index of the latest cluster configuration in this log.
-    pub fn latest_config_index(&self) -> LogIndex {
+    pub(crate) fn latest_config_index(&self) -> LogIndex {
         self.entries
             .configs
             .last_key_value()
@@ -115,14 +124,6 @@ impl LogEntries {
     pub fn single(prev_position: LogPosition, entry: &LogEntry) -> Self {
         let mut this = Self::new(prev_position);
         this.append_entry(&entry);
-        this
-    }
-
-    // TODO: remove
-    pub fn from_snapshot(snapshot: Snapshot) -> Self {
-        let mut this = Self::new(snapshot.last_position);
-        this.configs
-            .insert(snapshot.last_position.index, snapshot.cluster_config);
         this
     }
 
@@ -230,29 +231,6 @@ impl LogEntries {
             .extend(entries.configs.iter().map(|(k, v)| (k.clone(), v.clone())));
         self.last_position = entries.last_position;
     }
-
-    // TODO: move to Node (or add struct Log)
-    pub fn current_snapshot(&self) -> Snapshot {
-        Snapshot {
-            last_position: self.prev_position,
-            cluster_config: self // TODO
-                .configs
-                .first_key_value()
-                .map(|(_, v)| v.clone())
-                .unwrap_or_else(|| ClusterConfig::new()),
-        }
-    }
-
-    pub fn snapshot_at_last_entry(&self) -> Snapshot {
-        Snapshot {
-            last_position: self.last_position,
-            cluster_config: self // TODO
-                .configs
-                .last_key_value()
-                .map(|(_, v)| v.clone())
-                .unwrap_or_else(|| ClusterConfig::new()),
-        }
-    }
 }
 
 impl std::iter::Extend<LogEntry> for LogEntries {
@@ -333,22 +311,4 @@ pub enum LogEntry {
     /// It is the user's responsibility to manage the mapping from each [`LogEntry::Command`] to
     /// an actual command data.
     Command,
-}
-
-/// Snapshot of a state machine replicated using Raft.
-///
-/// # Note
-///
-/// This crate does not handle the content of snapshots.
-/// Consequently, this struct does not contain the actual snapshot data.
-/// Users are responsible for managing their own snapshot data.
-///
-/// TODO: remove
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct Snapshot {
-    /// Last log position included in this snapshot.
-    pub last_position: LogPosition,
-
-    /// Cluster configuration at the time of this snapshot was taken.
-    pub cluster_config: ClusterConfig,
 }

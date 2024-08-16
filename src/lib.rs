@@ -9,7 +9,7 @@ mod quorum;
 
 pub use action::Action;
 pub use config::ClusterConfig;
-pub use log::{Log, LogEntries, LogEntry, LogIndex, LogPosition, Snapshot};
+pub use log::{Log, LogEntries, LogEntry, LogIndex, LogPosition};
 pub use message::{Message, MessageSeqNum};
 pub use node::{ChangeClusterConfigError, HeartbeatPromise, Node, NodeId, Role};
 
