@@ -342,6 +342,8 @@ impl Node {
         self.enqueue_action(Action::SaveVotedFor(voted_for));
     }
 
+    // TODO: split into handle_request_vote_request, ... to make it possible to return errors
+    // or keep this method but return errors
     pub fn handle_message(&mut self, msg: &Message) {
         if self.current_term < msg.term() {
             if matches!(msg, Message::RequestVoteRequest { .. })

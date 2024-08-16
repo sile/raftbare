@@ -13,6 +13,7 @@ impl Log {
     ///
     /// `prev_config` holds the latest configuration up to the log entry located at `entries.prev_position.index`.
     pub const fn new(prev_config: ClusterConfig, entries: LogEntries) -> Self {
+        // TODO: validate
         Self {
             prev_config,
             entries,

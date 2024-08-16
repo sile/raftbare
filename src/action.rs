@@ -20,7 +20,7 @@ pub enum Action {
     NotifyHeartbeatSucceeded(HeartbeatPromise),
 
     // Can drop this message especially if there is another ongoing AppendEntriesRPC
-    BroadcastMessage(Message),
+    BroadcastMessage(Message), // TODO: remove(?)
     UnicastMessage(NodeId, Message),
     InstallSnapshot(NodeId, Snapshot), // TODO: Remove the second parameter
 }
