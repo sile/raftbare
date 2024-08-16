@@ -7,7 +7,7 @@ use crate::{
         RequestVoteRequest,
     },
     quorum::Quorum,
-    Term,
+    Log, Term,
 };
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
@@ -40,8 +40,7 @@ pub struct Node {
     role: Role,
     voted_for: Option<NodeId>,
     current_term: Term,
-    log: LogEntries,
-    config: ClusterConfig, // TODO: leader state
+    log: Log,
     commit_index: LogIndex,
 
     // TODO: Factor out role specific states in an enum
@@ -68,8 +67,7 @@ impl Node {
             role: Role::Follower,
             voted_for: None,
             current_term: term,
-            log: LogEntries::new(LogPosition::new(term, index)),
-            config,
+            log: Log::new(config, LogEntries::new(LogPosition::new(term, index))),
             commit_index: LogIndex::new(0),
 
             // candidate state
@@ -86,21 +84,13 @@ impl Node {
         this
     }
 
-    pub fn restart(
-        id: NodeId,
-        current_term: Term,
-        voted_for: Option<NodeId>,
-        config: ClusterConfig, // TODO: remove(?)
-        log: LogEntries,
-    ) -> Self {
-        // TODO: Return Err(_) if the log doesn't contain cluster config
+    pub fn restart(id: NodeId, current_term: Term, voted_for: Option<NodeId>, log: Log) -> Self {
         let mut node = Self::start(id);
         node.action_queue.clear();
 
         node.current_term = current_term;
         node.voted_for = voted_for;
         node.log = log;
-        node.config = config;
         node
     }
 
@@ -113,16 +103,18 @@ impl Node {
         self.role = Role::Leader;
         self.set_current_term(self.current_term.next());
         self.set_voted_for(Some(self.id));
-        self.config.voters.insert(self.id);
 
-        self.quorum = Quorum::new(&self.config);
+        let mut config = self.log.latest_config().clone();
+        config.voters.insert(self.id);
 
-        // Optimized propose
+        self.quorum = Quorum::new(&config);
+
+        // Optimized propose (TODO)
         self.append_log_entry(&LogEntry::Term(self.current_term));
-        self.leader_index = self.log.last_position.index;
+        self.leader_index = self.log.entries().last_position.index;
 
-        self.append_log_entry(&LogEntry::ClusterConfig(self.config.clone()));
-        self.commit(self.log.last_position.index);
+        self.append_log_entry(&LogEntry::ClusterConfig(config));
+        self.commit(self.log.entries().last_position.index);
 
         debug_assert!(self.followers.is_empty());
         debug_assert_eq!(self.quorum.commit_index(), self.commit_index);
@@ -145,10 +137,14 @@ impl Node {
             self.id,
             self.commit_index,
             sn,
-            LogEntries::new(self.log.last_position),
+            LogEntries::new(self.log.entries().last_position),
         );
-        self.quorum
-            .update_seqnum(&self.config, self.id, self.leader_sn, self.leader_sn.next());
+        self.quorum.update_seqnum(
+            self.log.latest_config(),
+            self.id,
+            self.leader_sn,
+            self.leader_sn.next(),
+        );
         self.leader_sn = sn.next();
         self.broadcast_message(request);
 
@@ -170,7 +166,7 @@ impl Node {
         debug_assert_eq!(self.role, Role::Leader);
 
         // TODO: Create LogEnties instance only once
-        let prev_entry = self.log.last_position;
+        let prev_entry = self.log.entries().last_position;
         self.append_log_entry(&entry); // TODO: merge the same kind actions
         self.broadcast_message(Message::append_entries_request(
             self.current_term,
@@ -179,40 +175,50 @@ impl Node {
             self.leader_sn,
             LogEntries::single(prev_entry, &entry),
         ));
-        self.quorum
-            .update_seqnum(&self.config, self.id, self.leader_sn, self.leader_sn.next());
+        self.quorum.update_seqnum(
+            self.log.latest_config(),
+            self.id,
+            self.leader_sn,
+            self.leader_sn.next(),
+        );
         self.leader_sn = self.leader_sn.next();
         self.check_heartbeat();
         self.enqueue_action(Action::SetElectionTimeout); // TODO: merge the same kind actions
         self.update_commit_index_if_possible(); // TODO: check single node
 
-        self.log.last_position.index
+        self.log.entries().last_position.index
     }
 
     fn rebuild_followers(&mut self) {
-        for id in self.config.unique_nodes() {
+        let config = self.log.latest_config();
+        for id in config.unique_nodes() {
             if id == self.id {
                 continue;
             }
             self.followers.insert(id, Follower::new());
         }
-        self.followers.retain(|id, _| self.config.contains(*id));
+        self.followers.retain(|id, _| config.contains(*id));
     }
 
     fn rebuild_quorum(&mut self) {
-        self.quorum = Quorum::new(&self.config);
+        let config = self.log.latest_config();
+        self.quorum = Quorum::new(config);
 
         let zero = LogIndex::new(0);
+        self.quorum.update_match_index(
+            config,
+            self.id,
+            zero,
+            self.log.entries().last_position.index,
+        );
         self.quorum
-            .update_match_index(&self.config, self.id, zero, self.log.last_position.index);
-        self.quorum
-            .update_seqnum(&self.config, self.id, MessageSeqNum::new(), self.leader_sn);
+            .update_seqnum(config, self.id, MessageSeqNum::new(), self.leader_sn);
 
         for (&id, follower) in &mut self.followers {
             self.quorum
-                .update_match_index(&self.config, id, zero, follower.match_index);
+                .update_match_index(config, id, zero, follower.match_index);
             self.quorum
-                .update_seqnum(&self.config, id, MessageSeqNum::new(), follower.max_sn);
+                .update_seqnum(config, id, MessageSeqNum::new(), follower.max_sn);
         }
     }
 
@@ -228,10 +234,12 @@ impl Node {
         debug_assert!(self.role.is_leader());
 
         let new_commit_index = self.quorum.commit_index();
-        if self.commit_index < new_commit_index && self.log.term_index() <= new_commit_index {
+        if self.commit_index < new_commit_index
+            && self.log.entries().term_index() <= new_commit_index
+        {
             self.commit(new_commit_index);
 
-            if self.config.is_joint_consensus()
+            if self.log.latest_config().is_joint_consensus()
                 && self.log.latest_config_index() <= new_commit_index
             {
                 self.finalize_joint_consensus();
@@ -241,9 +249,9 @@ impl Node {
 
     fn finalize_joint_consensus(&mut self) {
         debug_assert!(self.role.is_leader());
-        debug_assert!(self.config.is_joint_consensus());
+        debug_assert!(self.log.latest_config().is_joint_consensus());
 
-        let mut new_config = self.config.clone();
+        let mut new_config = self.log.latest_config().clone();
         new_config.voters = std::mem::take(&mut new_config.new_voters);
         self.propose(LogEntry::ClusterConfig(new_config));
 
@@ -258,10 +266,10 @@ impl Node {
         if !self.role.is_leader() {
             return Err(ChangeClusterConfigError::NotLeader);
         }
-        if self.config.voters != new_config.voters {
+        if self.log.latest_config().voters != new_config.voters {
             return Err(ChangeClusterConfigError::VotersMismatched);
         }
-        if self.config.is_joint_consensus() {
+        if self.log.latest_config().is_joint_consensus() {
             return Err(ChangeClusterConfigError::JointConsensusInProgress);
         }
 
@@ -272,25 +280,24 @@ impl Node {
     fn append_log_entry(&mut self, entry: &LogEntry) {
         debug_assert!(self.role.is_leader());
 
-        let prev_index = self.log.last_position.index;
+        let prev_index = self.log.entries().last_position.index;
         self.enqueue_action(Action::AppendLogEntries(LogEntries::single(
-            self.log.last_position,
+            self.log.entries().last_position,
             entry,
         )));
-        self.log.append_entry(entry);
+        self.log.entries_mut().append_entry(entry);
 
         // TODO: unnecessary condition?
         if self.role.is_leader() {
             self.quorum.update_match_index(
-                &self.config,
+                self.log.latest_config(),
                 self.id,
                 prev_index,
-                self.log.last_position.index,
+                self.log.entries().last_position.index,
             );
         }
 
-        if let LogEntry::ClusterConfig(new_config) = entry {
-            self.config = new_config.clone();
+        if let LogEntry::ClusterConfig(_) = entry {
             // TODO: unnecessary condition?
             if self.role.is_leader() {
                 self.rebuild_followers();
@@ -302,26 +309,18 @@ impl Node {
     fn try_append_log_entries(&mut self, entries: &LogEntries) -> bool {
         debug_assert!(self.role.is_follower());
 
-        if self.log.contains(entries.last_position) {
+        if self.log.entries().contains(entries.last_position) {
             // Already up-to-date.
             return true;
         }
-        if !self.log.contains(entries.prev_position) {
+        if !self.log.entries().contains(entries.prev_position) {
             // Cannot append.
             return false;
         }
 
         // Append.
-        let truncated = self.log.last_position.index != entries.prev_position.index;
         self.enqueue_action(Action::AppendLogEntries(entries.clone()));
-        self.log.append_entries(entries);
-        if let Some((_, new_config)) = entries.configs.last_key_value() {
-            self.config = new_config.clone();
-        } else if truncated {
-            if let Some(latest_config) = self.log.configs.last_key_value().map(|x| x.1.clone()) {
-                self.config = latest_config;
-            }
-        }
+        self.log.entries_mut().append_entries(entries);
         true
     }
 
@@ -374,7 +373,7 @@ impl Node {
             );
             return;
         }
-        if self.log.last_position.index > request.last_entry.index {
+        if self.log.entries().last_position.index > request.last_entry.index {
             return;
         }
 
@@ -396,23 +395,22 @@ impl Node {
         }
         self.granted_votes.insert(reply.from);
 
-        let n = self
-            .config
+        let config = self.log.latest_config();
+        let n = config
             .voters
             .iter()
             .filter(|v| self.granted_votes.contains(v))
             .count();
-        if n < self.config.voter_majority_count() {
+        if n < self.log.latest_config().voter_majority_count() {
             return;
         }
 
-        let n = self
-            .config
+        let n = config
             .new_voters
             .iter()
             .filter(|v| self.granted_votes.contains(v))
             .count();
-        if n < self.config.new_voter_majority_count() {
+        if n < config.new_voter_majority_count() {
             return;
         }
 
@@ -434,30 +432,32 @@ impl Node {
         }
     }
 
+    // TODO: remove(?)
     pub fn is_valid_snapshot(&self, snapshot: &Snapshot) -> bool {
-        if snapshot.last_position.index < self.log.prev_position.index {
+        if snapshot.last_position.index < self.log.entries().prev_position.index {
             return false;
         }
-        if self.log.last_position.index < snapshot.last_position.index {
+        if self.log.entries().last_position.index < snapshot.last_position.index {
             return self.role != Role::Leader;
         }
-        if !self.log.contains(snapshot.last_position) {
+        if !self.log.entries().contains(snapshot.last_position) {
             return false;
         }
-        self.log.get_config(snapshot.last_position.index) == Some(&snapshot.cluster_config)
+        self.log.entries().get_config(snapshot.last_position.index)
+            == Some(&snapshot.cluster_config)
     }
 
     pub fn handle_snapshot_installed(&mut self, snapshot: Snapshot) -> bool {
         if !self.is_valid_snapshot(&snapshot) {
             return false;
         }
-        if let Some(log) = self.log.since(snapshot.last_position) {
-            self.log = log;
-            self.log
-                .configs
-                .insert(snapshot.last_position.index, snapshot.cluster_config);
+        if let Some(entries) = self.log.entries().since(snapshot.last_position) {
+            self.log = Log::new(snapshot.cluster_config, entries);
         } else {
-            self.log = LogEntries::from_snapshot(snapshot);
+            self.log = Log::new(
+                snapshot.cluster_config,
+                LogEntries::new(snapshot.last_position),
+            );
         }
         true
     }
@@ -472,7 +472,7 @@ impl Node {
         self.broadcast_message(Message::request_vote_request(
             self.current_term,
             self.id,
-            self.log.last_position,
+            self.log.entries().last_position,
         ));
         self.enqueue_action(Action::SetElectionTimeout);
     }
@@ -506,7 +506,7 @@ impl Node {
                 self.current_term,
                 self.id,
                 request.leader_sn,
-                self.log.last_position,
+                self.log.entries().last_position,
             ),
         );
     }
@@ -528,7 +528,7 @@ impl Node {
         if self.try_append_log_entries(&request.entries) {
             let next_commit_index = request
                 .leader_commit
-                .min(self.log.last_position.index)
+                .min(self.log.entries().last_position.index)
                 .min(request.entries.last_position.index); // TODO: Add note comment (entries could be truncated by action implementor)
             if self.commit_index < next_commit_index {
                 self.commit(next_commit_index);
@@ -551,8 +551,12 @@ impl Node {
             return;
         };
         if follower.max_sn < reply.leader_sn {
-            self.quorum
-                .update_seqnum(&self.config, reply.from, follower.max_sn, reply.leader_sn);
+            self.quorum.update_seqnum(
+                self.log.latest_config(),
+                reply.from,
+                follower.max_sn,
+                reply.leader_sn,
+            );
             follower.max_sn = reply.leader_sn;
         }
 
@@ -563,14 +567,14 @@ impl Node {
             return;
         };
 
-        let self_last_entry = self.log.last_position; // Save the current last entry before (maybe) updating it.
-        if self.log.contains(reply.last_entry) {
+        let self_last_entry = self.log.entries().last_position; // Save the current last entry before (maybe) updating it.
+        if self.log.entries().contains(reply.last_entry) {
             if follower.match_index < reply.last_entry.index {
                 let old_match_index = follower.match_index;
                 follower.match_index = reply.last_entry.index;
 
                 self.quorum.update_match_index(
-                    &self.config,
+                    self.log.latest_config(),
                     reply.from,
                     old_match_index,
                     follower.match_index,
@@ -581,20 +585,19 @@ impl Node {
                 }
             }
 
-            if reply.last_entry.index == self.log.last_position.index {
+            if reply.last_entry.index == self.log.entries().last_position.index {
                 // Up-to-date.
                 return;
             }
         }
 
         let last_entry = reply.last_entry;
-        if last_entry.index < self.log.prev_position.index {
+        if last_entry.index < self.log.entries().prev_position.index {
             // Send snapshot
-            let snapshot = self.log.current_snapshot();
-            self.enqueue_action(Action::InstallSnapshot(reply.from, snapshot));
+            self.enqueue_action(Action::InstallSnapshot(reply.from));
         } else if last_entry.index < self_last_entry.index {
             // send delta
-            let Some(delta) = self.log.since(last_entry) else {
+            let Some(delta) = self.log.entries().since(last_entry) else {
                 // Wrong reply.
                 return;
             };
@@ -606,8 +609,12 @@ impl Node {
                 delta,
             );
             self.unicast_message(reply.from, msg);
-            self.quorum
-                .update_seqnum(&self.config, self.id, self.leader_sn, self.leader_sn.next());
+            self.quorum.update_seqnum(
+                self.log.latest_config(),
+                self.id,
+                self.leader_sn,
+                self.leader_sn.next(),
+            );
             self.check_heartbeat();
             self.leader_sn = self.leader_sn.next();
         }
@@ -649,11 +656,11 @@ impl Node {
         self.current_term
     }
 
-    pub fn cluster_config(&self) -> &ClusterConfig {
-        &self.config
+    pub fn config(&self) -> &ClusterConfig {
+        self.log.latest_config()
     }
 
-    pub fn log(&self) -> &LogEntries {
+    pub fn log(&self) -> &Log {
         &self.log
     }
 

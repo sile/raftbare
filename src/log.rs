@@ -28,6 +28,24 @@ impl Log {
     pub fn entries_mut(&mut self) -> &mut LogEntries {
         &mut self.entries
     }
+
+    /// Returns a reference to the cluster configuration located at the higest index in this log.
+    pub fn latest_config(&self) -> &ClusterConfig {
+        self.entries
+            .configs
+            .last_key_value()
+            .map(|(_, v)| v)
+            .unwrap_or(&self.prev_config)
+    }
+
+    /// Returns the index of the latest cluster configuration in this log.
+    pub fn latest_config_index(&self) -> LogIndex {
+        self.entries
+            .configs
+            .last_key_value()
+            .map(|(i, _)| *i)
+            .unwrap_or(self.entries.prev_position.index)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -138,13 +156,6 @@ impl LogEntries {
 
     pub fn get_config(&self, i: LogIndex) -> Option<&ClusterConfig> {
         self.configs.range(..=i).map(|x| x.1).rev().next()
-    }
-
-    pub fn latest_config_index(&self) -> LogIndex {
-        self.configs
-            .last_key_value()
-            .map(|(k, _)| *k)
-            .unwrap_or(self.prev_position.index)
     }
 
     pub fn term_index(&self) -> LogIndex {

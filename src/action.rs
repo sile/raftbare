@@ -1,5 +1,5 @@
 use crate::{
-    log::{LogEntries, LogEntry, LogIndex, Snapshot},
+    log::{LogEntries, LogEntry, LogIndex},
     message::Message,
     node::{HeartbeatPromise, NodeId},
     Term,
@@ -22,7 +22,7 @@ pub enum Action {
     // Can drop this message especially if there is another ongoing AppendEntriesRPC
     BroadcastMessage(Message), // TODO: remove(?)
     UnicastMessage(NodeId, Message),
-    InstallSnapshot(NodeId, Snapshot), // TODO: Remove the second parameter
+    InstallSnapshot(NodeId),
 }
 
 // TODO
