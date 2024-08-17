@@ -514,7 +514,7 @@ impl TestNode {
         assert_no_action!(self);
 
         (
-            self.log().prev_config().clone(),
+            self.log().snapshot_config().clone(),
             self.log().entries().prev_position,
         )
     }

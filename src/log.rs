@@ -1,7 +1,7 @@
 use crate::{config::ClusterConfig, Term};
 use std::collections::BTreeMap;
 
-/// Compact in-memory representation of a [`Node`][crate::Node] local log.
+/// In-memory representation of a [`Node`][crate::Node] local log.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Log {
     snapshot_config: ClusterConfig,
@@ -10,6 +10,30 @@ pub struct Log {
 
 impl Log {
     /// Makes a new [`Log`] instance with the given cluster configuration and entries.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use raftbare::{ClusterConfig, Log, LogEntries, LogEntry, LogPosition, NodeId, Term};
+    ///
+    /// let empty_config = ClusterConfig::new();
+    /// let mut single_config = ClusterConfig::new();
+    /// single_config.voters.insert(NodeId::new(1));
+    ///
+    /// let entries = LogEntries::from_iter(
+    ///     LogPosition::ZERO,
+    ///     vec![
+    ///         LogEntry::Term(Term::ZERO),
+    ///         LogEntry::ClusterConfig(single_config.clone()),
+    ///         LogEntry::Command,
+    ///     ],
+    /// );
+    /// let log = Log::new(empty_config.clone(), entries);
+    ///
+    /// assert_eq!(log.snapshot_position(), LogPosition::ZERO);
+    /// assert_eq!(log.snapshot_config(), &empty_config);
+    /// assert_eq!(log.latest_config(), &single_config);
+    /// ```
     pub const fn new(snapshot_config: ClusterConfig, entries: LogEntries) -> Self {
         Self {
             snapshot_config,
