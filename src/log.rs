@@ -95,13 +95,28 @@ impl LogEntries {
     /// # Examples
     ///
     /// ```
-    /// use raftbare::{LogEntries, LogPosition};
+    /// use raftbare::{LogEntries, LogEntry, LogIndex, LogPosition, Term};
     ///
     /// let entries = LogEntries::new(LogPosition::ZERO);
     /// assert!(entries.is_empty());
+    /// assert_eq!(entries.len(), 0);
     /// assert_eq!(entries.iter().count(), 0);
     /// assert_eq!(entries.prev_position(), LogPosition::ZERO);
     /// assert_eq!(entries.last_position(), LogPosition::ZERO);
+    ///
+    /// let entries = LogEntries::from_iter(
+    ///     LogPosition::ZERO,
+    ///     vec![
+    ///         LogEntry::Term(Term::ZERO),
+    ///         LogEntry::Command,
+    ///         LogEntry::Command,
+    ///     ],
+    /// );
+    /// assert!(!entries.is_empty());
+    /// assert_eq!(entries.len(), 3);
+    /// assert_eq!(entries.iter().count(), 3);
+    /// assert_eq!(entries.prev_position(), LogPosition::ZERO);
+    /// assert_eq!(entries.last_position(), LogPosition { term: Term::ZERO, index: LogIndex::new(3) });
     /// ```
     pub const fn new(prev_position: LogPosition) -> Self {
         Self {
@@ -141,6 +156,10 @@ impl LogEntries {
                 LogEntry::Command
             }
         })
+    }
+
+    pub fn len(&self) -> usize {
+        self.last_position.index.get() as usize - self.prev_position.index.get() as usize
     }
 
     // TODO: remove
@@ -266,12 +285,13 @@ impl std::iter::Extend<LogEntry> for LogEntries {
 
 /// Log index.
 ///
-/// Unlike the Raft paper, this index is 0-based, with a sentinel entry at index 0.
+/// According to the Raft paper, index 0 serves as a sentinel value,
+/// and the actual log entries start from index 1.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct LogIndex(u64);
 
 impl LogIndex {
-    /// The initial log index, where the sentinel entry `LogEntry::Term(Term::ZERO)` is always located.
+    /// The initial log index (sentinel value)
     pub const ZERO: Self = Self(0);
 
     /// Makes a new [`LogIndex`] instance.
