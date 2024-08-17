@@ -76,6 +76,22 @@ impl Message {
             last_entry,
         })
     }
+
+    // TODO: test
+    pub(crate) fn merge(&mut self, other: Self) {
+        let Self::AppendEntriesRequest(req0) = self else {
+            *self = other;
+            return;
+        };
+        let Self::AppendEntriesRequest(req1) = other else {
+            *self = other;
+            return;
+        };
+        req0.term = req1.term;
+        req0.leader_commit = req1.leader_commit;
+        req0.leader_sn = req1.leader_sn;
+        req0.entries.append(&req1.entries);
+    }
 }
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]

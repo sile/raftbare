@@ -34,16 +34,25 @@ impl Actions {
             Action::SaveCurrentTerm => self.save_current_term = true,
             Action::SaveVotedFor => self.save_voted_for = true,
             Action::AppendLogEntries(log_entries) => {
-                // TODO: merge
-                self.append_log_entries = Some(log_entries)
+                if let Some(existing) = &mut self.append_log_entries {
+                    existing.append(&log_entries);
+                } else {
+                    self.append_log_entries = Some(log_entries);
+                }
             }
             Action::BroadcastMessage(message) => {
-                // TODO: merge
-                self.broadcast_message = Some(message)
+                if let Some(existing) = &mut self.broadcast_message {
+                    existing.merge(message);
+                } else {
+                    self.broadcast_message = Some(message);
+                }
             }
             Action::SendMessage(node_id, message) => {
-                // TODO: merge
-                self.send_messages.insert(node_id, message);
+                if let Some(existing) = self.send_messages.get_mut(&node_id) {
+                    existing.merge(message);
+                } else {
+                    self.send_messages.insert(node_id, message);
+                }
             }
             Action::InstallSnapshot(node_id) => {
                 self.install_snapshots.insert(node_id);

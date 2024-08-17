@@ -361,10 +361,12 @@ impl TestNode {
         assert_eq!(self.current_term(), t(1));
         assert_action!(self, save_voted_for());
         assert_eq!(self.voted_for(), Some(self.id()));
-        assert_action!(self, append_log_entry(prev(t(0), i(0)), term_entry(t(1))));
         assert_action!(
             self,
-            append_log_entry(prev(t(1), i(1)), cluster_config_entry(voters(&[self.id()])))
+            append_log_entries(&LogEntries::from_iter(
+                prev(t(0), i(0)),
+                [term_entry(t(1)), cluster_config_entry(voters(&[self.id()]))].into_iter()
+            ))
         );
         assert_eq!(self.commit_index(), i(2));
         assert_no_action!(self);
