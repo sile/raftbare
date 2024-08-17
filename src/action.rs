@@ -1,8 +1,4 @@
-use crate::{
-    log::{LogEntries, LogIndex},
-    message::Message,
-    node::NodeId,
-};
+use crate::{log::LogEntries, message::Message, node::NodeId};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Action {
@@ -12,9 +8,6 @@ pub enum Action {
     SaveCurrentTerm,
     SaveVotedFor,
     AppendLogEntries(LogEntries),
-
-    // TODO: delete
-    NotifyCommitted(LogIndex),
 
     // Can drop this message especially if there is another ongoing AppendEntriesRPC
     BroadcastMessage(Message), // TODO: remove(?)

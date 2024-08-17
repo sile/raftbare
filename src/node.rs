@@ -120,7 +120,6 @@ impl Node {
 
     fn commit(&mut self, index: LogIndex) {
         self.commit_index = index;
-        self.enqueue_action(Action::NotifyCommitted(index));
     }
 
     // TODOO: rename(?)
@@ -149,12 +148,15 @@ impl Node {
         heartbeat
     }
 
-    pub fn propose_command(&mut self) -> Option<LogIndex> {
-        // TODO: Return CommitPromise or else
+    pub fn propose_command(&mut self) -> CommitPromise {
         if self.role != Role::Leader {
-            return None;
+            return CommitPromise::Rejected;
         }
-        Some(self.propose(LogEntry::Command))
+
+        let index = self.propose(LogEntry::Command);
+        let term = self.current_term;
+        let position = LogPosition { term, index };
+        CommitPromise::new(position)
     }
 
     fn propose(&mut self, entry: LogEntry) -> LogIndex {
@@ -708,6 +710,43 @@ impl Follower {
             match_index: LogIndex::new(0),
             max_sn: MessageSeqNum::from_u64(0),
         }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum CommitPromise {
+    Pending(LogPosition),
+    Rejected,
+    Accepted,
+}
+
+impl CommitPromise {
+    fn new(position: LogPosition) -> Self {
+        Self::Pending(position)
+    }
+
+    pub fn poll(&mut self, node: &Node) -> Self {
+        let Self::Pending(position) = *self else {
+            return *self;
+        };
+        if position.index <= node.commit_index {
+            *self = Self::Accepted;
+        } else if !node.log.entries().contains(position) {
+            *self = Self::Rejected;
+        }
+        *self
+    }
+
+    pub fn is_pending(&self) -> bool {
+        matches!(self, Self::Pending(..))
+    }
+
+    pub fn is_rejected(&self) -> bool {
+        matches!(self, Self::Rejected)
+    }
+
+    pub fn is_accepted(&self) -> bool {
+        matches!(self, Self::Accepted)
     }
 }
 

@@ -1,7 +1,6 @@
 use raftbare::{
-    message::AppendEntriesRequest,
-    Action, ClusterConfig, HeartbeatPromise, Message, MessageSeqNum, Node, NodeId, Role, Term,
-    {LogEntries, LogEntry, LogIndex, LogPosition},
+    message::AppendEntriesRequest, Action, ClusterConfig, CommitPromise, HeartbeatPromise,
+    LogEntries, LogEntry, LogIndex, LogPosition, Message, MessageSeqNum, Node, NodeId, Role, Term,
 };
 use std::ops::{Deref, DerefMut};
 
@@ -147,9 +146,7 @@ fn truncate_log() {
 
     // Propose a command, but not broadcast the message.
     assert_eq!(cluster.node0.role(), Role::Leader);
-    let Some(command_index) = cluster.node0.propose_command() else {
-        unreachable!()
-    };
+    let mut commit_promise = cluster.node0.propose_command();
     while let Some(_) = cluster.node0.next_action() {}
 
     // Make node2 the leader.
@@ -176,10 +173,7 @@ fn truncate_log() {
     let reply = cluster
         .node0
         .asserted_handle_append_entries_request_success(&request);
-    assert_ne!(
-        Some(LogEntry::Command),
-        cluster.node0.log().entries().get_entry(command_index)
-    );
+    assert!(commit_promise.poll(&cluster.node0).is_rejected());
 
     cluster
         .node2
@@ -283,13 +277,13 @@ impl ThreeNodeCluster {
     }
 
     fn propose_command(&mut self) {
-        let mut commit_index = None;
+        let mut commit_promise = CommitPromise::Rejected;
         let mut request = None;
         for node in &mut [&mut self.node0, &mut self.node1, &mut self.node2] {
             if node.role() != Role::Leader {
                 continue;
             }
-            commit_index = node.inner.propose_command();
+            commit_promise = node.inner.propose_command();
             assert_action!(
                 node.inner,
                 append_log_entry(
@@ -311,7 +305,8 @@ impl ThreeNodeCluster {
             break;
         }
 
-        let (Some(commit_index), Some(request)) = (commit_index, request) else {
+        let (CommitPromise::Pending(commit_position), Some(request)) = (commit_promise, request)
+        else {
             panic!("No leader found.");
         };
 
@@ -332,7 +327,7 @@ impl ThreeNodeCluster {
 
             for reply in replies {
                 node.asserted_handle_append_entries_reply_success(&reply, first);
-                assert_eq!(node.commit_index(), commit_index);
+                assert_eq!(node.commit_index(), commit_position.index);
                 first = false;
             }
             break;
@@ -367,7 +362,7 @@ impl TestNode {
             self,
             append_log_entry(prev(t(1), i(1)), cluster_config_entry(voters(&[self.id()])))
         );
-        assert_action!(self, committed(i(2)));
+        assert_eq!(self.commit_index(), i(2));
         assert_no_action!(self);
 
         assert_eq!(self.role(), Role::Leader);
@@ -451,15 +446,13 @@ impl TestNode {
         if prev_commit_index < *leader_commit
             && prev_commit_index <= self.log().entries().last_position().index
         {
-            assert_action!(
-                self,
-                committed(
-                    self.log()
-                        .entries()
-                        .last_position()
-                        .index
-                        .min(*leader_commit)
-                )
+            assert_eq!(
+                self.commit_index(),
+                self.log()
+                    .entries()
+                    .last_position()
+                    .index
+                    .min(*leader_commit)
             );
         }
         assert_action!(self, unicast_message(msg.from(), &reply));
@@ -563,7 +556,7 @@ impl TestNode {
                 std::iter::once(cluster_config_entry(new_config.clone())),
             ),
         );
-        assert_action!(self, committed(reply.last_entry.index));
+        assert_eq!(self.commit_index(), reply.last_entry.index);
         assert_action!(
             self,
             append_log_entry(prev_entry, cluster_config_entry(new_config.clone()))
@@ -587,7 +580,7 @@ impl TestNode {
             unreachable!();
         };
         if commit_index_will_be_updated {
-            assert_action!(self, committed(reply.last_entry.index));
+            assert_eq!(self.commit_index(), reply.last_entry.index);
         }
         assert_no_action!(self);
     }
@@ -830,10 +823,6 @@ fn save_current_term() -> Action {
 
 fn save_voted_for() -> Action {
     Action::SaveVotedFor
-}
-
-fn committed(index: LogIndex) -> Action {
-    Action::NotifyCommitted(index)
 }
 
 fn next_term(term: Term) -> Term {
