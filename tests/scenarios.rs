@@ -1,5 +1,5 @@
 use raftbare::{
-    message::AppendEntriesRequest, Action, ClusterConfig, CommitPromise, HeartbeatPromise,
+    message::AppendEntriesRequest, Action, Actions, ClusterConfig, CommitPromise, HeartbeatPromise,
     LogEntries, LogEntry, LogIndex, LogPosition, Message, MessageSeqNum, Node, NodeId, Role, Term,
 };
 use std::ops::{Deref, DerefMut};
@@ -12,7 +12,11 @@ macro_rules! assert_no_action {
 
 macro_rules! assert_action {
     ($node:expr, $action:expr) => {
-        assert_eq!($node.next_action(), Some($action));
+        let action = $action;
+        assert_eq!(
+            next_same_kind_action($node.actions_mut(), &action),
+            Some(action)
+        );
     };
 }
 
@@ -851,4 +855,38 @@ fn since(entries: &LogEntries, position: LogPosition) -> Option<LogEntries> {
             .iter()
             .skip(position.index.get() as usize - position.index.get() as usize),
     ))
+}
+
+fn next_same_kind_action(actions: &mut Actions, expected: &Action) -> Option<Action> {
+    match expected {
+        Action::SetElectionTimeout if actions.set_election_timeout => {
+            actions.set_election_timeout = false;
+            Some(Action::SetElectionTimeout)
+        }
+        Action::SaveCurrentTerm if actions.save_current_term => {
+            actions.save_current_term = false;
+            Some(Action::SaveCurrentTerm)
+        }
+        Action::SaveVotedFor if actions.save_voted_for => {
+            actions.save_voted_for = false;
+            Some(Action::SaveVotedFor)
+        }
+        Action::AppendLogEntries(_) => actions
+            .append_log_entries
+            .take()
+            .map(Action::AppendLogEntries),
+        Action::BroadcastMessage(_) => actions
+            .broadcast_message
+            .take()
+            .map(Action::BroadcastMessage),
+        Action::SendMessage(node_id, _) => actions
+            .send_messages
+            .remove(node_id)
+            .map(|msg| Action::SendMessage(*node_id, msg)),
+        Action::InstallSnapshot(node_id) => actions
+            .install_snapshots
+            .remove(node_id)
+            .then(|| Action::InstallSnapshot(*node_id)),
+        _ => None,
+    }
 }

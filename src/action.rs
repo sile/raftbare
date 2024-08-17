@@ -24,7 +24,7 @@ pub struct Actions {
     pub append_log_entries: Option<LogEntries>,
     pub broadcast_message: Option<Message>,
     pub send_messages: BTreeMap<NodeId, Message>,
-    pub install_snapshot: BTreeSet<NodeId>,
+    pub install_snapshots: BTreeSet<NodeId>,
 }
 
 impl Actions {
@@ -46,7 +46,7 @@ impl Actions {
                 self.send_messages.insert(node_id, message);
             }
             Action::InstallSnapshot(node_id) => {
-                self.install_snapshot.insert(node_id);
+                self.install_snapshots.insert(node_id);
             }
         }
     }
@@ -77,7 +77,7 @@ impl Iterator for Actions {
         if let Some((node_id, message)) = self.send_messages.pop_first() {
             return Some(Action::SendMessage(node_id, message));
         }
-        if let Some(node_id) = self.install_snapshot.pop_first() {
+        if let Some(node_id) = self.install_snapshots.pop_first() {
             return Some(Action::InstallSnapshot(node_id));
         }
         None
