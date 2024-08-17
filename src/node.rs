@@ -285,7 +285,7 @@ impl Node {
             self.log.entries().last_position(),
             std::iter::once(entry.clone()),
         )));
-        self.log.entries_mut().append_entry(entry);
+        self.log.entries_mut().push(entry.clone());
 
         // TODO: unnecessary condition?
         if self.role.is_leader() {
@@ -320,7 +320,7 @@ impl Node {
 
         // Append.
         self.enqueue_action(Action::AppendLogEntries(entries.clone()));
-        self.log.entries_mut().append_entries(entries);
+        self.log.entries_mut().append(entries);
         true
     }
 

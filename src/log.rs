@@ -283,6 +283,35 @@ impl LogEntries {
         self.configs.range(..=index).map(|x| x.1).rev().next()
     }
 
+    /// Appends an entry to the back of this entries.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use raftbare::{LogEntries, LogEntry, LogIndex, LogPosition, Term};
+    ///
+    /// let mut entries = LogEntries::new(LogPosition::ZERO);
+    /// entries.push(LogEntry::Term(Term::ZERO));
+    /// entries.push(LogEntry::Command);
+    ///
+    /// assert_eq!(entries.get_entry(LogIndex::new(1)), Some(LogEntry::Term(Term::ZERO)));
+    /// assert_eq!(entries.last_position(), LogPosition { term: Term::ZERO, index: LogIndex::new(2) });
+    /// ```
+    pub fn push(&mut self, entry: LogEntry) {
+        self.last_position = self.last_position.next();
+        match entry {
+            LogEntry::Term(term) => {
+                self.terms.insert(self.last_position.index, term);
+                self.last_position.term = term;
+            }
+            LogEntry::ClusterConfig(config) => {
+                self.configs
+                    .insert(self.last_position.index, config.clone());
+            }
+            LogEntry::Command => {}
+        }
+    }
+
     // TODO: add unit test
     pub fn since(&self, new_prev: LogPosition) -> Option<Self> {
         if !self.contains(new_prev) {
@@ -299,22 +328,7 @@ impl LogEntries {
         Some(this)
     }
 
-    pub fn append_entry(&mut self, entry: &LogEntry) {
-        self.last_position = self.last_position.next();
-        match entry {
-            LogEntry::Term(term) => {
-                self.terms.insert(self.last_position.index, *term);
-                self.last_position.term = *term;
-            }
-            LogEntry::ClusterConfig(config) => {
-                self.configs
-                    .insert(self.last_position.index, config.clone());
-            }
-            LogEntry::Command => {}
-        }
-    }
-
-    pub fn append_entries(&mut self, entries: &Self) {
+    pub(crate) fn append(&mut self, entries: &Self) {
         if self.last_position != entries.prev_position {
             // Truncate
             debug_assert!(self.contains(entries.prev_position));
@@ -323,10 +337,9 @@ impl LogEntries {
             self.configs.split_off(&self.last_position.index);
         }
 
-        // TODO: use append()
         self.terms.extend(&entries.terms);
         self.configs
-            .extend(entries.configs.iter().map(|(k, v)| (k.clone(), v.clone())));
+            .extend(entries.configs.iter().map(|(k, v)| (*k, v.clone())));
         self.last_position = entries.last_position;
     }
 }
@@ -334,7 +347,7 @@ impl LogEntries {
 impl std::iter::Extend<LogEntry> for LogEntries {
     fn extend<T: IntoIterator<Item = LogEntry>>(&mut self, iter: T) {
         for entry in iter {
-            self.append_entry(&entry);
+            self.push(entry);
         }
     }
 }
