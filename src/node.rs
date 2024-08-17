@@ -1,5 +1,5 @@
 use crate::{
-    action::Action,
+    action::{Action, Actions},
     config::ClusterConfig,
     log::{LogEntries, LogEntry, LogIndex, LogPosition},
     message::{
@@ -9,7 +9,7 @@ use crate::{
     quorum::Quorum,
     Log, Term,
 };
-use std::collections::{BTreeMap, BTreeSet, VecDeque};
+use std::collections::{BTreeMap, BTreeSet};
 
 /// Node identifier ([`u64`]).
 ///
@@ -36,12 +36,12 @@ impl NodeId {
 #[derive(Debug, Clone)]
 pub struct Node {
     id: NodeId,
-    action_queue: VecDeque<Action>, // TODO: BTreeMap<ActionKind,Action>
     role: Role,
     voted_for: Option<NodeId>,
     current_term: Term,
     log: Log,
     commit_index: LogIndex,
+    actions: Actions,
 
     // TODO: Factor out role specific states in an enum
     // Candidate state
@@ -62,12 +62,12 @@ impl Node {
         let quorum = Quorum::new(&config);
         Self {
             id,
-            action_queue: VecDeque::new(),
             role: Role::Follower,
             voted_for: None,
             current_term: term,
             log: Log::new(config, LogEntries::new(LogPosition::new(term, index))),
             commit_index: LogIndex::new(0),
+            actions: Actions::default(),
 
             // candidate state
             granted_votes: BTreeSet::new(),
@@ -82,7 +82,6 @@ impl Node {
 
     pub fn restart(id: NodeId, current_term: Term, voted_for: Option<NodeId>, log: Log) -> Self {
         let mut node = Self::start(id);
-        node.action_queue.clear();
 
         node.current_term = current_term;
         node.voted_for = voted_for;
@@ -327,12 +326,6 @@ impl Node {
 
     fn set_voted_for(&mut self, voted_for: Option<NodeId>) {
         self.voted_for = voted_for;
-
-        for action in &mut self.action_queue {
-            if matches!(action, Action::SaveVotedFor) {
-                return;
-            }
-        }
         self.enqueue_action(Action::SaveVotedFor);
     }
 
@@ -645,16 +638,21 @@ impl Node {
         &self.log
     }
 
+    pub fn actions(&self) -> &Actions {
+        &self.actions
+    }
+
+    pub fn actions_mut(&mut self) -> &mut Actions {
+        &mut self.actions
+    }
+
     pub fn next_action(&mut self) -> Option<Action> {
-        self.action_queue.pop_front()
+        self.actions.next()
     }
 
-    pub fn take_actions(&mut self) -> impl '_ + Iterator<Item = Action> {
-        self.action_queue.drain(..)
-    }
-
+    // TODO: rename
     fn enqueue_action(&mut self, action: Action) {
-        self.action_queue.push_back(action);
+        self.actions.set(action);
     }
 }
 

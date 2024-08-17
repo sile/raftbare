@@ -27,6 +27,31 @@ pub struct Actions {
     pub install_snapshot: BTreeSet<NodeId>,
 }
 
+impl Actions {
+    pub(crate) fn set(&mut self, action: Action) {
+        match action {
+            Action::SetElectionTimeout => self.set_election_timeout = true,
+            Action::SaveCurrentTerm => self.save_current_term = true,
+            Action::SaveVotedFor => self.save_voted_for = true,
+            Action::AppendLogEntries(log_entries) => {
+                // TODO: merge
+                self.append_log_entries = Some(log_entries)
+            }
+            Action::BroadcastMessage(message) => {
+                // TODO: merge
+                self.broadcast_message = Some(message)
+            }
+            Action::SendMessage(node_id, message) => {
+                // TODO: merge
+                self.send_messages.insert(node_id, message);
+            }
+            Action::InstallSnapshot(node_id) => {
+                self.install_snapshot.insert(node_id);
+            }
+        }
+    }
+}
+
 impl Iterator for Actions {
     type Item = Action;
 
