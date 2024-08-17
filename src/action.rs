@@ -11,7 +11,7 @@ pub enum Action {
     AppendLogEntries(LogEntries),
 
     // Can drop this message especially if there is another ongoing AppendEntriesRPC
-    BroadcastMessage(Message), // TODO: remove(?)
+    BroadcastMessage(Message),
     SendMessage(NodeId, Message),
     InstallSnapshot(NodeId),
 }
@@ -22,6 +22,7 @@ pub struct Actions {
     pub save_current_term: bool,
     pub save_voted_for: bool,
     pub append_log_entries: Option<LogEntries>,
+    pub broadcast_message: Option<Message>,
     pub send_messages: BTreeMap<NodeId, Message>,
     pub install_snapshot: BTreeSet<NodeId>,
 }
@@ -41,6 +42,9 @@ impl Iterator for Actions {
         if self.save_voted_for {
             self.save_voted_for = false;
             return Some(Action::SaveVotedFor);
+        }
+        if let Some(broadcast_message) = self.broadcast_message.take() {
+            return Some(Action::BroadcastMessage(broadcast_message));
         }
         if let Some(log_entries) = self.append_log_entries.take() {
             return Some(Action::AppendLogEntries(log_entries));
