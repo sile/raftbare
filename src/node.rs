@@ -61,7 +61,7 @@ impl Node {
         let index = LogIndex::new(0);
         let config = ClusterConfig::new();
         let quorum = Quorum::new(&config);
-        let mut this = Self {
+        Self {
             id,
             action_queue: VecDeque::new(),
             role: Role::Follower,
@@ -79,9 +79,7 @@ impl Node {
             quorum,
             leader_sn: MessageSeqNum::new(),
             ongoing_heartbeats: VecDeque::new(),
-        };
-        this.enqueue_action(Action::CreateLog(LogEntry::Term(term)));
-        this
+        }
     }
 
     pub fn restart(id: NodeId, current_term: Term, voted_for: Option<NodeId>, log: Log) -> Self {

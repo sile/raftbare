@@ -1,5 +1,5 @@
 use crate::{
-    log::{LogEntries, LogEntry, LogIndex},
+    log::{LogEntries, LogIndex},
     message::Message,
     node::{HeartbeatPromise, NodeId},
     Term,
@@ -12,7 +12,6 @@ pub enum Action {
     // Synchronous actions (if async, the consistency is not guaranteed)
     SaveCurrentTerm(Term),
     SaveVotedFor(Option<NodeId>),
-    CreateLog(LogEntry), // TODO: delete
     AppendLogEntries(LogEntries),
 
     // TODO: delete

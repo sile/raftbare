@@ -351,7 +351,6 @@ impl TestNode {
         assert_eq!(node.role(), Role::Follower);
         assert_eq!(node.current_term(), t(0));
         assert_eq!(node.voted_for(), None);
-        assert_action!(node, create_log());
         assert_no_action!(node);
         Self { inner: node }
     }
@@ -756,10 +755,6 @@ fn term_entry(term: Term) -> LogEntry {
 
 fn cluster_config_entry(config: ClusterConfig) -> LogEntry {
     LogEntry::ClusterConfig(config)
-}
-
-fn create_log() -> Action {
-    Action::CreateLog(LogEntry::Term(t(0)))
 }
 
 fn request_vote_request(term: Term, from: NodeId, last_entry: LogPosition) -> Message {
