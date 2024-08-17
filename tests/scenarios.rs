@@ -500,7 +500,7 @@ impl TestNode {
         let Message::AppendEntriesReply(reply) = msg else {
             unreachable!();
         };
-        let Some(entries) = self.log().entries().since(reply.last_entry) else {
+        let Some(entries) = since(self.log().entries(), reply.last_entry) else {
             panic!("Needs snapshot");
         };
 
@@ -522,7 +522,7 @@ impl TestNode {
         let Message::AppendEntriesReply(reply) = msg else {
             unreachable!();
         };
-        assert!(self.log().entries().since(reply.last_entry).is_none());
+        assert!(since(self.log().entries(), reply.last_entry).is_none());
 
         self.handle_message(msg);
         assert_action!(self, Action::InstallSnapshot(reply.from));
@@ -838,4 +838,16 @@ fn log_pos(term: Term, index: LogIndex) -> LogPosition {
 
 fn log_prev(entry: LogPosition) -> LogPosition {
     log_pos(entry.term, LogIndex::new(entry.index.get() - 1))
+}
+
+fn since(entries: &LogEntries, position: LogPosition) -> Option<LogEntries> {
+    if !entries.contains(position) {
+        return None;
+    }
+    Some(LogEntries::from_iter(
+        position,
+        entries
+            .iter()
+            .skip(position.index.get() as usize - position.index.get() as usize),
+    ))
 }

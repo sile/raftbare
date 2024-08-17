@@ -394,21 +394,15 @@ impl LogEntries {
         self.configs.split_off(&last_index.next());
     }
 
-    // TODO: add unit test
-    pub fn since(&self, new_prev_position: LogPosition) -> Option<Self> {
+    pub(crate) fn since(&self, new_prev_position: LogPosition) -> Option<Self> {
         if !self.contains(new_prev_position) {
             return None;
         }
 
         let mut this = self.clone();
         this.prev_position = new_prev_position;
-
-        // TODO: optimize(?) => use split_off()
-        this.terms
-            .retain(|index, _| index > &new_prev_position.index);
-        this.configs
-            .retain(|index, _| index > &new_prev_position.index);
-
+        this.terms = this.terms.split_off(&new_prev_position.index.next());
+        this.configs = this.configs.split_off(&new_prev_position.index.next());
         Some(this)
     }
 
@@ -568,6 +562,41 @@ mod tests {
         assert_eq!(entries.get_entry(i(2)), Some(LogEntry::Command));
         assert_eq!(entries.get_entry(i(3)), Some(LogEntry::Term(Term::new(3))));
         assert_eq!(entries.get_entry(i(4)), Some(LogEntry::Command));
+    }
+
+    #[test]
+    fn log_entries_since() {
+        let mut entries = LogEntries::new(LogPosition::ZERO);
+        entries.push(LogEntry::Term(Term::ZERO));
+        entries.push(LogEntry::Command);
+        entries.push(LogEntry::Term(Term::new(1)));
+        entries.push(LogEntry::Command);
+        entries.push(LogEntry::Command);
+
+        assert_eq!(entries.since(pos(0, 0)), Some(entries.clone()));
+
+        assert_eq!(
+            entries
+                .since(pos(0, 2))
+                .map(|e| e.iter_with_positions().collect::<Vec<_>>()),
+            Some(vec![
+                (pos(1, 3), LogEntry::Term(Term::new(1))),
+                (pos(1, 4), LogEntry::Command),
+                (pos(1, 5), LogEntry::Command)
+            ])
+        );
+
+        assert_eq!(
+            entries
+                .since(pos(1, 3))
+                .map(|e| e.iter_with_positions().collect::<Vec<_>>()),
+            Some(vec![
+                (pos(1, 4), LogEntry::Command),
+                (pos(1, 5), LogEntry::Command)
+            ])
+        );
+
+        assert_eq!(entries.since(pos(0, 3)), None); // Term mismatch
     }
 
     fn two_entries(prev_position: LogPosition, entry0: LogEntry, entry1: LogEntry) -> LogEntries {
