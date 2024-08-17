@@ -80,6 +80,11 @@ impl Log {
     }
 }
 
+/// Log entries.
+///
+/// This representation is compact and only requires `O(|terms|) + O(|configs|)` memory,
+/// where `|terms|` is the number of [`LogEntry::Term`] entries and
+/// `|configs|` is the number of [`LogEntry::ClusterConfig`] entries.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct LogEntries {
     prev_position: LogPosition,
@@ -173,6 +178,40 @@ impl LogEntries {
             } else {
                 LogEntry::Command
             }
+        })
+    }
+
+    /// Returns an iterator over the entries in this [`LogEntries`] instance with their positions.
+    ///
+    /// # Examples
+    /// ```
+    /// use raftbare::{LogEntries, LogEntry, LogIndex, LogPosition, Term};
+    ///
+    /// let mut entries = LogEntries::new(LogPosition::ZERO);
+    /// entries.push(LogEntry::Command);
+    /// entries.push(LogEntry::Term(Term::new(1)));
+    /// entries.push(LogEntry::Command);
+    ///
+    /// fn pos(term: u64, index: u64) -> LogPosition {
+    ///     LogPosition { term: Term::new(term), index: LogIndex::new(index) }
+    /// }
+    ///
+    /// let mut iter = entries.iter_with_positions();
+    /// assert_eq!(iter.next(), Some((pos(0, 1), LogEntry::Command)));
+    /// assert_eq!(iter.next(), Some((pos(1, 2), LogEntry::Term(Term::new(1)))));
+    /// assert_eq!(iter.next(), Some((pos(1, 3), LogEntry::Command)));
+    /// assert_eq!(iter.next(), None);
+    /// ```
+    pub fn iter_with_positions(&self) -> impl '_ + Iterator<Item = (LogPosition, LogEntry)> {
+        let base_index = self.prev_position.index.get() + 1;
+        let mut term = self.prev_position.term;
+        self.iter().enumerate().map(move |(i, entry)| {
+            if let LogEntry::Term(t) = entry {
+                term = t;
+            }
+            let index = LogIndex::new(base_index + i as u64);
+            let position = LogPosition { term, index };
+            (position, entry)
         })
     }
 
