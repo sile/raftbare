@@ -206,7 +206,7 @@ fn snapshot() {
         assert_ne!(node.log().entries().prev_position().index, LogIndex::new(0));
     }
 
-    // Add a new node.
+    // Add a new node and remove two nodes.
     let mut node3 = TestNode::asserted_start(id(3));
     let config = joint(
         &[cluster.node0.id(), cluster.node1.id(), cluster.node2.id()],
@@ -299,9 +299,9 @@ impl ThreeNodeCluster {
             );
             let msg = append_entries_request(
                 &node.inner,
-                LogEntries::single(
+                LogEntries::from_iter(
                     log_prev(node.inner.log().entries().last_position()),
-                    &LogEntry::Command,
+                    std::iter::once(LogEntry::Command),
                 ),
             );
             assert_action!(node.inner, broadcast_message(&msg));
@@ -385,7 +385,10 @@ impl TestNode {
         assert_eq!(Ok(next_index), self.change_cluster_config(&new_config));
         let msg = append_entries_request(
             self,
-            LogEntries::single(prev_entry, &cluster_config_entry(new_config.clone())),
+            LogEntries::from_iter(
+                prev_entry,
+                std::iter::once(cluster_config_entry(new_config.clone())),
+            ),
         );
 
         assert_action!(
@@ -549,7 +552,10 @@ impl TestNode {
         self.handle_message(msg);
         let request = append_entries_request(
             self,
-            LogEntries::single(prev_entry, &cluster_config_entry(new_config.clone())),
+            LogEntries::from_iter(
+                prev_entry,
+                std::iter::once(cluster_config_entry(new_config.clone())),
+            ),
         );
         assert_action!(self, committed(reply.last_entry.index));
         assert_action!(
@@ -659,7 +665,7 @@ impl TestNode {
         self.handle_message(&msg);
         let request = append_entries_request(
             self,
-            LogEntries::single(tail, &term_entry(self.current_term())),
+            LogEntries::from_iter(tail, std::iter::once(term_entry(self.current_term()))),
         );
         assert_action!(
             self,
@@ -799,7 +805,7 @@ fn set_election_timeout() -> Action {
 }
 
 fn append_log_entry(prev: LogPosition, entry: LogEntry) -> Action {
-    Action::AppendLogEntries(LogEntries::single(prev, &entry))
+    Action::AppendLogEntries(LogEntries::from_iter(prev, std::iter::once(entry)))
 }
 
 fn append_log_entries(entries: &LogEntries) -> Action {

@@ -112,13 +112,6 @@ impl LogEntries {
         }
     }
 
-    // TODO: remove
-    pub fn single(prev_position: LogPosition, entry: &LogEntry) -> Self {
-        let mut this = Self::new(prev_position);
-        this.append_entry(&entry);
-        this
-    }
-
     /// Makes a new [`LogEntries`] instance with the given entries.
     ///
     /// # Examples
