@@ -232,6 +232,7 @@ impl LogEntries {
         (self.prev_position.index..=self.last_position.index).contains(&index)
     }
 
+    /// Returns the term of the given index if it is within the range of this entries.
     pub fn get_term(&self, index: LogIndex) -> Option<Term> {
         self.contains_index(index).then(|| {
             self.terms
@@ -243,21 +244,43 @@ impl LogEntries {
         })
     }
 
-    pub fn get_entry(&self, i: LogIndex) -> Option<LogEntry> {
-        if !self.contains_index(i) {
-            return None;
-        }
-        if let Some(term) = self.terms.get(&i) {
-            Some(LogEntry::Term(*term))
-        } else if let Some(config) = self.configs.get(&i) {
-            Some(LogEntry::ClusterConfig(config.clone()))
+    /// Returns the entry at the given index if it is within the range of this entries.
+    ///
+    /// Note that if the index is equal to the previous index, this method returns [`None`].
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use raftbare::{LogEntries, LogEntry, LogIndex, LogPosition, Term};
+    ///
+    /// let entries = LogEntries::from_iter(
+    ///     LogPosition::ZERO,
+    ///     vec![
+    ///         LogEntry::Term(Term::ZERO),
+    ///         LogEntry::Command,
+    ///         LogEntry::Term(Term::new(1)),
+    ///     ],
+    /// );
+    /// assert_eq!(entries.get_entry(LogIndex::ZERO), None);
+    /// assert_eq!(entries.get_entry(LogIndex::new(1)), Some(LogEntry::Term(Term::ZERO)));
+    /// assert_eq!(entries.get_entry(LogIndex::new(2)), Some(LogEntry::Command));
+    /// assert_eq!(entries.get_entry(LogIndex::new(3)), Some(LogEntry::Term(Term::new(1))));
+    /// assert_eq!(entries.get_entry(LogIndex::new(4)), None);
+    /// ```
+    pub fn get_entry(&self, index: LogIndex) -> Option<LogEntry> {
+        if !self.contains_index(index) || self.prev_position.index == index {
+            None
+        } else if let Some(term) = self.terms.get(&index).copied() {
+            Some(LogEntry::Term(term))
+        } else if let Some(config) = self.configs.get(&index).cloned() {
+            Some(LogEntry::ClusterConfig(config))
         } else {
             Some(LogEntry::Command)
         }
     }
 
-    pub fn get_config(&self, i: LogIndex) -> Option<&ClusterConfig> {
-        self.configs.range(..=i).map(|x| x.1).rev().next()
+    pub(crate) fn get_config(&self, index: LogIndex) -> Option<&ClusterConfig> {
+        self.configs.range(..=index).map(|x| x.1).rev().next()
     }
 
     // TODO: add unit test
