@@ -7,7 +7,7 @@ pub mod message; // TODO:
 mod node;
 mod quorum;
 
-pub use action::Action;
+pub use action::{Action, Actions};
 pub use config::ClusterConfig;
 pub use log::{Log, LogEntries, LogEntry, LogIndex, LogPosition};
 pub use message::{Message, MessageSeqNum};
