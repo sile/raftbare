@@ -2,16 +2,15 @@ use crate::{
     log::{LogEntries, LogIndex},
     message::Message,
     node::{HeartbeatPromise, NodeId},
-    Term,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Action {
     SetElectionTimeout,
 
-    // Synchronous actions (if async, the consistency is not guaranteed)
-    SaveCurrentTerm(Term),
-    SaveVotedFor(Option<NodeId>),
+    // Synchronous actions (if async, the Raft properties are not guaranteed)
+    SaveCurrentTerm,
+    SaveVotedFor,
     AppendLogEntries(LogEntries),
 
     // TODO: delete

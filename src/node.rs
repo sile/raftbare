@@ -324,19 +324,18 @@ impl Node {
 
     fn set_current_term(&mut self, term: Term) {
         self.current_term = term;
-        self.enqueue_action(Action::SaveCurrentTerm(term));
+        self.enqueue_action(Action::SaveCurrentTerm);
     }
 
     fn set_voted_for(&mut self, voted_for: Option<NodeId>) {
         self.voted_for = voted_for;
 
         for action in &mut self.action_queue {
-            if matches!(action, Action::SaveVotedFor(..)) {
-                *action = Action::SaveVotedFor(voted_for);
+            if matches!(action, Action::SaveVotedFor) {
                 return;
             }
         }
-        self.enqueue_action(Action::SaveVotedFor(voted_for));
+        self.enqueue_action(Action::SaveVotedFor);
     }
 
     // TODO: split into handle_request_vote_request, ... to make it possible to return errors

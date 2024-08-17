@@ -358,8 +358,10 @@ impl TestNode {
     fn asserted_create_cluster(&mut self) {
         assert!(self.create_cluster());
 
-        assert_action!(self, save_current_term(t(1)));
-        assert_action!(self, save_voted_for(Some(self.id())));
+        assert_action!(self, save_current_term());
+        assert_eq!(self.current_term(), t(1));
+        assert_action!(self, save_voted_for());
+        assert_eq!(self.voted_for(), Some(self.id()));
         assert_action!(self, append_log_entry(prev(t(0), i(0)), term_entry(t(1))));
         assert_action!(
             self,
@@ -406,8 +408,10 @@ impl TestNode {
 
         self.handle_message(msg);
         let reply = append_entries_reply(msg, self);
-        assert_action!(self, save_current_term(msg.term()));
-        assert_action!(self, save_voted_for(Some(msg.from())));
+        assert_action!(self, save_current_term());
+        assert_eq!(self.current_term(), msg.term());
+        assert_action!(self, save_voted_for());
+        assert_eq!(self.voted_for(), Some(msg.from()));
         assert_action!(self, set_election_timeout());
         assert_action!(self, unicast_message(msg.from(), &reply));
         assert_no_action!(self);
@@ -436,7 +440,8 @@ impl TestNode {
             entries.last_position()
         );
         if prev_voted_for != Some(msg.from()) {
-            assert_action!(self, save_voted_for(Some(msg.from())));
+            assert_action!(self, save_voted_for());
+            assert_eq!(self.voted_for(), Some(msg.from()));
         }
 
         let reply = append_entries_reply(msg, self);
@@ -479,10 +484,12 @@ impl TestNode {
             entries.last_position()
         );
         if prev_term < msg.term() {
-            assert_action!(self, save_current_term(msg.term()));
+            assert_action!(self, save_current_term());
+            assert_eq!(self.current_term(), msg.term());
         }
         if prev_voted_for != Some(msg.from()) {
-            assert_action!(self, save_voted_for(Some(msg.from())));
+            assert_action!(self, save_voted_for());
+            assert_eq!(self.voted_for(), Some(msg.from()));
         }
         assert_action!(self, set_election_timeout());
 
@@ -598,8 +605,10 @@ impl TestNode {
             self.id(),
             self.log().entries().last_position(),
         );
-        assert_action!(self, save_current_term(next_term(prev_term)));
-        assert_action!(self, save_voted_for(Some(self.id())));
+        assert_action!(self, save_current_term());
+        assert_eq!(self.current_term(), next_term(prev_term));
+        assert_action!(self, save_voted_for());
+        assert_eq!(self.voted_for(), Some(self.id()));
         assert_action!(self, broadcast_message(&request));
         assert_action!(self, set_election_timeout());
         assert_no_action!(self);
@@ -620,8 +629,10 @@ impl TestNode {
             self.id(),
             self.log().entries().last_position(),
         );
-        assert_action!(self, save_current_term(next_term(prev_term)));
-        assert_action!(self, save_voted_for(Some(self.id())));
+        assert_action!(self, save_current_term());
+        assert_eq!(self.current_term(), next_term(prev_term));
+        assert_action!(self, save_voted_for());
+        assert_eq!(self.voted_for(), Some(self.id()));
         assert_action!(self, broadcast_message(&request));
         assert_action!(self, set_election_timeout());
         assert_no_action!(self);
@@ -635,8 +646,10 @@ impl TestNode {
         self.handle_message(&msg);
 
         let reply = request_vote_reply(msg.term(), self.id(), true);
-        assert_action!(self, save_current_term(msg.term()));
-        assert_action!(self, save_voted_for(Some(msg.from())));
+        assert_action!(self, save_current_term());
+        assert_eq!(self.current_term(), msg.term());
+        assert_action!(self, save_voted_for());
+        assert_eq!(self.voted_for(), Some(msg.from()));
         assert_action!(self, set_election_timeout());
         assert_action!(self, unicast_message(msg.from(), &reply));
         assert_no_action!(self);
@@ -648,8 +661,10 @@ impl TestNode {
         assert!(matches!(msg, Message::RequestVoteRequest(_)));
 
         self.handle_message(&msg);
-        assert_action!(self, save_current_term(msg.term()));
-        assert_action!(self, Action::SaveVotedFor(None));
+        assert_action!(self, save_current_term());
+        assert_eq!(self.current_term(), msg.term());
+        assert_action!(self, Action::SaveVotedFor);
+        assert_eq!(self.voted_for(), None);
         assert_action!(self, set_election_timeout());
         assert_no_action!(self);
     }
@@ -686,8 +701,10 @@ impl TestNode {
         let tail = self.log().entries().last_position();
         self.handle_message(&msg);
         let reply = append_entries_reply(&msg, self);
-        assert_action!(self, save_current_term(msg.term()));
-        assert_action!(self, save_voted_for(Some(msg.from())));
+        assert_action!(self, save_current_term());
+        assert_eq!(self.current_term(), msg.term());
+        assert_action!(self, save_voted_for());
+        assert_eq!(self.voted_for(), Some(msg.from()));
         assert_action!(self, set_election_timeout());
         assert_action!(self, append_log_entry(tail, term_entry(msg.term())));
         assert_action!(self, unicast_message(msg.from(), &reply));
@@ -807,12 +824,12 @@ fn append_log_entries(entries: &LogEntries) -> Action {
     Action::AppendLogEntries(entries.clone())
 }
 
-fn save_current_term(term: Term) -> Action {
-    Action::SaveCurrentTerm(term)
+fn save_current_term() -> Action {
+    Action::SaveCurrentTerm
 }
 
-fn save_voted_for(voted_for: Option<NodeId>) -> Action {
-    Action::SaveVotedFor(voted_for)
+fn save_voted_for() -> Action {
+    Action::SaveVotedFor
 }
 
 fn committed(index: LogIndex) -> Action {
