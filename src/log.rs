@@ -82,11 +82,10 @@ impl Log {
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct LogEntries {
-    // TODO: private
-    pub prev_position: LogPosition,
-    pub last_position: LogPosition,
-    pub terms: BTreeMap<LogIndex, Term>,
-    pub configs: BTreeMap<LogIndex, ClusterConfig>,
+    prev_position: LogPosition,
+    last_position: LogPosition,
+    terms: BTreeMap<LogIndex, Term>,
+    configs: BTreeMap<LogIndex, ClusterConfig>,
 }
 
 impl LogEntries {
@@ -145,6 +144,10 @@ impl LogEntries {
         this
     }
 
+    pub fn len(&self) -> usize {
+        self.last_position.index.get() as usize - self.prev_position.index.get() as usize
+    }
+
     pub fn iter(&self) -> impl '_ + Iterator<Item = LogEntry> {
         (self.prev_position.index.get() + 1..=self.last_position.index.get()).map(|i| {
             let i = LogIndex::new(i);
@@ -156,10 +159,6 @@ impl LogEntries {
                 LogEntry::Command
             }
         })
-    }
-
-    pub fn len(&self) -> usize {
-        self.last_position.index.get() as usize - self.prev_position.index.get() as usize
     }
 
     // TODO: remove

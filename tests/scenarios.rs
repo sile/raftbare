@@ -110,7 +110,7 @@ fn election() {
     cluster.node1.handle_election_timeout();
     let request = append_entries_request(
         &cluster.node1,
-        LogEntries::new(cluster.node1.log().entries().last_position),
+        LogEntries::new(cluster.node1.log().entries().last_position()),
     );
     assert_action!(cluster.node1, broadcast_message(&request));
 
@@ -199,11 +199,11 @@ fn snapshot() {
 
     // Take a snapshot.
     for node in &mut [&mut cluster.node0, &mut cluster.node1, &mut cluster.node2] {
-        assert_eq!(node.log().entries().prev_position.index, LogIndex::new(0));
+        assert_eq!(node.log().entries().prev_position().index, LogIndex::new(0));
         let snapshot_config = node.log().latest_config().clone();
-        let snapshot_position = node.log().entries().last_position;
+        let snapshot_position = node.log().entries().last_position();
         assert!(node.handle_snapshot_installed(snapshot_config, snapshot_position));
-        assert_ne!(node.log().entries().prev_position.index, LogIndex::new(0));
+        assert_ne!(node.log().entries().prev_position().index, LogIndex::new(0));
     }
 
     // Add a new node.
@@ -293,14 +293,14 @@ impl ThreeNodeCluster {
             assert_action!(
                 node.inner,
                 append_log_entry(
-                    log_prev(node.inner.log().entries().last_position),
+                    log_prev(node.inner.log().entries().last_position()),
                     LogEntry::Command
                 )
             );
             let msg = append_entries_request(
                 &node.inner,
                 LogEntries::single(
-                    log_prev(node.inner.log().entries().last_position),
+                    log_prev(node.inner.log().entries().last_position()),
                     &LogEntry::Command,
                 ),
             );
@@ -380,8 +380,8 @@ impl TestNode {
     }
 
     fn asserted_change_cluster_config(&mut self, new_config: ClusterConfig) -> Message {
-        let prev_entry = self.log().entries().last_position;
-        let next_index = next_index(self.log().entries().last_position.index);
+        let prev_entry = self.log().entries().last_position();
+        let next_index = next_index(self.log().entries().last_position().index);
         assert_eq!(Ok(next_index), self.change_cluster_config(&new_config));
         let msg = append_entries_request(
             self,
@@ -429,7 +429,10 @@ impl TestNode {
         let prev_voted_for = self.voted_for();
 
         self.handle_message(msg);
-        assert_eq!(self.log().entries().last_position, entries.last_position);
+        assert_eq!(
+            self.log().entries().last_position(),
+            entries.last_position()
+        );
         if prev_voted_for != Some(msg.from()) {
             assert_action!(self, save_voted_for(Some(msg.from())));
         }
@@ -439,11 +442,17 @@ impl TestNode {
             assert_action!(self, append_log_entries(&entries));
         }
         if prev_commit_index < *leader_commit
-            && prev_commit_index <= self.log().entries().last_position.index
+            && prev_commit_index <= self.log().entries().last_position().index
         {
             assert_action!(
                 self,
-                committed(self.log().entries().last_position.index.min(*leader_commit))
+                committed(
+                    self.log()
+                        .entries()
+                        .last_position()
+                        .index
+                        .min(*leader_commit)
+                )
             );
         }
         assert_action!(self, unicast_message(msg.from(), &reply));
@@ -463,7 +472,10 @@ impl TestNode {
         let prev_term = self.current_term();
 
         self.handle_message(msg);
-        assert_ne!(self.log().entries().last_position, entries.last_position);
+        assert_ne!(
+            self.log().entries().last_position(),
+            entries.last_position()
+        );
         if prev_term < msg.term() {
             assert_action!(self, save_current_term(msg.term()));
         }
@@ -515,7 +527,7 @@ impl TestNode {
 
         (
             self.log().snapshot_config().clone(),
-            self.log().entries().prev_position,
+            self.log().entries().prev_position(),
         )
     }
 
@@ -526,7 +538,7 @@ impl TestNode {
         assert!(matches!(msg, Message::AppendEntriesReply(_)));
         assert!(self.config().is_joint_consensus());
 
-        let prev_entry = self.log().entries().last_position;
+        let prev_entry = self.log().entries().last_position();
         let mut new_config = self.config().clone();
         new_config.voters = std::mem::take(&mut new_config.new_voters);
 
@@ -579,7 +591,7 @@ impl TestNode {
         let request = request_vote_request(
             self.current_term(),
             self.id(),
-            self.log().entries().last_position,
+            self.log().entries().last_position(),
         );
         assert_action!(self, save_current_term(next_term(prev_term)));
         assert_action!(self, save_voted_for(Some(self.id())));
@@ -601,7 +613,7 @@ impl TestNode {
         let request = request_vote_request(
             self.current_term(),
             self.id(),
-            self.log().entries().last_position,
+            self.log().entries().last_position(),
         );
         assert_action!(self, save_current_term(next_term(prev_term)));
         assert_action!(self, save_voted_for(Some(self.id())));
@@ -643,7 +655,7 @@ impl TestNode {
     ) -> Message {
         assert!(matches!(msg, Message::RequestVoteReply(_)));
 
-        let tail = self.log().entries().last_position;
+        let tail = self.log().entries().last_position();
         self.handle_message(&msg);
         let request = append_entries_request(
             self,
@@ -666,7 +678,7 @@ impl TestNode {
     ) -> Message {
         assert!(matches!(msg, Message::AppendEntriesRequest(_)));
 
-        let tail = self.log().entries().last_position;
+        let tail = self.log().entries().last_position();
         self.handle_message(&msg);
         let reply = append_entries_reply(&msg, self);
         assert_action!(self, save_current_term(msg.term()));
@@ -682,7 +694,7 @@ impl TestNode {
     fn asserted_heartbeat(&mut self) -> (HeartbeatPromise, Message) {
         let heartbeat = self.heartbeat();
         let request =
-            append_entries_request(self, LogEntries::new(self.log().entries().last_position));
+            append_entries_request(self, LogEntries::new(self.log().entries().last_position()));
         assert_action!(self, broadcast_message(&request));
         assert_no_action!(self);
         (heartbeat, request)
@@ -770,7 +782,7 @@ fn append_entries_reply(request: &Message, node: &Node) -> Message {
         node.current_term(),
         node.id(),
         request.leader_sn,
-        node.log().entries().last_position,
+        node.log().entries().last_position(),
     )
 }
 
