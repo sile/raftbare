@@ -351,18 +351,63 @@ impl LogEntries {
         }
     }
 
+    /// Shortens the entries, keeping the first `len` entries and dropping the rest.
+    /// If `len` is greater or equal to `LogEntries::len()`, this has no effect.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use raftbare::{LogEntries, LogEntry, LogIndex, LogPosition, Term};
+    ///
+    /// let mut entries = LogEntries::new(LogPosition::ZERO);
+    /// entries.push(LogEntry::Term(Term::ZERO));
+    /// entries.push(LogEntry::Command);
+    /// entries.push(LogEntry::Term(Term::new(1)));
+    /// assert_eq!(entries.len(), 3);
+    ///
+    /// // No effect.
+    /// entries.truncate(3);
+    /// assert_eq!(entries.len(), 3);
+    ///
+    /// // Drop the last two entries.
+    /// entries.truncate(1);
+    /// assert_eq!(entries.len(), 1);
+    /// assert_eq!(entries.get_entry(LogIndex::new(1)), Some(LogEntry::Term(Term::ZERO)));
+    /// assert_eq!(entries.get_entry(LogIndex::new(2)), None);
+    ///
+    /// // Drop all entries.
+    /// entries.truncate(0);
+    /// assert_eq!(entries.len(), 0);
+    /// assert_eq!(entries.get_entry(LogIndex::new(1)), None);
+    /// ```
+    pub fn truncate(&mut self, len: usize) {
+        let last_index = LogIndex::new(self.prev_position.index.get() + len as u64);
+        if self.last_position.index <= last_index {
+            return;
+        }
+        let Some(last_term) = self.get_term(last_index) else {
+            unreachable!();
+        };
+        self.last_position.term = last_term;
+        self.last_position.index = last_index;
+        self.terms.split_off(&last_index.next());
+        self.configs.split_off(&last_index.next());
+    }
+
     // TODO: add unit test
-    pub fn since(&self, new_prev: LogPosition) -> Option<Self> {
-        if !self.contains(new_prev) {
+    pub fn since(&self, new_prev_position: LogPosition) -> Option<Self> {
+        if !self.contains(new_prev_position) {
             return None;
         }
 
         let mut this = self.clone();
-        this.prev_position = new_prev;
+        this.prev_position = new_prev_position;
 
         // TODO: optimize(?) => use split_off()
-        this.terms.retain(|index, _| index > &new_prev.index);
-        this.configs.retain(|index, _| index > &new_prev.index);
+        this.terms
+            .retain(|index, _| index > &new_prev_position.index);
+        this.configs
+            .retain(|index, _| index > &new_prev_position.index);
 
         Some(this)
     }
@@ -372,8 +417,8 @@ impl LogEntries {
             // Truncate
             debug_assert!(self.contains(entries.prev_position));
             self.last_position = entries.prev_position;
-            self.terms.split_off(&self.last_position.index);
-            self.configs.split_off(&self.last_position.index);
+            self.terms.split_off(&self.last_position.index.next());
+            self.configs.split_off(&self.last_position.index.next());
         }
 
         self.terms.extend(&entries.terms);
@@ -462,4 +507,81 @@ pub enum LogEntry {
     /// It is the user's responsibility to manage the mapping from each [`LogEntry::Command`] to
     /// an actual command data.
     Command,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn log_entries_append() {
+        let mut entries = LogEntries::new(LogPosition::ZERO);
+        assert_eq!(entries.last_position(), pos(0, 0));
+
+        // Append entries to the last position.
+        entries.append(&two_entries(
+            pos(0, 0),
+            LogEntry::Term(Term::ZERO),
+            LogEntry::Command,
+        ));
+        assert_eq!(entries.last_position(), pos(0, 2));
+        assert_eq!(entries.get_entry(i(0)), None);
+        assert_eq!(entries.get_entry(i(1)), Some(LogEntry::Term(Term::ZERO)));
+        assert_eq!(entries.get_entry(i(2)), Some(LogEntry::Command));
+
+        // Append entries to the last position again.
+        entries.append(&two_entries(
+            pos(0, 2),
+            LogEntry::Term(Term::new(1)),
+            LogEntry::Command,
+        ));
+        assert_eq!(entries.last_position(), pos(1, 4));
+        assert_eq!(entries.get_entry(i(0)), None);
+        assert_eq!(entries.get_entry(i(1)), Some(LogEntry::Term(Term::ZERO)));
+        assert_eq!(entries.get_entry(i(2)), Some(LogEntry::Command));
+        assert_eq!(entries.get_entry(i(3)), Some(LogEntry::Term(Term::new(1))));
+        assert_eq!(entries.get_entry(i(4)), Some(LogEntry::Command));
+
+        // Truncate conflicting entries, then append.
+        entries.append(&two_entries(
+            pos(1, 3),
+            LogEntry::Term(Term::new(2)),
+            LogEntry::Command,
+        ));
+        assert_eq!(entries.last_position(), pos(2, 5));
+        assert_eq!(entries.get_entry(i(0)), None);
+        assert_eq!(entries.get_entry(i(1)), Some(LogEntry::Term(Term::ZERO)));
+        assert_eq!(entries.get_entry(i(2)), Some(LogEntry::Command));
+        assert_eq!(entries.get_entry(i(3)), Some(LogEntry::Term(Term::new(1))));
+        assert_eq!(entries.get_entry(i(4)), Some(LogEntry::Term(Term::new(2))));
+        assert_eq!(entries.get_entry(i(5)), Some(LogEntry::Command));
+
+        // Truncate conflicting entries, then append again.
+        entries.append(&two_entries(
+            pos(0, 2),
+            LogEntry::Term(Term::new(3)),
+            LogEntry::Command,
+        ));
+        assert_eq!(entries.last_position(), pos(3, 4));
+        assert_eq!(entries.get_entry(i(0)), None);
+        assert_eq!(entries.get_entry(i(1)), Some(LogEntry::Term(Term::ZERO)));
+        assert_eq!(entries.get_entry(i(2)), Some(LogEntry::Command));
+        assert_eq!(entries.get_entry(i(3)), Some(LogEntry::Term(Term::new(3))));
+        assert_eq!(entries.get_entry(i(4)), Some(LogEntry::Command));
+    }
+
+    fn two_entries(prev_position: LogPosition, entry0: LogEntry, entry1: LogEntry) -> LogEntries {
+        let mut entries = LogEntries::new(prev_position);
+        entries.push(entry0);
+        entries.push(entry1);
+        entries
+    }
+
+    fn i(index: u64) -> LogIndex {
+        LogIndex::new(index)
+    }
+
+    fn pos(term: u64, index: u64) -> LogPosition {
+        LogPosition::new(Term::new(term), LogIndex::new(index))
+    }
 }
