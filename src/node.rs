@@ -222,8 +222,8 @@ impl Node {
         self.enqueue_action(Action::BroadcastMessage(message));
     }
 
-    fn unicast_message(&mut self, destination: NodeId, message: Message) {
-        self.enqueue_action(Action::UnicastMessage(destination, message));
+    fn send_message(&mut self, destination: NodeId, message: Message) {
+        self.enqueue_action(Action::SendMessage(destination, message));
     }
 
     fn update_commit_index_if_possible(&mut self) {
@@ -361,7 +361,7 @@ impl Node {
 
     fn handle_request_vote_request(&mut self, request: &RequestVoteRequest) {
         if request.term < self.current_term {
-            self.unicast_message(
+            self.send_message(
                 request.from,
                 Message::request_vote_reply(self.current_term, self.id, false),
             );
@@ -377,7 +377,7 @@ impl Node {
         if self.voted_for != Some(request.from) {
             return;
         }
-        self.unicast_message(
+        self.send_message(
             request.from,
             Message::request_vote_reply(self.current_term, self.id, true),
         );
@@ -498,7 +498,7 @@ impl Node {
     }
 
     fn reply_append_entries(&mut self, request: &AppendEntriesRequest) {
-        self.unicast_message(
+        self.send_message(
             request.from,
             Message::append_entries_reply(
                 self.current_term,
@@ -606,7 +606,7 @@ impl Node {
                 self.leader_sn,
                 delta,
             );
-            self.unicast_message(reply.from, msg);
+            self.send_message(reply.from, msg);
             self.quorum.update_seqnum(
                 self.log.latest_config(),
                 self.id,

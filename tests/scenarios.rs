@@ -408,7 +408,7 @@ impl TestNode {
         assert_action!(self, save_voted_for());
         assert_eq!(self.voted_for(), Some(msg.from()));
         assert_action!(self, set_election_timeout());
-        assert_action!(self, unicast_message(msg.from(), &reply));
+        assert_action!(self, send_message(msg.from(), &reply));
         assert_no_action!(self);
 
         reply
@@ -455,7 +455,7 @@ impl TestNode {
                     .min(*leader_commit)
             );
         }
-        assert_action!(self, unicast_message(msg.from(), &reply));
+        assert_action!(self, send_message(msg.from(), &reply));
         assert_no_action!(self);
 
         reply
@@ -487,7 +487,7 @@ impl TestNode {
         assert_action!(self, set_election_timeout());
 
         let reply = append_entries_reply(msg, self);
-        assert_action!(self, unicast_message(msg.from(), &reply));
+        assert_action!(self, send_message(msg.from(), &reply));
         assert_no_action!(self);
 
         reply
@@ -506,7 +506,7 @@ impl TestNode {
         self.handle_message(msg);
         let request = append_entries_request(self, entries.clone());
 
-        assert_action!(self, unicast_message(reply.from, &request));
+        assert_action!(self, send_message(reply.from, &request));
         assert_no_action!(self);
 
         request
@@ -644,7 +644,7 @@ impl TestNode {
         assert_action!(self, save_voted_for());
         assert_eq!(self.voted_for(), Some(msg.from()));
         assert_action!(self, set_election_timeout());
-        assert_action!(self, unicast_message(msg.from(), &reply));
+        assert_action!(self, send_message(msg.from(), &reply));
         assert_no_action!(self);
 
         reply
@@ -700,7 +700,7 @@ impl TestNode {
         assert_eq!(self.voted_for(), Some(msg.from()));
         assert_action!(self, set_election_timeout());
         assert_action!(self, append_log_entry(tail, term_entry(msg.term())));
-        assert_action!(self, unicast_message(msg.from(), &reply));
+        assert_action!(self, send_message(msg.from(), &reply));
         assert_no_action!(self);
 
         reply
@@ -797,8 +797,8 @@ fn append_entries_reply(request: &Message, node: &Node) -> Message {
     )
 }
 
-fn unicast_message(destination: NodeId, message: &Message) -> Action {
-    Action::UnicastMessage(destination, message.clone())
+fn send_message(destination: NodeId, message: &Message) -> Action {
+    Action::SendMessage(destination, message.clone())
 }
 
 fn broadcast_message(message: &Message) -> Action {

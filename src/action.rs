@@ -11,7 +11,7 @@ pub enum Action {
 
     // Can drop this message especially if there is another ongoing AppendEntriesRPC
     BroadcastMessage(Message), // TODO: remove(?)
-    UnicastMessage(NodeId, Message),
+    SendMessage(NodeId, Message),
     InstallSnapshot(NodeId),
 }
 
