@@ -202,7 +202,7 @@ impl LogEntries {
     /// assert!(!entries.contains(pos(1, 5))); // Index is out of range
     /// ```
     pub fn contains(&self, position: LogPosition) -> bool {
-        self.contains_index(position.index) && Some(position.term) == self.get_term(position.index)
+        Some(position.term) == self.get_term(position.index)
     }
 
     /// Returns [`true`] if the given index is within the range of this entries.
@@ -233,14 +233,14 @@ impl LogEntries {
     }
 
     pub fn get_term(&self, index: LogIndex) -> Option<Term> {
-        if self.prev_position.index == index {
-            return Some(self.prev_position.term);
-        }
-        self.terms
-            .range(..=index)
-            .rev()
-            .next()
-            .map(|(_, term)| *term)
+        self.contains_index(index).then(|| {
+            self.terms
+                .range(..=index)
+                .rev()
+                .next()
+                .map(|(_, term)| *term)
+                .unwrap_or(self.prev_position.term)
+        })
     }
 
     pub fn get_entry(&self, i: LogIndex) -> Option<LogEntry> {
