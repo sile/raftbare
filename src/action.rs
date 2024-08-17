@@ -12,7 +12,7 @@ pub enum Action {
     // Synchronous actions (if async, the consistency is not guaranteed)
     SaveCurrentTerm(Term),
     SaveVotedFor(Option<NodeId>),
-    CreateLog(LogEntry),
+    CreateLog(LogEntry), // TODO: delete
     AppendLogEntries(LogEntries),
 
     // TODO: delete

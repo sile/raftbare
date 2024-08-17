@@ -94,7 +94,7 @@ impl LogEntries {
     /// # Examples
     ///
     /// ```
-    /// use raftbare::{LogEntries, LogEntry, LogIndex, LogPosition, Term};
+    /// use raftbare::{LogEntries, LogEntry, LogPosition};
     ///
     /// let entries = LogEntries::new(LogPosition::ZERO);
     /// assert!(entries.is_empty());
@@ -102,20 +102,6 @@ impl LogEntries {
     /// assert_eq!(entries.iter().count(), 0);
     /// assert_eq!(entries.prev_position(), LogPosition::ZERO);
     /// assert_eq!(entries.last_position(), LogPosition::ZERO);
-    ///
-    /// let entries = LogEntries::from_iter(
-    ///     LogPosition::ZERO,
-    ///     vec![
-    ///         LogEntry::Term(Term::ZERO),
-    ///         LogEntry::Command,
-    ///         LogEntry::Command,
-    ///     ],
-    /// );
-    /// assert!(!entries.is_empty());
-    /// assert_eq!(entries.len(), 3);
-    /// assert_eq!(entries.iter().count(), 3);
-    /// assert_eq!(entries.prev_position(), LogPosition::ZERO);
-    /// assert_eq!(entries.last_position(), LogPosition { term: Term::ZERO, index: LogIndex::new(3) });
     /// ```
     pub const fn new(prev_position: LogPosition) -> Self {
         Self {
@@ -131,9 +117,21 @@ impl LogEntries {
     /// # Examples
     ///
     /// ```
-    /// use raftbare::{LogEntries, LogEntry, LogPosition};
+    /// use raftbare::{LogEntries, LogEntry, LogIndex, LogPosition, Term};
     ///
-    /// # let entries = LogEntries::from_iter(LogPosition::ZERO, vec![]);
+    /// let entries = LogEntries::from_iter(
+    ///     LogPosition::ZERO,
+    ///     vec![
+    ///         LogEntry::Term(Term::ZERO),
+    ///         LogEntry::Command,
+    ///         LogEntry::Command,
+    ///     ],
+    /// );
+    /// assert!(!entries.is_empty());
+    /// assert_eq!(entries.len(), 3);
+    /// assert_eq!(entries.iter().count(), 3);
+    /// assert_eq!(entries.prev_position(), LogPosition::ZERO);
+    /// assert_eq!(entries.last_position(), LogPosition { term: Term::ZERO, index: LogIndex::new(3) });
     /// ```
     pub fn from_iter<I>(prev_position: LogPosition, entries: I) -> Self
     where
@@ -144,10 +142,27 @@ impl LogEntries {
         this
     }
 
+    /// Returns the number of entries in this [`LogEntries`] instance.
     pub fn len(&self) -> usize {
         self.last_position.index.get() as usize - self.prev_position.index.get() as usize
     }
 
+    /// Returns [`true`] if the log entries is empty (i.e., the previous and last positions are the same).
+    pub fn is_empty(&self) -> bool {
+        self.prev_position == self.last_position
+    }
+
+    /// Returns the position immediately before the first entry in this [`LogEntries`] instance.
+    pub fn prev_position(&self) -> LogPosition {
+        self.prev_position
+    }
+
+    /// Returns the position of the last entry in this [`LogEntries`] instance.
+    pub fn last_position(&self) -> LogPosition {
+        self.last_position
+    }
+
+    /// Returns an iterator over the entries in this [`LogEntries`] instance.
     pub fn iter(&self) -> impl '_ + Iterator<Item = LogEntry> {
         (self.prev_position.index.get() + 1..=self.last_position.index.get()).map(|i| {
             let i = LogIndex::new(i);
