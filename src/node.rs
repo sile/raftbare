@@ -173,7 +173,7 @@ impl Node {
             self.id,
             self.commit_index,
             self.leader_sn,
-            LogEntries::single(prev_entry, &entry),
+            LogEntries::from_iter(prev_entry, std::iter::once(entry)),
         ));
         self.quorum.update_seqnum(
             self.log.latest_config(),
@@ -235,7 +235,7 @@ impl Node {
 
         let new_commit_index = self.quorum.commit_index();
         if self.commit_index < new_commit_index
-            && self.log.entries().term_index() <= new_commit_index
+            && self.log.entries().get_term(new_commit_index) == Some(self.current_term)
         {
             self.commit(new_commit_index);
 
@@ -281,9 +281,9 @@ impl Node {
         debug_assert!(self.role.is_leader());
 
         let prev_index = self.log.entries().last_position().index;
-        self.enqueue_action(Action::AppendLogEntries(LogEntries::single(
+        self.enqueue_action(Action::AppendLogEntries(LogEntries::from_iter(
             self.log.entries().last_position(),
-            entry,
+            std::iter::once(entry.clone()),
         )));
         self.log.entries_mut().append_entry(entry);
 

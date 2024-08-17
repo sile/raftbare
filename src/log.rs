@@ -112,6 +112,13 @@ impl LogEntries {
         }
     }
 
+    // TODO: remove
+    pub fn single(prev_position: LogPosition, entry: &LogEntry) -> Self {
+        let mut this = Self::new(prev_position);
+        this.append_entry(&entry);
+        this
+    }
+
     /// Makes a new [`LogEntries`] instance with the given entries.
     ///
     /// # Examples
@@ -176,26 +183,71 @@ impl LogEntries {
         })
     }
 
-    // TODO: remove
-    pub fn single(prev_position: LogPosition, entry: &LogEntry) -> Self {
-        let mut this = Self::new(prev_position);
-        this.append_entry(&entry);
-        this
+    /// Returns [`true`] if the given position is within the range of this entries.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use raftbare::{LogEntries, LogEntry, LogIndex, LogPosition, Term};
+    ///
+    /// fn pos(term: u64, index: u64) -> LogPosition {
+    ///     LogPosition { term: Term::new(term), index: LogIndex::new(index) }
+    /// }
+    ///
+    /// let entries = LogEntries::from_iter(
+    ///     LogPosition::ZERO,
+    ///     vec![
+    ///         LogEntry::Term(Term::ZERO),
+    ///         LogEntry::Command,
+    ///         LogEntry::Term(Term::new(1)),
+    ///         LogEntry::Command,
+    ///     ],
+    /// );
+    /// assert!(entries.contains(pos(0, 0))); // Including the previous position
+    /// assert!(entries.contains(pos(1, 4))); // Including the last position
+    /// assert!(!entries.contains(pos(0, 4))); // Index is within the range but term is different
+    /// assert!(!entries.contains(pos(1, 5))); // Index is out of range
+    /// ```
+    pub fn contains(&self, position: LogPosition) -> bool {
+        self.contains_index(position.index) && Some(position.term) == self.get_term(position.index)
     }
 
-    /// Returns the position immediately before the first entry in this [`LogEntries`] instance.
-    pub fn prev_position(&self) -> LogPosition {
-        self.prev_position
+    /// Returns [`true`] if the given index is within the range of this entries.
+    ///
+    /// Unlike [`LogEntries::contains()`], this method does not check the term of the given index.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use raftbare::{LogEntries, LogEntry, LogIndex, LogPosition, Term};
+    ///
+    /// let entries = LogEntries::from_iter(
+    ///     LogPosition::ZERO,
+    ///     vec![
+    ///         LogEntry::Term(Term::ZERO),
+    ///         LogEntry::Command,
+    ///         LogEntry::Term(Term::new(1)),
+    ///         LogEntry::Command,
+    ///     ],
+    /// );
+    /// assert!(entries.contains_index(LogIndex::ZERO)); // Including the previous index
+    /// assert!(entries.contains_index(LogIndex::new(1)));
+    /// assert!(entries.contains_index(LogIndex::new(4))); // Including the last index
+    /// assert!(!entries.contains_index(LogIndex::new(5)));
+    /// ```
+    pub fn contains_index(&self, index: LogIndex) -> bool {
+        (self.prev_position.index..=self.last_position.index).contains(&index)
     }
 
-    /// Returns the position of the last entry in this [`LogEntries`] instance.
-    pub fn last_position(&self) -> LogPosition {
-        self.last_position
-    }
-
-    /// Returns `true` if the log entries is empty (i.e., the previous and last positions are the same).
-    pub fn is_empty(&self) -> bool {
-        self.prev_position == self.last_position
+    pub fn get_term(&self, index: LogIndex) -> Option<Term> {
+        if self.prev_position.index == index {
+            return Some(self.prev_position.term);
+        }
+        self.terms
+            .range(..=index)
+            .rev()
+            .next()
+            .map(|(_, term)| *term)
     }
 
     pub fn get_entry(&self, i: LogIndex) -> Option<LogEntry> {
@@ -215,13 +267,6 @@ impl LogEntries {
         self.configs.range(..=i).map(|x| x.1).rev().next()
     }
 
-    pub fn term_index(&self) -> LogIndex {
-        self.terms
-            .last_key_value()
-            .map(|(k, _)| *k)
-            .unwrap_or(self.prev_position.index)
-    }
-
     // TODO: add unit test
     pub fn since(&self, new_prev: LogPosition) -> Option<Self> {
         if !self.contains(new_prev) {
@@ -236,25 +281,6 @@ impl LogEntries {
         this.configs.retain(|index, _| index > &new_prev.index);
 
         Some(this)
-    }
-
-    pub fn contains(&self, entry: LogPosition) -> bool {
-        if !self.contains_index(entry.index) {
-            return false;
-        }
-
-        let term = self
-            .terms
-            .range(..=entry.index)
-            .rev()
-            .next()
-            .map(|(_, term)| *term)
-            .unwrap_or(self.prev_position.term);
-        term == entry.term
-    }
-
-    pub fn contains_index(&self, index: LogIndex) -> bool {
-        (self.prev_position.index..=self.last_position.index).contains(&index)
     }
 
     pub fn append_entry(&mut self, entry: &LogEntry) {
