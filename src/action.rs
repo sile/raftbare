@@ -1,7 +1,7 @@
 use crate::{
     log::{LogEntries, LogIndex},
     message::Message,
-    node::{HeartbeatPromise, NodeId},
+    node::NodeId,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -15,7 +15,6 @@ pub enum Action {
 
     // TODO: delete
     NotifyCommitted(LogIndex),
-    NotifyHeartbeatSucceeded(HeartbeatPromise),
 
     // Can drop this message especially if there is another ongoing AppendEntriesRPC
     BroadcastMessage(Message), // TODO: remove(?)

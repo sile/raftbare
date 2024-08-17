@@ -52,7 +52,6 @@ pub struct Node {
     followers: BTreeMap<NodeId, Follower>,
     quorum: Quorum,
     pub leader_sn: MessageSeqNum, // TODO: priv
-    ongoing_heartbeats: VecDeque<HeartbeatPromise>,
 }
 
 impl Node {
@@ -78,7 +77,6 @@ impl Node {
             followers: BTreeMap::new(),
             quorum,
             leader_sn: MessageSeqNum::new(),
-            ongoing_heartbeats: VecDeque::new(),
         }
     }
 
@@ -147,7 +145,6 @@ impl Node {
         self.broadcast_message(request);
 
         let heartbeat = HeartbeatPromise::new(self.current_term, sn);
-        self.ongoing_heartbeats.push_back(heartbeat);
 
         heartbeat
     }
@@ -180,7 +177,6 @@ impl Node {
             self.leader_sn.next(),
         );
         self.leader_sn = self.leader_sn.next();
-        self.check_heartbeat();
         self.enqueue_action(Action::SetElectionTimeout); // TODO: merge the same kind actions
         self.update_commit_index_if_possible(); // TODO: check single node
 
@@ -357,7 +353,6 @@ impl Node {
             Message::AppendEntriesRequest(msg) => self.handle_append_entries_request(msg),
             Message::AppendEntriesReply(msg) => {
                 self.handle_append_entries_reply(msg);
-                self.check_heartbeat(); // TODO: call only if needed
             }
         }
     }
@@ -424,7 +419,6 @@ impl Node {
             }
             Role::Leader => {
                 self.heartbeat();
-                self.ongoing_heartbeats.pop_back(); // TODO: optimize
             }
         }
     }
@@ -488,7 +482,6 @@ impl Node {
         self.rebuild_followers();
         self.rebuild_quorum();
         self.leader_sn = MessageSeqNum::new();
-        self.ongoing_heartbeats = VecDeque::new();
 
         self.propose(LogEntry::Term(self.current_term));
     }
@@ -618,24 +611,7 @@ impl Node {
                 self.leader_sn,
                 self.leader_sn.next(),
             );
-            self.check_heartbeat();
             self.leader_sn = self.leader_sn.next();
-        }
-    }
-
-    fn check_heartbeat(&mut self) {
-        if self.ongoing_heartbeats.is_empty() {
-            return;
-        }
-
-        let accepted_sn = self.quorum.smallest_majority_seqnum();
-        while let Some(h) = self.ongoing_heartbeats.front().copied() {
-            if accepted_sn <= h.sn {
-                self.ongoing_heartbeats.pop_front();
-                self.enqueue_action(Action::NotifyHeartbeatSucceeded(h));
-            } else {
-                break;
-            }
         }
     }
 
@@ -735,18 +711,39 @@ impl Follower {
     }
 }
 
-// TODO: move
-// TODO: s/../HeartbeatPromise (or else)/
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct HeartbeatPromise {
-    pub term: Term,
-    pub sn: MessageSeqNum,
+pub enum HeartbeatPromise {
+    Pending { term: Term, sn: MessageSeqNum },
+    Rejected,
+    Accepted,
 }
 
 impl HeartbeatPromise {
     fn new(term: Term, sn: MessageSeqNum) -> Self {
-        Self { term, sn }
+        Self::Pending { term, sn }
+    }
+
+    pub fn poll(&mut self, node: &Node) -> Self {
+        let Self::Pending { term, sn } = *self else {
+            return *self;
+        };
+        if node.current_term != term {
+            *self = Self::Rejected;
+        } else if sn <= node.leader_sn {
+            *self = Self::Accepted;
+        }
+        *self
+    }
+
+    pub fn is_pending(&self) -> bool {
+        matches!(self, Self::Pending { .. })
+    }
+
+    pub fn is_rejected(&self) -> bool {
+        matches!(self, Self::Rejected)
+    }
+
+    pub fn is_accepted(&self) -> bool {
+        matches!(self, Self::Accepted)
     }
 }
-
-// TODO: PromiseState { Pending, Accepted, Rejected }

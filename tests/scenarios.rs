@@ -98,12 +98,12 @@ fn election() {
         .asserted_handle_append_entries_reply_success(&reply_from_node2, false);
 
     // Manual heartbeat.
-    let (heartbeat, request) = cluster.node1.asserted_heartbeat();
+    let (mut heartbeat, request) = cluster.node1.asserted_heartbeat();
     let reply = cluster
         .node0
         .asserted_handle_append_entries_request_success(&request);
     cluster.node1.handle_message(&reply);
-    assert_action!(cluster.node1, Action::NotifyHeartbeatSucceeded(heartbeat));
+    assert!(heartbeat.poll(&cluster.node1).is_accepted());
     assert_no_action!(cluster.node1);
 
     // Periodic heartbeat.
