@@ -167,3 +167,58 @@ impl Iterator for Actions {
         None
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::{LogEntry, LogIndex, LogPosition, Term};
+
+    use super::*;
+
+    #[test]
+    fn actions_set() {
+        let mut actions = Actions::default();
+        assert_eq!(actions.next(), None);
+
+        actions.set(Action::SetElectionTimeout);
+        actions.set(Action::SetElectionTimeout);
+        assert_eq!(actions.next(), Some(Action::SetElectionTimeout));
+        assert_eq!(actions.next(), None);
+
+        actions.set(Action::SaveCurrentTerm);
+        actions.set(Action::SaveCurrentTerm);
+        assert_eq!(actions.next(), Some(Action::SaveCurrentTerm));
+        assert_eq!(actions.next(), None);
+
+        actions.set(Action::SaveVotedFor);
+        actions.set(Action::SaveVotedFor);
+        assert_eq!(actions.next(), Some(Action::SaveVotedFor));
+        assert_eq!(actions.next(), None);
+
+        actions.set(Action::AppendLogEntries(LogEntries::from_iter(
+            pos(2, 3),
+            std::iter::once(LogEntry::Command),
+        )));
+        actions.set(Action::AppendLogEntries(LogEntries::from_iter(
+            pos(2, 4),
+            std::iter::once(LogEntry::Command),
+        )));
+        assert_eq!(
+            actions.next(),
+            Some(Action::AppendLogEntries(LogEntries::from_iter(
+                pos(2, 3),
+                [LogEntry::Command, LogEntry::Command].into_iter()
+            )))
+        );
+        assert_eq!(actions.next(), None);
+
+        // pub broadcast_message: Option<Message>,
+        // pub send_messages: BTreeMap<NodeId, Message>,
+        // pub install_snapshots: BTreeSet<NodeId>,
+    }
+
+    fn pos(term: u64, index: u64) -> LogPosition {
+        let term = Term::new(term);
+        let index = LogIndex::new(index);
+        LogPosition { term, index }
+    }
+}

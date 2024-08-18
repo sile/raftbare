@@ -450,6 +450,7 @@ impl Node {
                 last_included_config,
                 LogEntries::new(last_included_position),
             );
+            self.actions.append_log_entries = None;
         }
         true
     }
