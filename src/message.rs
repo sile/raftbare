@@ -10,7 +10,10 @@ pub enum Message {
         header: MessageHeader,
         last_position: LogPosition,
     },
-    RequestVoteReply(RequestVoteReply),
+    RequestVoteReply {
+        header: MessageHeader,
+        vote_granted: bool,
+    },
     AppendEntriesRequest(AppendEntriesRequest),
     AppendEntriesReply(AppendEntriesReply),
 }
@@ -19,7 +22,7 @@ impl Message {
     pub fn term(&self) -> Term {
         match self {
             Self::RequestVoteRequest { header, .. } => header.term,
-            Self::RequestVoteReply(m) => m.term,
+            Self::RequestVoteReply { header, .. } => header.term,
             Self::AppendEntriesRequest(m) => m.header.term,
             Self::AppendEntriesReply(m) => m.header.term,
         }
@@ -28,9 +31,18 @@ impl Message {
     pub fn from(&self) -> NodeId {
         match self {
             Self::RequestVoteRequest { header, .. } => header.from,
-            Self::RequestVoteReply(m) => m.from,
+            Self::RequestVoteReply { header, .. } => header.from,
             Self::AppendEntriesRequest(m) => m.header.from,
             Self::AppendEntriesReply(m) => m.header.from,
+        }
+    }
+
+    pub fn seqno(&self) -> MessageSeqNo {
+        match self {
+            Self::RequestVoteRequest { header, .. } => header.seqno,
+            Self::RequestVoteReply { header, .. } => header.seqno,
+            Self::AppendEntriesRequest(m) => m.header.seqno,
+            Self::AppendEntriesReply(m) => m.header.seqno,
         }
     }
 
@@ -46,12 +58,16 @@ impl Message {
         }
     }
 
-    pub fn request_vote_reply(term: Term, from: NodeId, vote_granted: bool) -> Self {
-        Self::RequestVoteReply(RequestVoteReply {
-            term,
-            from,
+    pub fn request_vote_reply(
+        term: Term,
+        from: NodeId,
+        seqno: MessageSeqNo,
+        vote_granted: bool,
+    ) -> Self {
+        Self::RequestVoteReply {
+            header: MessageHeader { from, term, seqno },
             vote_granted,
-        })
+        }
     }
 
     pub fn append_entries_request(
@@ -136,13 +152,6 @@ impl MessageSeqNo {
         self.0 += 1;
         v
     }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct RequestVoteReply {
-    pub term: Term,
-    pub from: NodeId,
-    pub vote_granted: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]

@@ -2,7 +2,7 @@ use crate::{
     action::{Action, Actions},
     config::ClusterConfig,
     log::{LogEntries, LogEntry, LogIndex, LogPosition},
-    message::{AppendEntriesReply, AppendEntriesRequest, Message, MessageSeqNo, RequestVoteReply},
+    message::{AppendEntriesReply, AppendEntriesRequest, Message, MessageSeqNo},
     quorum::Quorum,
     CommitPromise, HeartbeatPromise, Log, MessageHeader, Role, Term,
 };
@@ -341,7 +341,10 @@ impl Node {
                 header,
                 last_position,
             } => self.handle_request_vote_request(*header, *last_position),
-            Message::RequestVoteReply(msg) => self.handle_request_vote_reply(msg),
+            Message::RequestVoteReply {
+                header,
+                vote_granted,
+            } => self.handle_request_vote_reply(*header, *vote_granted),
             Message::AppendEntriesRequest(msg) => self.handle_append_entries_request(msg),
             Message::AppendEntriesReply(msg) => {
                 self.handle_append_entries_reply(msg);
@@ -353,7 +356,7 @@ impl Node {
         if header.term < self.current_term {
             self.send_message(
                 header.from,
-                Message::request_vote_reply(self.current_term, self.id, false),
+                Message::request_vote_reply(self.current_term, self.id, header.seqno, false),
             );
             return;
         }
@@ -369,15 +372,15 @@ impl Node {
         }
         self.send_message(
             header.from,
-            Message::request_vote_reply(self.current_term, self.id, true),
+            Message::request_vote_reply(self.current_term, self.id, header.seqno, true),
         );
     }
 
-    fn handle_request_vote_reply(&mut self, reply: &RequestVoteReply) {
-        if !reply.vote_granted {
+    fn handle_request_vote_reply(&mut self, header: MessageHeader, vote_granted: bool) {
+        if !vote_granted {
             return;
         }
-        self.granted_votes.insert(reply.from);
+        self.granted_votes.insert(header.from);
 
         let config = self.log.latest_config();
         let n = config

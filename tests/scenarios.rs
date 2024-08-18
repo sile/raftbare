@@ -650,7 +650,7 @@ impl TestNode {
 
         self.handle_message(&msg);
 
-        let reply = request_vote_reply(msg.term(), self.id(), true);
+        let reply = request_vote_reply(msg.term(), self.id(), msg.seqno(), true);
         assert_action!(self, save_current_term());
         assert_eq!(self.current_term(), msg.term());
         assert_action!(self, save_voted_for());
@@ -678,7 +678,7 @@ impl TestNode {
         &mut self,
         msg: &Message,
     ) -> Message {
-        assert!(matches!(msg, Message::RequestVoteReply(_)));
+        assert!(matches!(msg, Message::RequestVoteReply { .. }));
 
         let tail = self.log().entries().last_position();
         self.handle_message(&msg);
@@ -788,8 +788,13 @@ fn request_vote_request(
     Message::request_vote_request(term, from, seqno, last_entry)
 }
 
-fn request_vote_reply(term: Term, from: NodeId, vote_granted: bool) -> Message {
-    Message::request_vote_reply(term, from, vote_granted)
+fn request_vote_reply(
+    term: Term,
+    from: NodeId,
+    seqno: MessageSeqNo,
+    vote_granted: bool,
+) -> Message {
+    Message::request_vote_reply(term, from, seqno, vote_granted)
 }
 
 fn append_entries_request(leader: &Node, entries: LogEntries) -> Message {
