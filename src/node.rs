@@ -2,7 +2,7 @@ use crate::{
     action::{Action, Actions},
     config::ClusterConfig,
     log::{LogEntries, LogEntry, LogIndex, LogPosition},
-    message::{AppendEntriesRequest, Message, MessageSeqNo},
+    message::{Message, MessageSeqNo},
     quorum::Quorum,
     CommitPromise, HeartbeatPromise, Log, MessageHeader, Role, Term,
 };
@@ -345,7 +345,11 @@ impl Node {
                 header,
                 vote_granted,
             } => self.handle_request_vote_reply(*header, *vote_granted),
-            Message::AppendEntriesRequest(msg) => self.handle_append_entries_request(msg),
+            Message::AppendEntriesRequest {
+                header,
+                leader_commit,
+                entries,
+            } => self.handle_append_entries_request(*header, *leader_commit, entries),
             Message::AppendEntriesReply {
                 header,
                 last_position,
@@ -493,37 +497,41 @@ impl Node {
         self.enqueue_action(Action::SetElectionTimeout);
     }
 
-    fn reply_append_entries(&mut self, request: &AppendEntriesRequest) {
+    fn reply_append_entries(&mut self, request_header: MessageHeader) {
         self.send_message(
-            request.header.from,
+            request_header.from,
             Message::append_entries_reply(
                 self.current_term,
                 self.id,
-                request.header.seqno,
+                request_header.seqno,
                 self.log.entries().last_position(),
             ),
         );
     }
 
-    fn handle_append_entries_request(&mut self, request: &AppendEntriesRequest) {
+    fn handle_append_entries_request(
+        &mut self,
+        header: MessageHeader,
+        leader_commit: LogIndex,
+        entries: &LogEntries,
+    ) {
         if !self.role.is_follower() {
             return;
         }
-        if request.header.term < self.current_term {
+        if header.term < self.current_term {
             // Stale request.
-            self.reply_append_entries(request);
+            self.reply_append_entries(header);
             return;
         }
 
         if self.voted_for.is_none() {
-            self.set_voted_for(Some(request.header.from));
+            self.set_voted_for(Some(header.from));
         }
 
-        if self.try_append_log_entries(&request.entries) {
-            let next_commit_index = request
-                .leader_commit
+        if self.try_append_log_entries(entries) {
+            let next_commit_index = leader_commit
                 .min(self.log.entries().last_position().index)
-                .min(request.entries.last_position().index); // TODO: Add note comment (entries could be truncated by action implementor)
+                .min(entries.last_position().index); // TODO: Add note comment (entries could be truncated by action implementor)
             if self.commit_index < next_commit_index {
                 self.commit(next_commit_index);
             }
@@ -531,7 +539,7 @@ impl Node {
 
         // TODO(?): Don't reply if request.leader_sn is old
         //          (the reply will be discarded in the leader side anyway)
-        self.reply_append_entries(request);
+        self.reply_append_entries(header);
         // TODO: reset election timeout
     }
 

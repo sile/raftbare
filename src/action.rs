@@ -233,7 +233,9 @@ mod tests {
         )));
         assert!(matches!(
             actions.next(),
-            Some(Action::BroadcastMessage(Message::AppendEntriesRequest(_)))
+            Some(Action::BroadcastMessage(
+                Message::AppendEntriesRequest { .. }
+            ))
         ));
         assert_eq!(actions.next(), None);
 
@@ -259,7 +261,7 @@ mod tests {
         ));
         assert!(matches!(
             actions.next(),
-            Some(Action::SendMessage(_, Message::AppendEntriesRequest(_)))
+            Some(Action::SendMessage(_, Message::AppendEntriesRequest { .. }))
         ));
         assert!(matches!(
             actions.next(),

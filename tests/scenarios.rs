@@ -1,6 +1,6 @@
 use raftbare::{
-    Action, Actions, AppendEntriesRequest, ClusterConfig, CommitPromise, HeartbeatPromise,
-    LogEntries, LogEntry, LogIndex, LogPosition, Message, MessageSeqNo, Node, NodeId, Role, Term,
+    Action, Actions, ClusterConfig, CommitPromise, HeartbeatPromise, LogEntries, LogEntry,
+    LogIndex, LogPosition, Message, MessageSeqNo, Node, NodeId, Role, Term,
 };
 use std::ops::{Deref, DerefMut};
 
@@ -409,7 +409,7 @@ impl TestNode {
     }
 
     fn asserted_handle_first_append_entries_request(&mut self, msg: &Message) -> Message {
-        assert!(matches!(msg, Message::AppendEntriesRequest(_)));
+        assert!(matches!(msg, Message::AppendEntriesRequest { .. }));
 
         self.handle_message(msg);
         let reply = append_entries_reply(msg, self);
@@ -425,13 +425,13 @@ impl TestNode {
     }
 
     fn asserted_handle_append_entries_request_success(&mut self, msg: &Message) -> Message {
-        assert!(matches!(msg, Message::AppendEntriesRequest(_)));
+        assert!(matches!(msg, Message::AppendEntriesRequest { .. }));
 
-        let Message::AppendEntriesRequest(AppendEntriesRequest {
+        let Message::AppendEntriesRequest {
             entries,
             leader_commit,
             ..
-        }) = msg
+        } = msg
         else {
             unreachable!();
         };
@@ -472,9 +472,9 @@ impl TestNode {
     }
 
     fn asserted_handle_append_entries_request_failure(&mut self, msg: &Message) -> Message {
-        assert!(matches!(msg, Message::AppendEntriesRequest(_)));
+        assert!(matches!(msg, Message::AppendEntriesRequest { .. }));
 
-        let Message::AppendEntriesRequest(AppendEntriesRequest { entries, .. }) = msg else {
+        let Message::AppendEntriesRequest { entries, .. } = msg else {
             unreachable!();
         };
 
@@ -709,7 +709,7 @@ impl TestNode {
         &mut self,
         msg: &Message,
     ) -> Message {
-        assert!(matches!(msg, Message::AppendEntriesRequest(_)));
+        assert!(matches!(msg, Message::AppendEntriesRequest { .. }));
 
         let tail = self.log().entries().last_position();
         self.handle_message(&msg);
@@ -816,13 +816,13 @@ fn append_entries_request(leader: &Node, entries: LogEntries) -> Message {
 }
 
 fn append_entries_reply(request: &Message, node: &Node) -> Message {
-    let Message::AppendEntriesRequest(request) = request else {
+    let Message::AppendEntriesRequest { header, .. } = request else {
         panic!();
     };
     Message::append_entries_reply(
         node.current_term(),
         node.id(),
-        request.header.seqno,
+        header.seqno,
         node.log().entries().last_position(),
     )
 }

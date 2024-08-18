@@ -14,7 +14,11 @@ pub enum Message {
         header: MessageHeader,
         vote_granted: bool,
     },
-    AppendEntriesRequest(AppendEntriesRequest),
+    AppendEntriesRequest {
+        header: MessageHeader,
+        leader_commit: LogIndex,
+        entries: LogEntries,
+    },
     AppendEntriesReply {
         header: MessageHeader,
         last_position: LogPosition,
@@ -26,7 +30,7 @@ impl Message {
         match self {
             Self::RequestVoteRequest { header, .. } => header.term,
             Self::RequestVoteReply { header, .. } => header.term,
-            Self::AppendEntriesRequest(m) => m.header.term,
+            Self::AppendEntriesRequest { header, .. } => header.term,
             Self::AppendEntriesReply { header, .. } => header.term,
         }
     }
@@ -35,7 +39,7 @@ impl Message {
         match self {
             Self::RequestVoteRequest { header, .. } => header.from,
             Self::RequestVoteReply { header, .. } => header.from,
-            Self::AppendEntriesRequest(m) => m.header.from,
+            Self::AppendEntriesRequest { header, .. } => header.from,
             Self::AppendEntriesReply { header, .. } => header.from,
         }
     }
@@ -44,7 +48,7 @@ impl Message {
         match self {
             Self::RequestVoteRequest { header, .. } => header.seqno,
             Self::RequestVoteReply { header, .. } => header.seqno,
-            Self::AppendEntriesRequest(m) => m.header.seqno,
+            Self::AppendEntriesRequest { header, .. } => header.seqno,
             Self::AppendEntriesReply { header, .. } => header.seqno,
         }
     }
@@ -80,11 +84,11 @@ impl Message {
         seqno: MessageSeqNo,
         entries: LogEntries,
     ) -> Self {
-        Self::AppendEntriesRequest(AppendEntriesRequest {
+        Self::AppendEntriesRequest {
             header: MessageHeader { from, term, seqno },
             leader_commit,
             entries,
-        })
+        }
     }
 
     pub fn append_entries_reply(
@@ -101,20 +105,30 @@ impl Message {
 
     // TODO: test
     pub(crate) fn merge(&mut self, other: Self) {
-        let Self::AppendEntriesRequest(req0) = self else {
+        let Self::AppendEntriesRequest {
+            header: header0,
+            leader_commit: leader_commit0,
+            entries: entries0,
+        } = self
+        else {
             *self = other;
             return;
         };
-        let Self::AppendEntriesRequest(req1) = other else {
+        let Self::AppendEntriesRequest {
+            header: header1,
+            leader_commit: leader_commit1,
+            entries: entries1,
+        } = other
+        else {
             *self = other;
             return;
         };
-        req0.header = req1.header;
-        req0.leader_commit = req1.leader_commit;
-        if req0.entries.contains(req1.entries.prev_position()) {
-            req0.entries.append(&req1.entries);
+        *header0 = header1;
+        *leader_commit0 = leader_commit1;
+        if entries0.contains(entries1.prev_position()) {
+            entries0.append(&entries1);
         } else {
-            req0.entries = req1.entries;
+            *entries0 = entries1;
         }
     }
 }
@@ -155,11 +169,4 @@ impl MessageSeqNo {
         self.0 += 1;
         v
     }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct AppendEntriesRequest {
-    pub header: MessageHeader,
-    pub leader_commit: LogIndex,
-    pub entries: LogEntries,
 }
