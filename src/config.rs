@@ -30,7 +30,7 @@ use std::{
 /// assert!(config.is_joint_consensus());
 /// ```
 ///
-/// The `config` value in the example above can be applied to a cluster via [`Node::change_cluster_config()`][crate::Node::change_cluster_config].
+/// The `config` value in the example above can be applied to a cluster via [`Node::change_cluster_config()`][crate::Node::change_config].
 ///
 #[derive(Debug, Default, Clone, PartialEq, Eq, Hash)]
 pub struct ClusterConfig {

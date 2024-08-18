@@ -30,6 +30,7 @@ impl NodeId {
     }
 }
 
+/// Raft node.
 #[derive(Debug, Clone)]
 pub struct Node {
     id: NodeId,
@@ -255,18 +256,18 @@ impl Node {
         // TODO: leader not in new config steps down when the new config is committed
     }
 
-    pub fn change_cluster_config(
+    pub fn change_config(
         &mut self,
         new_config: &ClusterConfig,
-    ) -> Result<CommitPromise, ChangeClusterConfigError> {
+    ) -> Result<CommitPromise, ChangeConfigError> {
         if !self.role.is_leader() {
-            return Err(ChangeClusterConfigError::NotLeader);
+            return Err(ChangeConfigError::NotLeader);
         }
         if self.log.latest_config().voters != new_config.voters {
-            return Err(ChangeClusterConfigError::VotersMismatched);
+            return Err(ChangeConfigError::VotersMismatched);
         }
         if self.log.latest_config().is_joint_consensus() {
-            return Err(ChangeClusterConfigError::JointConsensusInProgress);
+            return Err(ChangeConfigError::JointConsensusInProgress);
         }
 
         Ok(self.propose(LogEntry::ClusterConfig(new_config.clone())))
@@ -687,7 +688,7 @@ impl Node {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum ChangeClusterConfigError {
+pub enum ChangeConfigError {
     NotLeader,
     VotersMismatched,
     JointConsensusInProgress,
