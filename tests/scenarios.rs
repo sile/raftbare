@@ -516,7 +516,7 @@ impl TestNode {
         self.handle_message(msg);
         let request = append_entries_request(self, entries.clone());
 
-        assert_action!(self, send_message(reply.from, &request));
+        assert_action!(self, send_message(reply.header.from, &request));
         assert_no_action!(self);
 
         request
@@ -534,7 +534,7 @@ impl TestNode {
         assert!(since(self.log().entries(), reply.last_entry).is_none());
 
         self.handle_message(msg);
-        assert_action!(self, Action::InstallSnapshot(reply.from));
+        assert_action!(self, Action::InstallSnapshot(reply.header.from));
         assert_no_action!(self);
 
         (
@@ -606,6 +606,7 @@ impl TestNode {
         let request = request_vote_request(
             self.current_term(),
             self.id(),
+            self.seqno.prev(),
             self.log().entries().last_position(),
         );
         assert_action!(self, save_current_term());
@@ -630,6 +631,7 @@ impl TestNode {
         let request = request_vote_request(
             self.current_term(),
             self.id(),
+            self.seqno.prev(),
             self.log().entries().last_position(),
         );
         assert_action!(self, save_current_term());
@@ -777,8 +779,13 @@ fn cluster_config_entry(config: ClusterConfig) -> LogEntry {
     LogEntry::ClusterConfig(config)
 }
 
-fn request_vote_request(term: Term, from: NodeId, last_entry: LogPosition) -> Message {
-    Message::request_vote_request(term, from, last_entry)
+fn request_vote_request(
+    term: Term,
+    from: NodeId,
+    seqno: MessageSeqNo,
+    last_entry: LogPosition,
+) -> Message {
+    Message::request_vote_request(term, from, seqno, last_entry)
 }
 
 fn request_vote_reply(term: Term, from: NodeId, vote_granted: bool) -> Message {
@@ -790,7 +797,7 @@ fn append_entries_request(leader: &Node, entries: LogEntries) -> Message {
         leader.current_term(),
         leader.id(),
         leader.commit_index(),
-        MessageSeqNo::from_u64(leader.leader_sn.get() - 1),
+        MessageSeqNo::from_u64(leader.seqno.get() - 1),
         entries,
     )
 }
@@ -802,7 +809,7 @@ fn append_entries_reply(request: &Message, node: &Node) -> Message {
     Message::append_entries_reply(
         node.current_term(),
         node.id(),
-        request.leader_sn,
+        request.header.seqno,
         node.log().entries().last_position(),
     )
 }

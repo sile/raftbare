@@ -51,7 +51,7 @@ pub struct Node {
     leader_index: LogIndex,
     followers: BTreeMap<NodeId, Follower>,
     quorum: Quorum,
-    pub leader_sn: MessageSeqNo, // TODO: priv
+    pub seqno: MessageSeqNo, // TODO: priv
 }
 
 impl Node {
@@ -76,7 +76,7 @@ impl Node {
             leader_index: LogIndex::new(0),
             followers: BTreeMap::new(),
             quorum,
-            leader_sn: MessageSeqNo::new(),
+            seqno: MessageSeqNo::new(),
         }
     }
 
@@ -125,7 +125,7 @@ impl Node {
     pub fn heartbeat(&mut self) -> HeartbeatPromise {
         // TODO: handle single node case
 
-        let sn = self.leader_sn;
+        let sn = self.seqno;
         let request = Message::append_entries_request(
             self.current_term,
             self.id,
@@ -136,10 +136,10 @@ impl Node {
         self.quorum.update_seqnum(
             self.log.latest_config(),
             self.id,
-            self.leader_sn,
-            self.leader_sn.next(),
+            self.seqno,
+            self.seqno.next(),
         );
-        self.leader_sn = sn.next();
+        self.seqno = sn.next();
         self.broadcast_message(request);
 
         let heartbeat = HeartbeatPromise::new(self.current_term, sn);
@@ -164,16 +164,16 @@ impl Node {
             self.current_term,
             self.id,
             self.commit_index,
-            self.leader_sn,
+            self.seqno,
             LogEntries::from_iter(prev_entry, std::iter::once(entry)),
         ));
         self.quorum.update_seqnum(
             self.log.latest_config(),
             self.id,
-            self.leader_sn,
-            self.leader_sn.next(),
+            self.seqno,
+            self.seqno.next(),
         );
-        self.leader_sn = self.leader_sn.next();
+        self.seqno = self.seqno.next();
         self.enqueue_action(Action::SetElectionTimeout); // TODO: merge the same kind actions
         self.update_commit_index_if_possible(); // TODO: check single node
 
@@ -206,7 +206,7 @@ impl Node {
             self.log.entries().last_position().index,
         );
         self.quorum
-            .update_seqnum(config, self.id, MessageSeqNo::new(), self.leader_sn);
+            .update_seqnum(config, self.id, MessageSeqNo::new(), self.seqno);
 
         for (&id, follower) in &mut self.followers {
             self.quorum
@@ -350,9 +350,9 @@ impl Node {
     }
 
     fn handle_request_vote_request(&mut self, request: &RequestVoteRequest) {
-        if request.term < self.current_term {
+        if request.header.term < self.current_term {
             self.send_message(
-                request.from,
+                request.header.from,
                 Message::request_vote_reply(self.current_term, self.id, false),
             );
             return;
@@ -362,13 +362,13 @@ impl Node {
         }
 
         if self.voted_for.is_none() {
-            self.set_voted_for(Some(request.from));
+            self.set_voted_for(Some(request.header.from));
         }
-        if self.voted_for != Some(request.from) {
+        if self.voted_for != Some(request.header.from) {
             return;
         }
         self.send_message(
-            request.from,
+            request.header.from,
             Message::request_vote_reply(self.current_term, self.id, true),
         );
     }
@@ -459,9 +459,11 @@ impl Node {
         self.granted_votes.clear();
         self.granted_votes.insert(self.id);
 
+        let seqno = self.seqno.fetch_and_increment();
         self.broadcast_message(Message::request_vote_request(
             self.current_term,
             self.id,
+            seqno,
             self.log.entries().last_position(),
         ));
         self.enqueue_action(Action::SetElectionTimeout);
@@ -474,7 +476,6 @@ impl Node {
         self.followers.clear();
         self.rebuild_followers();
         self.rebuild_quorum();
-        self.leader_sn = MessageSeqNo::new();
 
         self.propose(LogEntry::Term(self.current_term));
     }
@@ -490,11 +491,11 @@ impl Node {
 
     fn reply_append_entries(&mut self, request: &AppendEntriesRequest) {
         self.send_message(
-            request.from,
+            request.header.from,
             Message::append_entries_reply(
                 self.current_term,
                 self.id,
-                request.leader_sn,
+                request.header.seqno,
                 self.log.entries().last_position(),
             ),
         );
@@ -504,14 +505,14 @@ impl Node {
         if !self.role.is_follower() {
             return;
         }
-        if request.term < self.current_term {
+        if request.header.term < self.current_term {
             // Stale request.
             self.reply_append_entries(request);
             return;
         }
 
         if self.voted_for.is_none() {
-            self.set_voted_for(Some(request.from));
+            self.set_voted_for(Some(request.header.from));
         }
 
         if self.try_append_log_entries(&request.entries) {
@@ -535,18 +536,18 @@ impl Node {
             return;
         }
 
-        let Some(follower) = self.followers.get_mut(&reply.from) else {
+        let Some(follower) = self.followers.get_mut(&reply.header.from) else {
             // Replies from unknown nodes are ignored.
             return;
         };
-        if follower.max_sn < reply.leader_sn {
+        if follower.max_sn < reply.header.seqno {
             self.quorum.update_seqnum(
                 self.log.latest_config(),
-                reply.from,
+                reply.header.from,
                 follower.max_sn,
-                reply.leader_sn,
+                reply.header.seqno,
             );
-            follower.max_sn = reply.leader_sn;
+            follower.max_sn = reply.header.seqno;
         }
 
         if reply.last_entry.index < follower.match_index {
@@ -564,7 +565,7 @@ impl Node {
 
                 self.quorum.update_match_index(
                     self.log.latest_config(),
-                    reply.from,
+                    reply.header.from,
                     old_match_index,
                     follower.match_index,
                 );
@@ -583,7 +584,7 @@ impl Node {
         let last_entry = reply.last_entry;
         if last_entry.index < self.log.entries().prev_position().index {
             // Send snapshot
-            self.enqueue_action(Action::InstallSnapshot(reply.from));
+            self.enqueue_action(Action::InstallSnapshot(reply.header.from));
         } else if last_entry.index < self_last_entry.index {
             // send delta
             let Some(delta) = self.log.entries().since(last_entry) else {
@@ -594,17 +595,17 @@ impl Node {
                 self.current_term,
                 self.id,
                 self.commit_index,
-                self.leader_sn,
+                self.seqno,
                 delta,
             );
-            self.send_message(reply.from, msg);
+            self.send_message(reply.header.from, msg);
             self.quorum.update_seqnum(
                 self.log.latest_config(),
                 self.id,
-                self.leader_sn,
-                self.leader_sn.next(),
+                self.seqno,
+                self.seqno.next(),
             );
-            self.leader_sn = self.leader_sn.next();
+            self.seqno = self.seqno.next();
         }
     }
 

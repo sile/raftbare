@@ -15,30 +15,30 @@ pub enum Message {
 impl Message {
     pub fn term(&self) -> Term {
         match self {
-            Self::RequestVoteRequest(m) => m.term,
+            Self::RequestVoteRequest(m) => m.header.term,
             Self::RequestVoteReply(m) => m.term,
-            Self::AppendEntriesRequest(m) => m.term,
-            Self::AppendEntriesReply(m) => m.term,
+            Self::AppendEntriesRequest(m) => m.header.term,
+            Self::AppendEntriesReply(m) => m.header.term,
         }
     }
 
     pub fn from(&self) -> NodeId {
         match self {
-            Self::RequestVoteRequest(m) => m.from,
+            Self::RequestVoteRequest(m) => m.header.from,
             Self::RequestVoteReply(m) => m.from,
-            Self::AppendEntriesRequest(m) => m.from,
-            Self::AppendEntriesReply(m) => m.from,
+            Self::AppendEntriesRequest(m) => m.header.from,
+            Self::AppendEntriesReply(m) => m.header.from,
         }
     }
 
     pub fn request_vote_request(
         term: Term,
-        candidate_id: NodeId,
+        from: NodeId,
+        seqno: MessageSeqNo,
         last_position: LogPosition,
     ) -> Self {
         Self::RequestVoteRequest(RequestVoteRequest {
-            term,
-            from: candidate_id,
+            header: MessageHeader { term, from, seqno },
             last_entry: last_position,
         })
     }
@@ -53,16 +53,14 @@ impl Message {
 
     pub fn append_entries_request(
         term: Term,
-        leader_id: NodeId,
+        from: NodeId,
         leader_commit: LogIndex,
-        leader_sn: MessageSeqNo,
+        seqno: MessageSeqNo,
         entries: LogEntries,
     ) -> Self {
         Self::AppendEntriesRequest(AppendEntriesRequest {
-            term,
-            from: leader_id,
+            header: MessageHeader { from, term, seqno },
             leader_commit,
-            leader_sn,
             entries,
         })
     }
@@ -70,13 +68,11 @@ impl Message {
     pub fn append_entries_reply(
         term: Term,
         from: NodeId,
-        leader_sn: MessageSeqNo,
+        seqno: MessageSeqNo,
         last_entry: LogPosition,
     ) -> Self {
         Self::AppendEntriesReply(AppendEntriesReply {
-            term,
-            from,
-            leader_sn,
+            header: MessageHeader { term, from, seqno },
             last_entry,
         })
     }
@@ -91,9 +87,8 @@ impl Message {
             *self = other;
             return;
         };
-        req0.term = req1.term;
+        req0.header = req1.header;
         req0.leader_commit = req1.leader_commit;
-        req0.leader_sn = req1.leader_sn;
         if req0.entries.contains(req1.entries.prev_position()) {
             req0.entries.append(&req1.entries);
         } else {
@@ -102,7 +97,14 @@ impl Message {
     }
 }
 
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct MessageHeader {
+    pub from: NodeId,
+    pub term: Term,
+    pub seqno: MessageSeqNo,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct MessageSeqNo(u64);
 
 impl MessageSeqNo {
@@ -118,15 +120,24 @@ impl MessageSeqNo {
         Self(v)
     }
 
+    pub const fn prev(self) -> Self {
+        Self(self.0 - 1)
+    }
+
     pub const fn next(self) -> Self {
         Self(self.0 + 1)
+    }
+
+    pub fn fetch_and_increment(&mut self) -> Self {
+        let v = *self;
+        self.0 += 1;
+        v
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct RequestVoteRequest {
-    pub term: Term,
-    pub from: NodeId,
+    pub header: MessageHeader,
     pub last_entry: LogPosition,
 }
 
@@ -139,19 +150,13 @@ pub struct RequestVoteReply {
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct AppendEntriesRequest {
-    pub term: Term,
-    pub from: NodeId,
+    pub header: MessageHeader,
     pub leader_commit: LogIndex,
-    pub leader_sn: MessageSeqNo,
     pub entries: LogEntries,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct AppendEntriesReply {
-    pub term: Term,
-    pub from: NodeId,
-    pub leader_sn: MessageSeqNo,
+    pub header: MessageHeader,
     pub last_entry: LogPosition,
 }
-
-// TODO: MessageHeader

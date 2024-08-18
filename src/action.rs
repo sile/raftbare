@@ -221,6 +221,7 @@ mod tests {
         actions.set(Action::BroadcastMessage(Message::request_vote_request(
             Term::new(2),
             NodeId::new(3),
+            MessageSeqNo::from_u64(10),
             pos(2, 8),
         )));
         actions.set(Action::BroadcastMessage(Message::append_entries_request(
@@ -239,7 +240,12 @@ mod tests {
         // SendMessage
         actions.set(Action::SendMessage(
             NodeId::new(4),
-            Message::request_vote_request(Term::new(2), NodeId::new(3), pos(2, 8)),
+            Message::request_vote_request(
+                Term::new(2),
+                NodeId::new(3),
+                MessageSeqNo::from_u64(3),
+                pos(2, 8),
+            ),
         ));
         actions.set(Action::SendMessage(
             NodeId::new(2),

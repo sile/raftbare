@@ -80,7 +80,7 @@ impl HeartbeatPromise {
         };
         if node.current_term() != term {
             *self = Self::Rejected;
-        } else if seqno <= node.leader_sn {
+        } else if seqno <= node.seqno {
             *self = Self::Accepted;
         }
         *self
