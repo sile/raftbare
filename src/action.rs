@@ -1,7 +1,7 @@
 use crate::{log::LogEntries, message::Message, node::NodeId};
 use std::collections::{BTreeMap, BTreeSet};
 
-/// [`Action`]s issued by a Raft [`Node`](crate::Node) directs operations with side effects to crate users.
+/// [`Action`] represents the I/O operations for [`Node`](crate::Node) that crate users need to execute.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Action {
     /// Set an election timeout.
