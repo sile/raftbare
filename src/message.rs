@@ -13,21 +13,32 @@ use crate::{
 pub enum Message {
     /// RequestVote RPC call.
     RequestVoteCall {
+        /// Message header.
         header: MessageHeader,
+
+        /// Last log position of the candidate.
         last_position: LogPosition,
     },
 
     /// RequestVote RPC reply.
     RequestVoteReply {
+        /// Message header.
         header: MessageHeader,
+
+        /// Whether the vote is granted or not.
         vote_granted: bool,
     },
 
     /// AppendEntries RPC call.
     AppendEntriesCall {
+        /// Message header.
         header: MessageHeader,
-        leader_commit: LogIndex, // TOOD: rename(?)
 
+        /// Leader's commit index.
+        commit_index: LogIndex,
+
+        /// Entries to append.
+        ///
         /// Note that if the entries are too large to fit in a single message,
         /// it can be shrinked by calling [`LogEntries::truncate()`] before sending.
         entries: LogEntries,
@@ -35,8 +46,11 @@ pub enum Message {
 
     /// AppendEntries RPC reply.
     AppendEntriesReply {
+        /// Message header.
         header: MessageHeader,
 
+        /// Last log position of the follower.
+        ///
         /// Instead of replying a boolean `success` as defined in the Raft paper,
         /// this crate replies the last log position of the follower.
         /// With this adjustment, the leader can quickly determine the appropriate match index of the follower,
@@ -46,15 +60,7 @@ pub enum Message {
 }
 
 impl Message {
-    pub fn term(&self) -> Term {
-        match self {
-            Self::RequestVoteCall { header, .. } => header.term,
-            Self::RequestVoteReply { header, .. } => header.term,
-            Self::AppendEntriesCall { header, .. } => header.term,
-            Self::AppendEntriesReply { header, .. } => header.term,
-        }
-    }
-
+    /// Returns the sender node ID of the message.
     pub fn from(&self) -> NodeId {
         match self {
             Self::RequestVoteCall { header, .. } => header.from,
@@ -64,6 +70,17 @@ impl Message {
         }
     }
 
+    /// Returns the term of the message.
+    pub fn term(&self) -> Term {
+        match self {
+            Self::RequestVoteCall { header, .. } => header.term,
+            Self::RequestVoteReply { header, .. } => header.term,
+            Self::AppendEntriesCall { header, .. } => header.term,
+            Self::AppendEntriesReply { header, .. } => header.term,
+        }
+    }
+
+    /// Returns the sequence number of the message.
     pub fn seqno(&self) -> MessageSeqNo {
         match self {
             Self::RequestVoteCall { header, .. } => header.seqno,
@@ -73,7 +90,7 @@ impl Message {
         }
     }
 
-    pub fn request_vote_call(
+    pub(crate) fn request_vote_call(
         term: Term,
         from: NodeId,
         seqno: MessageSeqNo,
@@ -85,7 +102,7 @@ impl Message {
         }
     }
 
-    pub fn request_vote_reply(
+    pub(crate) fn request_vote_reply(
         term: Term,
         from: NodeId,
         seqno: MessageSeqNo,
@@ -97,37 +114,40 @@ impl Message {
         }
     }
 
-    pub fn append_entries_call(
+    pub(crate) fn append_entries_call(
         term: Term,
         from: NodeId,
-        leader_commit: LogIndex,
+        commit_index: LogIndex,
         seqno: MessageSeqNo,
         entries: LogEntries,
     ) -> Self {
         Self::AppendEntriesCall {
             header: MessageHeader { from, term, seqno },
-            leader_commit,
+            commit_index,
             entries,
         }
     }
 
-    pub fn append_entries_reply(
+    pub(crate) fn append_entries_reply(
         term: Term,
         from: NodeId,
         seqno: MessageSeqNo,
-        last_entry: LogPosition,
+        last_position: LogPosition,
     ) -> Self {
         Self::AppendEntriesReply {
             header: MessageHeader { term, from, seqno },
-            last_position: last_entry,
+            last_position,
         }
     }
 
-    // TODO: test
     pub(crate) fn merge(&mut self, other: Self) {
+        debug_assert_eq!(self.from(), other.from());
+        debug_assert!(self.term() <= other.term());
+        debug_assert!(self.seqno() < other.seqno());
+
         let Self::AppendEntriesCall {
             header: header0,
-            leader_commit: leader_commit0,
+            commit_index: leader_commit0,
             entries: entries0,
         } = self
         else {
@@ -136,13 +156,14 @@ impl Message {
         };
         let Self::AppendEntriesCall {
             header: header1,
-            leader_commit: leader_commit1,
+            commit_index: leader_commit1,
             entries: entries1,
         } = other
         else {
             *self = other;
             return;
         };
+
         *header0 = header1;
         *leader_commit0 = leader_commit1;
         if entries0.contains(entries1.prev_position()) {

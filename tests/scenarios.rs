@@ -1,6 +1,6 @@
 use raftbare::{
     Action, Actions, ClusterConfig, CommitPromise, HeartbeatPromise, LogEntries, LogEntry,
-    LogIndex, LogPosition, Message, MessageSeqNo, Node, NodeId, Role, Term,
+    LogIndex, LogPosition, Message, MessageHeader, MessageSeqNo, Node, NodeId, Role, Term,
 };
 use std::ops::{Deref, DerefMut};
 
@@ -309,8 +309,7 @@ impl ThreeNodeCluster {
             break;
         }
 
-        let (CommitPromise::Pending(commit_position), Some(call)) = (commit_promise, call)
-        else {
+        let (CommitPromise::Pending(commit_position), Some(call)) = (commit_promise, call) else {
             panic!("No leader found.");
         };
 
@@ -429,7 +428,7 @@ impl TestNode {
 
         let Message::AppendEntriesCall {
             entries,
-            leader_commit,
+            commit_index: leader_commit,
             ..
         } = msg
         else {
@@ -705,10 +704,7 @@ impl TestNode {
         call
     }
 
-    fn asserted_handle_append_entries_call_success_new_leader(
-        &mut self,
-        msg: &Message,
-    ) -> Message {
+    fn asserted_handle_append_entries_call_success_new_leader(&mut self, msg: &Message) -> Message {
         assert!(matches!(msg, Message::AppendEntriesCall { .. }));
 
         let tail = self.log().entries().last_position();
@@ -728,8 +724,7 @@ impl TestNode {
 
     fn asserted_heartbeat(&mut self) -> (HeartbeatPromise, Message) {
         let heartbeat = self.heartbeat();
-        let call =
-            append_entries_call(self, LogEntries::new(self.log().entries().last_position()));
+        let call = append_entries_call(self, LogEntries::new(self.log().entries().last_position()));
         assert_action!(self, broadcast_message(&call));
         assert_no_action!(self);
         (heartbeat, call)
@@ -791,9 +786,12 @@ fn request_vote_call(
     term: Term,
     from: NodeId,
     seqno: MessageSeqNo,
-    last_entry: LogPosition,
+    last_position: LogPosition,
 ) -> Message {
-    Message::request_vote_call(term, from, seqno, last_entry)
+    Message::RequestVoteCall {
+        header: MessageHeader { term, from, seqno },
+        last_position,
+    }
 }
 
 fn request_vote_reply(
@@ -802,29 +800,37 @@ fn request_vote_reply(
     seqno: MessageSeqNo,
     vote_granted: bool,
 ) -> Message {
-    Message::request_vote_reply(term, from, seqno, vote_granted)
+    Message::RequestVoteReply {
+        header: MessageHeader { from, term, seqno },
+        vote_granted,
+    }
 }
 
 fn append_entries_call(leader: &Node, entries: LogEntries) -> Message {
-    Message::append_entries_call(
-        leader.current_term(),
-        leader.id(),
-        leader.commit_index(),
-        MessageSeqNo::new(leader.seqno.get() - 1),
+    let term = leader.current_term();
+    let from = leader.id();
+    let commit_index = leader.commit_index();
+    let seqno = MessageSeqNo::new(leader.seqno.get() - 1);
+    Message::AppendEntriesCall {
+        header: MessageHeader { from, term, seqno },
+        commit_index,
         entries,
-    )
+    }
 }
 
 fn append_entries_reply(call: &Message, node: &Node) -> Message {
     let Message::AppendEntriesCall { header, .. } = call else {
         panic!();
     };
-    Message::append_entries_reply(
-        node.current_term(),
-        node.id(),
-        header.seqno,
-        node.log().entries().last_position(),
-    )
+
+    let term = node.current_term();
+    let from = node.id();
+    let seqno = header.seqno;
+    let last_position = node.log().entries().last_position();
+    Message::AppendEntriesReply {
+        header: MessageHeader { term, from, seqno },
+        last_position,
+    }
 }
 
 fn send_message(destination: NodeId, message: &Message) -> Action {

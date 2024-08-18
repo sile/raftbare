@@ -353,9 +353,9 @@ impl Node {
             } => self.handle_request_vote_reply(*header, *vote_granted),
             Message::AppendEntriesCall {
                 header,
-                leader_commit,
+                commit_index,
                 entries,
-            } => self.handle_append_entries_call(*header, *leader_commit, entries),
+            } => self.handle_append_entries_call(*header, *commit_index, entries),
             Message::AppendEntriesReply {
                 header,
                 last_position,
