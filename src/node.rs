@@ -77,6 +77,11 @@ impl Node {
         }
     }
 
+    // # Important
+    //
+    // - Raft assumes the persistent storage is reliable.
+    // - If the storage has corrupted or lost some log data, it's safe to remove the node then add it back to the cluster as a new node.
+    // - Changing the node's ID is recommended.
     pub fn restart(id: NodeId, current_term: Term, voted_for: Option<NodeId>, log: Log) -> Self {
         let mut node = Self::start(id);
 
