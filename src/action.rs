@@ -263,7 +263,7 @@ mod tests {
         ));
         assert!(matches!(
             actions.next(),
-            Some(Action::SendMessage(_, Message::RequestVoteRequest(_)))
+            Some(Action::SendMessage(_, Message::RequestVoteRequest { .. }))
         ));
         assert_eq!(actions.next(), None);
 

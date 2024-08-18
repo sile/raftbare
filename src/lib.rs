@@ -14,7 +14,7 @@ pub use config::ClusterConfig;
 pub use log::{Log, LogEntries, LogEntry, LogIndex, LogPosition};
 pub use message::{
     AppendEntriesReply, AppendEntriesRequest, Message, MessageHeader, MessageSeqNo,
-    RequestVoteReply, RequestVoteRequest,
+    RequestVoteReply,
 };
 pub use node::{ChangeClusterConfigError, Node, NodeId};
 pub use promise::{CommitPromise, HeartbeatPromise};

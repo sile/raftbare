@@ -2,12 +2,9 @@ use crate::{
     action::{Action, Actions},
     config::ClusterConfig,
     log::{LogEntries, LogEntry, LogIndex, LogPosition},
-    message::{
-        AppendEntriesReply, AppendEntriesRequest, Message, MessageSeqNo, RequestVoteReply,
-        RequestVoteRequest,
-    },
+    message::{AppendEntriesReply, AppendEntriesRequest, Message, MessageSeqNo, RequestVoteReply},
     quorum::Quorum,
-    CommitPromise, HeartbeatPromise, Log, Role, Term,
+    CommitPromise, HeartbeatPromise, Log, MessageHeader, Role, Term,
 };
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -340,7 +337,10 @@ impl Node {
         }
 
         match msg {
-            Message::RequestVoteRequest(msg) => self.handle_request_vote_request(msg),
+            Message::RequestVoteRequest {
+                header,
+                last_position,
+            } => self.handle_request_vote_request(*header, *last_position),
             Message::RequestVoteReply(msg) => self.handle_request_vote_reply(msg),
             Message::AppendEntriesRequest(msg) => self.handle_append_entries_request(msg),
             Message::AppendEntriesReply(msg) => {
@@ -349,26 +349,26 @@ impl Node {
         }
     }
 
-    fn handle_request_vote_request(&mut self, request: &RequestVoteRequest) {
-        if request.header.term < self.current_term {
+    fn handle_request_vote_request(&mut self, header: MessageHeader, last_position: LogPosition) {
+        if header.term < self.current_term {
             self.send_message(
-                request.header.from,
+                header.from,
                 Message::request_vote_reply(self.current_term, self.id, false),
             );
             return;
         }
-        if self.log.entries().last_position().index > request.last_entry.index {
+        if self.log.entries().last_position().index > last_position.index {
             return;
         }
 
         if self.voted_for.is_none() {
-            self.set_voted_for(Some(request.header.from));
+            self.set_voted_for(Some(header.from));
         }
-        if self.voted_for != Some(request.header.from) {
+        if self.voted_for != Some(header.from) {
             return;
         }
         self.send_message(
-            request.header.from,
+            header.from,
             Message::request_vote_reply(self.current_term, self.id, true),
         );
     }

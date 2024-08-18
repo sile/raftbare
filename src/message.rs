@@ -6,7 +6,10 @@ use crate::{
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Message {
-    RequestVoteRequest(RequestVoteRequest),
+    RequestVoteRequest {
+        header: MessageHeader,
+        last_position: LogPosition,
+    },
     RequestVoteReply(RequestVoteReply),
     AppendEntriesRequest(AppendEntriesRequest),
     AppendEntriesReply(AppendEntriesReply),
@@ -15,7 +18,7 @@ pub enum Message {
 impl Message {
     pub fn term(&self) -> Term {
         match self {
-            Self::RequestVoteRequest(m) => m.header.term,
+            Self::RequestVoteRequest { header, .. } => header.term,
             Self::RequestVoteReply(m) => m.term,
             Self::AppendEntriesRequest(m) => m.header.term,
             Self::AppendEntriesReply(m) => m.header.term,
@@ -24,7 +27,7 @@ impl Message {
 
     pub fn from(&self) -> NodeId {
         match self {
-            Self::RequestVoteRequest(m) => m.header.from,
+            Self::RequestVoteRequest { header, .. } => header.from,
             Self::RequestVoteReply(m) => m.from,
             Self::AppendEntriesRequest(m) => m.header.from,
             Self::AppendEntriesReply(m) => m.header.from,
@@ -37,10 +40,10 @@ impl Message {
         seqno: MessageSeqNo,
         last_position: LogPosition,
     ) -> Self {
-        Self::RequestVoteRequest(RequestVoteRequest {
+        Self::RequestVoteRequest {
             header: MessageHeader { term, from, seqno },
-            last_entry: last_position,
-        })
+            last_position,
+        }
     }
 
     pub fn request_vote_reply(term: Term, from: NodeId, vote_granted: bool) -> Self {
@@ -133,12 +136,6 @@ impl MessageSeqNo {
         self.0 += 1;
         v
     }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct RequestVoteRequest {
-    pub header: MessageHeader,
-    pub last_entry: LogPosition,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]

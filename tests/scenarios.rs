@@ -646,7 +646,7 @@ impl TestNode {
     }
 
     fn asserted_handle_request_vote_request_success(&mut self, msg: &Message) -> Message {
-        assert!(matches!(msg, Message::RequestVoteRequest(_)));
+        assert!(matches!(msg, Message::RequestVoteRequest { .. }));
 
         self.handle_message(&msg);
 
@@ -663,7 +663,7 @@ impl TestNode {
     }
 
     fn asserted_handle_request_vote_request_failed(&mut self, msg: &Message) {
-        assert!(matches!(msg, Message::RequestVoteRequest(_)));
+        assert!(matches!(msg, Message::RequestVoteRequest { .. }));
 
         self.handle_message(&msg);
         assert_action!(self, save_current_term());
