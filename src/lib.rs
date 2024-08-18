@@ -6,12 +6,14 @@ mod log;
 pub mod message; // TODO:
 mod node;
 mod quorum;
+mod role;
 
 pub use action::{Action, Actions};
 pub use config::ClusterConfig;
 pub use log::{Log, LogEntries, LogEntry, LogIndex, LogPosition};
 pub use message::{Message, MessageSeqNum};
-pub use node::{ChangeClusterConfigError, CommitPromise, HeartbeatPromise, Node, NodeId, Role};
+pub use node::{ChangeClusterConfigError, CommitPromise, HeartbeatPromise, Node, NodeId};
+pub use role::Role;
 
 /// Term.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
