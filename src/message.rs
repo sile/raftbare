@@ -90,7 +90,11 @@ impl Message {
         req0.term = req1.term;
         req0.leader_commit = req1.leader_commit;
         req0.leader_sn = req1.leader_sn;
-        req0.entries.append(&req1.entries);
+        if req0.entries.contains(req1.entries.prev_position()) {
+            req0.entries.append(&req1.entries);
+        } else {
+            req0.entries = req1.entries;
+        }
     }
 }
 

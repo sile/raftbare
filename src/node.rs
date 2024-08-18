@@ -634,6 +634,12 @@ impl Node {
         self.log.latest_config()
     }
 
+    pub fn peers(&self) -> impl '_ + Iterator<Item = NodeId> {
+        self.config()
+            .unique_nodes()
+            .filter(move |&node| node != self.id)
+    }
+
     pub fn log(&self) -> &Log {
         &self.log
     }

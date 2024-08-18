@@ -1,21 +1,74 @@
 use crate::{log::LogEntries, message::Message, node::NodeId};
 use std::collections::{BTreeMap, BTreeSet};
 
+/// [`Action`]s issued by a Raft [`Node`](crate::Node) directs operations with side effects to crate users.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Action {
+    /// Set an election timeout.
+    ///
+    /// When the timeout expires, please call [`Node::handle_election_timeout()`](crate::Node::handle_election_timeout).
+    ///
+    /// An existing timeout is cancelled when a new one is set.
+    ///
+    /// The user needs to set different timeouts for each node based on its [`Role`](crate::Role) as follows:
+    /// - For [`Role::Leader`](crate::Role::Leader):
+    ///   - When the timeout expires, the leader sends heartbeat messages to followers.
+    ///   - To maintain the role of leader, the timeout should be shorter than the election timeouts of the followers.
+    /// - For [`Role::Candidate`](crate::Role::Candidate):
+    ///   - When the timeout expires, the candidate starts a new election.
+    ///   - The timeout should have some randomness to avoid conflicts with other candidates.
+    /// - For [`Role::Follower`](crate::Role::Follower):
+    ///   - When the timeout expires, the follower starts a new election.
+    ///   - The timeout should be longer than the heartbeat timeout of the leader.
+    ///
+    /// Note that the appropriate timeout values depend on the specific application.
     SetElectionTimeout,
 
-    // Synchronous actions (if async, the Raft properties are not guaranteed)
+    /// Save the current term ([`Node::current_term()`](crate::Node::current_term())) to persistent storage.
+    ///
+    /// To guarantee properties by the Raft algorithm, the value must be saved before responding to users or sending messages to other nodes.
     SaveCurrentTerm,
+
+    /// Save the voted-for node ID ([`Node::voted_for()`](crate::Node::voted_for())) to persistent storage.
+    ///
+    /// To guarantee properties by the Raft algorithm, the value must be saved before responding to users or sending messages to other nodes.
     SaveVotedFor,
+
+    /// Append log entries to the node-local log on persistent storage.
+    ///
+    /// Note that previously written log suffix entries may be overwritten by these new entries.
+    /// In other words, the [`LogEntries::last_position().index`](crate::LogEntries::last_position) can be any value within the range from the start index to the end index of the local log.
+    ///
+    /// To guarantee properties by the Raft algorithm, the entries must be appended before responding to users or sending messages to other nodes.
+    /// (However, because writing all log entries to persistent storage synchronously could be too costly, in reality, the entries are often written asynchronously.)
     AppendLogEntries(LogEntries),
 
-    // Can drop this message especially if there is another ongoing AppendEntriesRPC
+    /// Broadcast a message to all other nodes ([`Node::peers()`](crate::Node::peers)).
+    ///
+    /// On the receiving side, the message is handled by [`Node::handle_message()`](crate::Node::handle_message).
+    ///
+    /// Unlike storage-related actions, this action can be executed asynchronously and can be discarded if the communication link is busy.
     BroadcastMessage(Message),
+
+    /// Send a message to a specific node.
+    ///
+    /// On the receiving side, the message is handled by [`Node::handle_message()`](crate::Node::handle_message).
+    ///
+    /// Unlike storage-related actions, this action can be executed asynchronously and can be discarded if the communication link is busy.
+    ///
+    /// Additionally, if an AppendEntriesRPC contains too many entries to be sent in a single message,
+    /// they can be safely truncated using [`LogEntries::truncate()`](crate::LogEntries::truncate) before sending the message.
     SendMessage(NodeId, Message),
+
+    /// Install a snapshot on a specific node.
+    ///
+    /// The user is responsible for managing the details of sending and installing the snapshots.
+    ///
+    /// Note that once the snapshot installation is complete, the user needs to call [`Node::handle_snapshot_installed()`](crate::Node::handle_snapshot_installed).
     InstallSnapshot(NodeId),
 }
 
+// doc about pipeline
 #[derive(Debug, Default, Clone)]
 pub struct Actions {
     pub set_election_timeout: bool,
