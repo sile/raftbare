@@ -31,11 +31,15 @@ impl Message {
         }
     }
 
-    pub fn request_vote_request(term: Term, candidate_id: NodeId, last_entry: LogPosition) -> Self {
+    pub fn request_vote_request(
+        term: Term,
+        candidate_id: NodeId,
+        last_position: LogPosition,
+    ) -> Self {
         Self::RequestVoteRequest(RequestVoteRequest {
             term,
             from: candidate_id,
-            last_entry,
+            last_entry: last_position,
         })
     }
 

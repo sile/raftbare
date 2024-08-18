@@ -170,7 +170,7 @@ impl Iterator for Actions {
 
 #[cfg(test)]
 mod tests {
-    use crate::{LogEntry, LogIndex, LogPosition, Term};
+    use crate::{LogEntry, LogIndex, LogPosition, MessageSeqNum, Term};
 
     use super::*;
 
@@ -179,21 +179,25 @@ mod tests {
         let mut actions = Actions::default();
         assert_eq!(actions.next(), None);
 
+        // SetElectionTimeout
         actions.set(Action::SetElectionTimeout);
         actions.set(Action::SetElectionTimeout);
         assert_eq!(actions.next(), Some(Action::SetElectionTimeout));
         assert_eq!(actions.next(), None);
 
+        // SaveCurrentTerm
         actions.set(Action::SaveCurrentTerm);
         actions.set(Action::SaveCurrentTerm);
         assert_eq!(actions.next(), Some(Action::SaveCurrentTerm));
         assert_eq!(actions.next(), None);
 
+        // SaveVotedFor
         actions.set(Action::SaveVotedFor);
         actions.set(Action::SaveVotedFor);
         assert_eq!(actions.next(), Some(Action::SaveVotedFor));
         assert_eq!(actions.next(), None);
 
+        // AppendLogEntries
         actions.set(Action::AppendLogEntries(LogEntries::from_iter(
             pos(2, 3),
             std::iter::once(LogEntry::Command),
@@ -211,9 +215,63 @@ mod tests {
         );
         assert_eq!(actions.next(), None);
 
-        // pub broadcast_message: Option<Message>,
-        // pub send_messages: BTreeMap<NodeId, Message>,
-        // pub install_snapshots: BTreeSet<NodeId>,
+        // BroadcastMessage
+        actions.set(Action::BroadcastMessage(Message::request_vote_request(
+            Term::new(2),
+            NodeId::new(3),
+            pos(2, 8),
+        )));
+        actions.set(Action::BroadcastMessage(Message::append_entries_request(
+            Term::new(2),
+            NodeId::new(3),
+            LogIndex::new(10),
+            MessageSeqNum::from_u64(30),
+            LogEntries::new(pos(2, 10)),
+        )));
+        assert!(matches!(
+            actions.next(),
+            Some(Action::BroadcastMessage(Message::AppendEntriesRequest(_)))
+        ));
+        assert_eq!(actions.next(), None);
+
+        // SendMessage
+        actions.set(Action::SendMessage(
+            NodeId::new(4),
+            Message::request_vote_request(Term::new(2), NodeId::new(3), pos(2, 8)),
+        ));
+        actions.set(Action::SendMessage(
+            NodeId::new(2),
+            Message::append_entries_request(
+                Term::new(2),
+                NodeId::new(3),
+                LogIndex::new(10),
+                MessageSeqNum::from_u64(30),
+                LogEntries::new(pos(2, 10)),
+            ),
+        ));
+        assert!(matches!(
+            actions.next(),
+            Some(Action::SendMessage(_, Message::AppendEntriesRequest(_)))
+        ));
+        assert!(matches!(
+            actions.next(),
+            Some(Action::SendMessage(_, Message::RequestVoteRequest(_)))
+        ));
+        assert_eq!(actions.next(), None);
+
+        // InstallSnapshot
+        actions.set(Action::InstallSnapshot(NodeId::new(3)));
+        actions.set(Action::InstallSnapshot(NodeId::new(2)));
+        actions.set(Action::InstallSnapshot(NodeId::new(3)));
+        assert_eq!(
+            actions.next(),
+            Some(Action::InstallSnapshot(NodeId::new(2)))
+        );
+        assert_eq!(
+            actions.next(),
+            Some(Action::InstallSnapshot(NodeId::new(3)))
+        );
+        assert_eq!(actions.next(), None);
     }
 
     fn pos(term: u64, index: u64) -> LogPosition {
