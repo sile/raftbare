@@ -31,6 +31,8 @@ impl NodeId {
 }
 
 /// Raft node.
+///
+/// TODO: doc about I/O
 #[derive(Debug, Clone)]
 pub struct Node {
     id: NodeId,
@@ -178,7 +180,7 @@ impl Node {
             self.seqno.next(),
         );
         self.seqno = self.seqno.next();
-        self.enqueue_action(Action::SetElectionTimeout); // TODO: merge the same kind actions
+        self.actions.set(Action::SetElectionTimeout);
         self.update_commit_index_if_possible(); // TODO: check single node
 
         let index = self.log.entries().last_position().index;
@@ -221,11 +223,11 @@ impl Node {
     }
 
     fn broadcast_message(&mut self, message: Message) {
-        self.enqueue_action(Action::BroadcastMessage(message));
+        self.actions.set(Action::BroadcastMessage(message));
     }
 
     fn send_message(&mut self, destination: NodeId, message: Message) {
-        self.enqueue_action(Action::SendMessage(destination, message));
+        self.actions.set(Action::SendMessage(destination, message));
     }
 
     fn update_commit_index_if_possible(&mut self) {
@@ -277,10 +279,11 @@ impl Node {
         debug_assert!(self.role.is_leader());
 
         let prev_index = self.log.entries().last_position().index;
-        self.enqueue_action(Action::AppendLogEntries(LogEntries::from_iter(
-            self.log.entries().last_position(),
-            std::iter::once(entry.clone()),
-        )));
+        self.actions
+            .set(Action::AppendLogEntries(LogEntries::from_iter(
+                self.log.entries().last_position(),
+                std::iter::once(entry.clone()),
+            )));
         self.log.entries_mut().push(entry.clone());
 
         // TODO: unnecessary condition?
@@ -315,19 +318,19 @@ impl Node {
         }
 
         // Append.
-        self.enqueue_action(Action::AppendLogEntries(entries.clone()));
+        self.actions.set(Action::AppendLogEntries(entries.clone()));
         self.log.entries_mut().append(entries);
         true
     }
 
     fn set_current_term(&mut self, term: Term) {
         self.current_term = term;
-        self.enqueue_action(Action::SaveCurrentTerm);
+        self.actions.set(Action::SaveCurrentTerm);
     }
 
     fn set_voted_for(&mut self, voted_for: Option<NodeId>) {
         self.voted_for = voted_for;
-        self.enqueue_action(Action::SaveVotedFor);
+        self.actions.set(Action::SaveVotedFor);
     }
 
     // TODO: split into handle_request_vote_call, ... to make it possible to return errors
@@ -481,7 +484,7 @@ impl Node {
             seqno,
             self.log.entries().last_position(),
         ));
-        self.enqueue_action(Action::SetElectionTimeout);
+        self.actions.set(Action::SetElectionTimeout);
     }
 
     fn enter_leader(&mut self) {
@@ -501,7 +504,7 @@ impl Node {
         self.set_voted_for(None);
         // self.quorum.clear();
         self.followers.clear();
-        self.enqueue_action(Action::SetElectionTimeout);
+        self.actions.set(Action::SetElectionTimeout);
     }
 
     fn reply_append_entries(&mut self, header: MessageHeader) {
@@ -610,7 +613,7 @@ impl Node {
         let last_position = last_position;
         if last_position.index < self.log.entries().prev_position().index {
             // Send snapshot
-            self.enqueue_action(Action::InstallSnapshot(header.from));
+            self.actions.set(Action::InstallSnapshot(header.from));
         } else if last_position.index < self_last_position.index {
             // send delta
             let Some(delta) = self.log.entries().since(last_position) else {
@@ -675,15 +678,6 @@ impl Node {
 
     pub fn actions_mut(&mut self) -> &mut Actions {
         &mut self.actions
-    }
-
-    pub fn next_action(&mut self) -> Option<Action> {
-        self.actions.next()
-    }
-
-    // TODO: rename
-    fn enqueue_action(&mut self, action: Action) {
-        self.actions.set(action);
     }
 }
 

@@ -6,7 +6,7 @@ use std::ops::{Deref, DerefMut};
 
 macro_rules! assert_no_action {
     ($node:expr) => {
-        assert_eq!($node.next_action(), None);
+        assert_eq!($node.actions_mut().next(), None);
     };
 }
 
@@ -151,7 +151,7 @@ fn truncate_log() {
     // Propose a command, but not broadcast the message.
     assert_eq!(cluster.node0.role(), Role::Leader);
     let mut commit_promise = cluster.node0.propose_command();
-    while let Some(_) = cluster.node0.next_action() {}
+    while let Some(_) = cluster.node0.actions_mut().next() {}
 
     // Make node2 the leader.
     let _call = cluster.node2.asserted_follower_election_timeout();
