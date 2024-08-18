@@ -68,15 +68,37 @@ pub enum Action {
     InstallSnapshot(NodeId),
 }
 
-// doc about pipeline
+/// [`Actions`] represents a prioritized set of [`Action`]s that are issued by a [`Node`](crate::Node) but have not yet been executed.
+///
+/// Fields of [`Actions`] are prioritized, and actions are generally executed in the order of these fields.
+/// Usually users do not need to access these fields directly.
+/// Instead, they can use the [`Iterator`] interface of [`Actions`].
+/// When [`Actions::next()`] is called, the most prioritized action is returned.
+///
+/// However, advanced users can directly access the fields to implement optimizations, such as sending AppendEntriesRPC messages before appending the entries to the local log to reduce latency, while being aware of the associated risks.
+///
+/// Note that any unconsumed actions are merged, so users can achieve pipelining simply by calling multiple [`Node`](crate::Node) methods (such as [`Node::propose_command()`](crate::Node::propose_command)), and then execute the final actions.
 #[derive(Debug, Default, Clone)]
 pub struct Actions {
+    /// If [`true`], [`Action::SetElectionTimeout`] needs to be executed.
     pub set_election_timeout: bool,
+
+    /// If [`true`], [`Action::SaveCurrentTerm`] needs to be executed.
     pub save_current_term: bool,
+
+    /// If [`true`], [`Action::SaveVotedFor`] needs to be executed.
     pub save_voted_for: bool,
+
+    /// If [`Some`], [`Action::AppendLogEntries`] needs to be executed.
     pub append_log_entries: Option<LogEntries>,
+
+    /// If [`Some`], [`Action::BroadcastMessage`] needs to be executed.
     pub broadcast_message: Option<Message>,
+
+    /// If there is an entry for a node, [`Action::SendMessage`] for the node needs to be executed.
     pub send_messages: BTreeMap<NodeId, Message>,
+
+    /// If there is an entry for a node, [`Action::InstallSnapshot`] for the node needs to be executed.
     pub install_snapshots: BTreeSet<NodeId>,
 }
 
