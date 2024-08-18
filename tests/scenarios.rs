@@ -504,19 +504,23 @@ impl TestNode {
     }
 
     fn asserted_handle_append_entries_reply_failure(&mut self, msg: &Message) -> Message {
-        assert!(matches!(msg, Message::AppendEntriesReply(_)));
+        assert!(matches!(msg, Message::AppendEntriesReply { .. }));
 
-        let Message::AppendEntriesReply(reply) = msg else {
+        let Message::AppendEntriesReply {
+            header,
+            last_position,
+        } = msg
+        else {
             unreachable!();
         };
-        let Some(entries) = since(self.log().entries(), reply.last_entry) else {
+        let Some(entries) = since(self.log().entries(), *last_position) else {
             panic!("Needs snapshot");
         };
 
         self.handle_message(msg);
         let request = append_entries_request(self, entries.clone());
 
-        assert_action!(self, send_message(reply.header.from, &request));
+        assert_action!(self, send_message(header.from, &request));
         assert_no_action!(self);
 
         request
@@ -526,15 +530,19 @@ impl TestNode {
         &mut self,
         msg: &Message,
     ) -> (ClusterConfig, LogPosition) {
-        assert!(matches!(msg, Message::AppendEntriesReply(_)));
+        assert!(matches!(msg, Message::AppendEntriesReply { .. }));
 
-        let Message::AppendEntriesReply(reply) = msg else {
+        let Message::AppendEntriesReply {
+            header,
+            last_position,
+        } = msg
+        else {
             unreachable!();
         };
-        assert!(since(self.log().entries(), reply.last_entry).is_none());
+        assert!(since(self.log().entries(), *last_position).is_none());
 
         self.handle_message(msg);
-        assert_action!(self, Action::InstallSnapshot(reply.header.from));
+        assert_action!(self, Action::InstallSnapshot(header.from));
         assert_no_action!(self);
 
         (
@@ -547,14 +555,14 @@ impl TestNode {
         &mut self,
         msg: &Message,
     ) -> Message {
-        assert!(matches!(msg, Message::AppendEntriesReply(_)));
+        assert!(matches!(msg, Message::AppendEntriesReply { .. }));
         assert!(self.config().is_joint_consensus());
 
         let prev_entry = self.log().entries().last_position();
         let mut new_config = self.config().clone();
         new_config.voters = std::mem::take(&mut new_config.new_voters);
 
-        let Message::AppendEntriesReply(reply) = msg else {
+        let Message::AppendEntriesReply { last_position, .. } = msg else {
             unreachable!();
         };
 
@@ -566,7 +574,7 @@ impl TestNode {
                 std::iter::once(cluster_config_entry(new_config.clone())),
             ),
         );
-        assert_eq!(self.commit_index(), reply.last_entry.index);
+        assert_eq!(self.commit_index(), last_position.index);
         assert_action!(
             self,
             append_log_entry(prev_entry, cluster_config_entry(new_config.clone()))
@@ -583,14 +591,14 @@ impl TestNode {
         reply: &Message,
         commit_index_will_be_updated: bool,
     ) {
-        assert!(matches!(reply, Message::AppendEntriesReply(_)));
+        assert!(matches!(reply, Message::AppendEntriesReply { .. }));
         self.handle_message(reply);
 
-        let Message::AppendEntriesReply(reply) = reply else {
+        let Message::AppendEntriesReply { last_position, .. } = reply else {
             unreachable!();
         };
         if commit_index_will_be_updated {
-            assert_eq!(self.commit_index(), reply.last_entry.index);
+            assert_eq!(self.commit_index(), last_position.index);
         }
         assert_no_action!(self);
     }

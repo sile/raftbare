@@ -2,7 +2,7 @@ use crate::{
     action::{Action, Actions},
     config::ClusterConfig,
     log::{LogEntries, LogEntry, LogIndex, LogPosition},
-    message::{AppendEntriesReply, AppendEntriesRequest, Message, MessageSeqNo},
+    message::{AppendEntriesRequest, Message, MessageSeqNo},
     quorum::Quorum,
     CommitPromise, HeartbeatPromise, Log, MessageHeader, Role, Term,
 };
@@ -346,9 +346,10 @@ impl Node {
                 vote_granted,
             } => self.handle_request_vote_reply(*header, *vote_granted),
             Message::AppendEntriesRequest(msg) => self.handle_append_entries_request(msg),
-            Message::AppendEntriesReply(msg) => {
-                self.handle_append_entries_reply(msg);
-            }
+            Message::AppendEntriesReply {
+                header,
+                last_position,
+            } => self.handle_append_entries_reply(*header, *last_position),
         }
     }
 
@@ -534,41 +535,41 @@ impl Node {
         // TODO: reset election timeout
     }
 
-    fn handle_append_entries_reply(&mut self, reply: &AppendEntriesReply) {
+    fn handle_append_entries_reply(&mut self, header: MessageHeader, last_position: LogPosition) {
         if !self.role.is_leader() {
             return;
         }
 
-        let Some(follower) = self.followers.get_mut(&reply.header.from) else {
+        let Some(follower) = self.followers.get_mut(&header.from) else {
             // Replies from unknown nodes are ignored.
             return;
         };
-        if follower.max_sn < reply.header.seqno {
+        if follower.max_sn < header.seqno {
             self.quorum.update_seqnum(
                 self.log.latest_config(),
-                reply.header.from,
+                header.from,
                 follower.max_sn,
-                reply.header.seqno,
+                header.seqno,
             );
-            follower.max_sn = reply.header.seqno;
+            follower.max_sn = header.seqno;
         }
 
-        if reply.last_entry.index < follower.match_index {
+        if last_position.index < follower.match_index {
             // Maybe delayed reply.
             // (or the follower's storage has been corrupted. Raft does not handle this case though.)
             // TODO: consider follower.last_sn instead of match index here
             return;
         };
 
-        let self_last_entry = self.log.entries().last_position(); // Save the current last entry before (maybe) updating it.
-        if self.log.entries().contains(reply.last_entry) {
-            if follower.match_index < reply.last_entry.index {
+        let self_last_position = self.log.entries().last_position(); // Save the current last entry before (maybe) updating it.
+        if self.log.entries().contains(last_position) {
+            if follower.match_index < last_position.index {
                 let old_match_index = follower.match_index;
-                follower.match_index = reply.last_entry.index;
+                follower.match_index = last_position.index;
 
                 self.quorum.update_match_index(
                     self.log.latest_config(),
-                    reply.header.from,
+                    header.from,
                     old_match_index,
                     follower.match_index,
                 );
@@ -578,19 +579,19 @@ impl Node {
                 }
             }
 
-            if reply.last_entry.index == self.log.entries().last_position().index {
+            if last_position.index == self.log.entries().last_position().index {
                 // Up-to-date.
                 return;
             }
         }
 
-        let last_entry = reply.last_entry;
-        if last_entry.index < self.log.entries().prev_position().index {
+        let last_position = last_position;
+        if last_position.index < self.log.entries().prev_position().index {
             // Send snapshot
-            self.enqueue_action(Action::InstallSnapshot(reply.header.from));
-        } else if last_entry.index < self_last_entry.index {
+            self.enqueue_action(Action::InstallSnapshot(header.from));
+        } else if last_position.index < self_last_position.index {
             // send delta
-            let Some(delta) = self.log.entries().since(last_entry) else {
+            let Some(delta) = self.log.entries().since(last_position) else {
                 // Wrong reply.
                 return;
             };
@@ -601,7 +602,7 @@ impl Node {
                 self.seqno,
                 delta,
             );
-            self.send_message(reply.header.from, msg);
+            self.send_message(header.from, msg);
             self.quorum.update_seqnum(
                 self.log.latest_config(),
                 self.id,

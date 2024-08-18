@@ -12,7 +12,7 @@ mod role;
 pub use action::{Action, Actions};
 pub use config::ClusterConfig;
 pub use log::{Log, LogEntries, LogEntry, LogIndex, LogPosition};
-pub use message::{AppendEntriesReply, AppendEntriesRequest, Message, MessageHeader, MessageSeqNo};
+pub use message::{AppendEntriesRequest, Message, MessageHeader, MessageSeqNo};
 pub use node::{ChangeClusterConfigError, Node, NodeId};
 pub use promise::{CommitPromise, HeartbeatPromise};
 pub use role::Role;

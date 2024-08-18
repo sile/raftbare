@@ -15,7 +15,10 @@ pub enum Message {
         vote_granted: bool,
     },
     AppendEntriesRequest(AppendEntriesRequest),
-    AppendEntriesReply(AppendEntriesReply),
+    AppendEntriesReply {
+        header: MessageHeader,
+        last_position: LogPosition,
+    },
 }
 
 impl Message {
@@ -24,7 +27,7 @@ impl Message {
             Self::RequestVoteRequest { header, .. } => header.term,
             Self::RequestVoteReply { header, .. } => header.term,
             Self::AppendEntriesRequest(m) => m.header.term,
-            Self::AppendEntriesReply(m) => m.header.term,
+            Self::AppendEntriesReply { header, .. } => header.term,
         }
     }
 
@@ -33,7 +36,7 @@ impl Message {
             Self::RequestVoteRequest { header, .. } => header.from,
             Self::RequestVoteReply { header, .. } => header.from,
             Self::AppendEntriesRequest(m) => m.header.from,
-            Self::AppendEntriesReply(m) => m.header.from,
+            Self::AppendEntriesReply { header, .. } => header.from,
         }
     }
 
@@ -42,7 +45,7 @@ impl Message {
             Self::RequestVoteRequest { header, .. } => header.seqno,
             Self::RequestVoteReply { header, .. } => header.seqno,
             Self::AppendEntriesRequest(m) => m.header.seqno,
-            Self::AppendEntriesReply(m) => m.header.seqno,
+            Self::AppendEntriesReply { header, .. } => header.seqno,
         }
     }
 
@@ -90,10 +93,10 @@ impl Message {
         seqno: MessageSeqNo,
         last_entry: LogPosition,
     ) -> Self {
-        Self::AppendEntriesReply(AppendEntriesReply {
+        Self::AppendEntriesReply {
             header: MessageHeader { term, from, seqno },
-            last_entry,
-        })
+            last_position: last_entry,
+        }
     }
 
     // TODO: test
@@ -159,10 +162,4 @@ pub struct AppendEntriesRequest {
     pub header: MessageHeader,
     pub leader_commit: LogIndex,
     pub entries: LogEntries,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct AppendEntriesReply {
-    pub header: MessageHeader,
-    pub last_entry: LogPosition,
 }
