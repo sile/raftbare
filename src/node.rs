@@ -557,6 +557,13 @@ impl Node {
             // Replies from unknown nodes are ignored.
             return;
         };
+
+        // TODO: Add doc about seqno A/B problem is not occured here
+        //      (high seqno request sent by before-restarting node is too delayed to be replied, and
+        //       delivered the reply to the same restarted node. => max_sn is wrongly updated?
+        //       => no term check prohibits this case)
+        // TODO: Add old term check
+
         if follower.max_sn < header.seqno {
             self.quorum.update_seqnum(
                 self.log.latest_config(),
