@@ -384,7 +384,11 @@ impl TestNode {
     fn asserted_change_cluster_config(&mut self, new_config: ClusterConfig) -> Message {
         let prev_entry = self.log().entries().last_position();
         let next_index = next_index(self.log().entries().last_position().index);
-        assert_eq!(Ok(next_index), self.change_cluster_config(&new_config));
+        let next_position = log_pos(self.current_term(), next_index);
+        assert_eq!(
+            Ok(CommitPromise::Pending(next_position)),
+            self.change_cluster_config(&new_config)
+        );
         let msg = append_entries_request(
             self,
             LogEntries::from_iter(

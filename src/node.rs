@@ -151,14 +151,10 @@ impl Node {
         if self.role != Role::Leader {
             return CommitPromise::Rejected;
         }
-
-        let index = self.propose(LogEntry::Command);
-        let term = self.current_term;
-        let position = LogPosition { term, index };
-        CommitPromise::new(position)
+        self.propose(LogEntry::Command)
     }
 
-    fn propose(&mut self, entry: LogEntry) -> LogIndex {
+    fn propose(&mut self, entry: LogEntry) -> CommitPromise {
         debug_assert_eq!(self.role, Role::Leader);
 
         // TODO: Create LogEnties instance only once
@@ -181,7 +177,10 @@ impl Node {
         self.enqueue_action(Action::SetElectionTimeout); // TODO: merge the same kind actions
         self.update_commit_index_if_possible(); // TODO: check single node
 
-        self.log.entries().last_position().index
+        let index = self.log.entries().last_position().index;
+        let term = self.current_term;
+        let position = LogPosition { term, index };
+        CommitPromise::new(position)
     }
 
     fn rebuild_followers(&mut self) {
@@ -256,8 +255,7 @@ impl Node {
     pub fn change_cluster_config(
         &mut self,
         new_config: &ClusterConfig,
-    ) -> Result<LogIndex, ChangeClusterConfigError> {
-        // return: s/LogIndex/CommitPromise/
+    ) -> Result<CommitPromise, ChangeClusterConfigError> {
         if !self.role.is_leader() {
             return Err(ChangeClusterConfigError::NotLeader);
         }
@@ -268,8 +266,7 @@ impl Node {
             return Err(ChangeClusterConfigError::JointConsensusInProgress);
         }
 
-        let index = self.propose(LogEntry::ClusterConfig(new_config.clone()));
-        Ok(index)
+        Ok(self.propose(LogEntry::ClusterConfig(new_config.clone())))
     }
 
     fn append_log_entry(&mut self, entry: &LogEntry) {
