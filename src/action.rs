@@ -218,13 +218,13 @@ mod tests {
         assert_eq!(actions.next(), None);
 
         // BroadcastMessage
-        actions.set(Action::BroadcastMessage(Message::request_vote_request(
+        actions.set(Action::BroadcastMessage(Message::request_vote_call(
             Term::new(2),
             NodeId::new(3),
             MessageSeqNo::new(10),
             pos(2, 8),
         )));
-        actions.set(Action::BroadcastMessage(Message::append_entries_request(
+        actions.set(Action::BroadcastMessage(Message::append_entries_call(
             Term::new(2),
             NodeId::new(3),
             LogIndex::new(10),
@@ -233,16 +233,14 @@ mod tests {
         )));
         assert!(matches!(
             actions.next(),
-            Some(Action::BroadcastMessage(
-                Message::AppendEntriesRequest { .. }
-            ))
+            Some(Action::BroadcastMessage(Message::AppendEntriesCall { .. }))
         ));
         assert_eq!(actions.next(), None);
 
         // SendMessage
         actions.set(Action::SendMessage(
             NodeId::new(4),
-            Message::request_vote_request(
+            Message::request_vote_call(
                 Term::new(2),
                 NodeId::new(3),
                 MessageSeqNo::new(3),
@@ -251,7 +249,7 @@ mod tests {
         ));
         actions.set(Action::SendMessage(
             NodeId::new(2),
-            Message::append_entries_request(
+            Message::append_entries_call(
                 Term::new(2),
                 NodeId::new(3),
                 LogIndex::new(10),
@@ -261,11 +259,11 @@ mod tests {
         ));
         assert!(matches!(
             actions.next(),
-            Some(Action::SendMessage(_, Message::AppendEntriesRequest { .. }))
+            Some(Action::SendMessage(_, Message::AppendEntriesCall { .. }))
         ));
         assert!(matches!(
             actions.next(),
-            Some(Action::SendMessage(_, Message::RequestVoteRequest { .. }))
+            Some(Action::SendMessage(_, Message::RequestVoteCall { .. }))
         ));
         assert_eq!(actions.next(), None);
 

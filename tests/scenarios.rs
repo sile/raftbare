@@ -46,16 +46,16 @@ fn create_two_nodes_cluster() {
     node0.asserted_create_cluster();
 
     // Update cluster configuration.
-    let request =
+    let call =
         node0.asserted_change_cluster_config(joint(&[node0.id()], &[node0.id(), node1.id()]));
-    let reply = node1.asserted_handle_first_append_entries_request(&request);
+    let reply = node1.asserted_handle_first_append_entries_call(&call);
 
-    let request = node0.asserted_handle_append_entries_reply_failure(&reply);
-    let reply = node1.asserted_handle_append_entries_request_success(&request);
+    let call = node0.asserted_handle_append_entries_reply_failure(&reply);
+    let reply = node1.asserted_handle_append_entries_call_success(&call);
 
-    let request =
+    let call =
         node0.asserted_handle_append_entries_reply_success_with_joint_config_committed(&reply);
-    let reply = node1.asserted_handle_append_entries_request_success(&request);
+    let reply = node1.asserted_handle_append_entries_call_success(&call);
     node0.asserted_handle_append_entries_reply_success(&reply, true);
 
     assert!(!node0.config().is_joint_consensus());
@@ -78,20 +78,20 @@ fn election() {
     cluster.init_cluster();
 
     // Trigger a new election.
-    let request = cluster.node1.asserted_follower_election_timeout();
+    let call = cluster.node1.asserted_follower_election_timeout();
     let reply = cluster
         .node0
-        .asserted_handle_request_vote_request_success(&request);
+        .asserted_handle_request_vote_call_success(&call);
 
-    let request = cluster
+    let call = cluster
         .node1
         .asserted_handle_request_vote_reply_majority_vote_granted(&reply);
     let reply_from_node2 = cluster
         .node2
-        .asserted_handle_append_entries_request_success_new_leader(&request);
+        .asserted_handle_append_entries_call_success_new_leader(&call);
     let reply_from_node0 = cluster
         .node0
-        .asserted_handle_append_entries_request_success(&request);
+        .asserted_handle_append_entries_call_success(&call);
 
     cluster
         .node1
@@ -101,25 +101,25 @@ fn election() {
         .asserted_handle_append_entries_reply_success(&reply_from_node2, false);
 
     // Manual heartbeat.
-    let (mut heartbeat, request) = cluster.node1.asserted_heartbeat();
+    let (mut heartbeat, call) = cluster.node1.asserted_heartbeat();
     let reply = cluster
         .node0
-        .asserted_handle_append_entries_request_success(&request);
+        .asserted_handle_append_entries_call_success(&call);
     cluster.node1.handle_message(&reply);
     assert!(heartbeat.poll(&cluster.node1).is_accepted());
     assert_no_action!(cluster.node1);
 
     // Periodic heartbeat.
     cluster.node1.handle_election_timeout();
-    let request = append_entries_request(
+    let call = append_entries_call(
         &cluster.node1,
         LogEntries::new(cluster.node1.log().entries().last_position()),
     );
-    assert_action!(cluster.node1, broadcast_message(&request));
+    assert_action!(cluster.node1, broadcast_message(&call));
 
     let reply = cluster
         .node2
-        .asserted_handle_append_entries_request_success(&request);
+        .asserted_handle_append_entries_call_success(&call);
     cluster.node1.handle_message(&reply);
     assert_no_action!(cluster.node1);
 }
@@ -154,21 +154,21 @@ fn truncate_log() {
     while let Some(_) = cluster.node0.next_action() {}
 
     // Make node2 the leader.
-    let _request = cluster.node2.asserted_follower_election_timeout();
-    let request = cluster.node2.asserted_candidate_election_timeout(); // Increase term.
+    let _call = cluster.node2.asserted_follower_election_timeout();
+    let call = cluster.node2.asserted_candidate_election_timeout(); // Increase term.
 
     // The log index of node0 is greater than node2 => failed.
     cluster
         .node0
-        .asserted_handle_request_vote_request_failed(&request);
+        .asserted_handle_request_vote_call_failed(&call);
     assert_eq!(cluster.node0.role(), Role::Follower);
 
     // The log index of node1 is equal to node2 => granted.
     let _ = cluster.node1.asserted_follower_election_timeout();
     let reply = cluster
         .node1
-        .asserted_handle_request_vote_request_success(&request);
-    let request = cluster
+        .asserted_handle_request_vote_call_success(&call);
+    let call = cluster
         .node2
         .asserted_handle_request_vote_reply_majority_vote_granted(&reply);
     assert_eq!(cluster.node2.role(), Role::Leader);
@@ -176,7 +176,7 @@ fn truncate_log() {
     // The uncommitted log entries on node0 are truncated.
     let reply = cluster
         .node0
-        .asserted_handle_append_entries_request_success(&request);
+        .asserted_handle_append_entries_call_success(&call);
     assert!(commit_promise.poll(&cluster.node0).is_rejected());
 
     cluster
@@ -210,23 +210,23 @@ fn snapshot() {
         &[cluster.node0.id(), cluster.node1.id(), cluster.node2.id()],
         &[cluster.node0.id(), node3.id()],
     );
-    let request = cluster.node0.asserted_change_cluster_config(config);
+    let call = cluster.node0.asserted_change_cluster_config(config);
     for node in &mut [&mut cluster.node1, &mut cluster.node2] {
-        let reply = node.asserted_handle_append_entries_request_success(&request);
+        let reply = node.asserted_handle_append_entries_call_success(&call);
         cluster
             .node0
             .asserted_handle_append_entries_reply_success(&reply, false);
     }
 
     // Cannot append (need snapshot).
-    let reply = node3.asserted_handle_append_entries_request_failure(&request);
+    let reply = node3.asserted_handle_append_entries_call_failure(&call);
     let (snapshot_config, snapshot_position) = cluster
         .node0
         .asserted_handle_append_entries_reply_failure_need_snapshot(&reply);
     assert!(node3.handle_snapshot_installed(snapshot_config, snapshot_position));
 
     // Append after snapshot.
-    let reply = node3.asserted_handle_append_entries_request_success(&request);
+    let reply = node3.asserted_handle_append_entries_call_success(&call);
     cluster
         .node0
         .asserted_handle_append_entries_reply_success_with_joint_config_committed(&reply);
@@ -253,24 +253,24 @@ impl ThreeNodeCluster {
         self.node0.asserted_create_cluster();
 
         // Update cluster configuration.
-        let request = self.node0.asserted_change_cluster_config(joint(
+        let call = self.node0.asserted_change_cluster_config(joint(
             &[self.node0.id()],
             &[self.node0.id(), self.node1.id(), self.node2.id()],
         ));
 
         for node in &mut [&mut self.node1, &mut self.node2] {
-            let reply = node.asserted_handle_first_append_entries_request(&request);
-            let request = self
+            let reply = node.asserted_handle_first_append_entries_call(&call);
+            let call = self
                 .node0
                 .asserted_handle_append_entries_reply_failure(&reply);
-            let reply = node.asserted_handle_append_entries_request_success(&request);
+            let reply = node.asserted_handle_append_entries_call_success(&call);
             if node.id() == id(1) {
-                let request = self
+                let call = self
                     .node0
                     .asserted_handle_append_entries_reply_success_with_joint_config_committed(
                         &reply,
                     );
-                let reply = node.asserted_handle_append_entries_request_success(&request);
+                let reply = node.asserted_handle_append_entries_call_success(&call);
                 self.node0
                     .asserted_handle_append_entries_reply_success(&reply, true);
             } else {
@@ -282,7 +282,7 @@ impl ThreeNodeCluster {
 
     fn propose_command(&mut self) {
         let mut commit_promise = CommitPromise::Rejected;
-        let mut request = None;
+        let mut call = None;
         for node in &mut [&mut self.node0, &mut self.node1, &mut self.node2] {
             if node.role() != Role::Leader {
                 continue;
@@ -295,7 +295,7 @@ impl ThreeNodeCluster {
                     LogEntry::Command
                 )
             );
-            let msg = append_entries_request(
+            let msg = append_entries_call(
                 &node.inner,
                 LogEntries::from_iter(
                     log_prev(node.inner.log().entries().last_position()),
@@ -305,11 +305,11 @@ impl ThreeNodeCluster {
             assert_action!(node.inner, broadcast_message(&msg));
             assert_action!(node.inner, set_election_timeout());
             assert_no_action!(node.inner);
-            request = Some(msg);
+            call = Some(msg);
             break;
         }
 
-        let (CommitPromise::Pending(commit_position), Some(request)) = (commit_promise, request)
+        let (CommitPromise::Pending(commit_position), Some(call)) = (commit_promise, call)
         else {
             panic!("No leader found.");
         };
@@ -320,7 +320,7 @@ impl ThreeNodeCluster {
                 continue;
             }
 
-            replies.push(node.asserted_handle_append_entries_request_success(&request));
+            replies.push(node.asserted_handle_append_entries_call_success(&call));
         }
 
         let mut first = true;
@@ -389,7 +389,7 @@ impl TestNode {
             Ok(CommitPromise::Pending(next_position)),
             self.change_cluster_config(&new_config)
         );
-        let msg = append_entries_request(
+        let msg = append_entries_call(
             self,
             LogEntries::from_iter(
                 prev_entry,
@@ -408,8 +408,8 @@ impl TestNode {
         msg
     }
 
-    fn asserted_handle_first_append_entries_request(&mut self, msg: &Message) -> Message {
-        assert!(matches!(msg, Message::AppendEntriesRequest { .. }));
+    fn asserted_handle_first_append_entries_call(&mut self, msg: &Message) -> Message {
+        assert!(matches!(msg, Message::AppendEntriesCall { .. }));
 
         self.handle_message(msg);
         let reply = append_entries_reply(msg, self);
@@ -424,10 +424,10 @@ impl TestNode {
         reply
     }
 
-    fn asserted_handle_append_entries_request_success(&mut self, msg: &Message) -> Message {
-        assert!(matches!(msg, Message::AppendEntriesRequest { .. }));
+    fn asserted_handle_append_entries_call_success(&mut self, msg: &Message) -> Message {
+        assert!(matches!(msg, Message::AppendEntriesCall { .. }));
 
-        let Message::AppendEntriesRequest {
+        let Message::AppendEntriesCall {
             entries,
             leader_commit,
             ..
@@ -471,10 +471,10 @@ impl TestNode {
         reply
     }
 
-    fn asserted_handle_append_entries_request_failure(&mut self, msg: &Message) -> Message {
-        assert!(matches!(msg, Message::AppendEntriesRequest { .. }));
+    fn asserted_handle_append_entries_call_failure(&mut self, msg: &Message) -> Message {
+        assert!(matches!(msg, Message::AppendEntriesCall { .. }));
 
-        let Message::AppendEntriesRequest { entries, .. } = msg else {
+        let Message::AppendEntriesCall { entries, .. } = msg else {
             unreachable!();
         };
 
@@ -518,12 +518,12 @@ impl TestNode {
         };
 
         self.handle_message(msg);
-        let request = append_entries_request(self, entries.clone());
+        let call = append_entries_call(self, entries.clone());
 
-        assert_action!(self, send_message(header.from, &request));
+        assert_action!(self, send_message(header.from, &call));
         assert_no_action!(self);
 
-        request
+        call
     }
 
     fn asserted_handle_append_entries_reply_failure_need_snapshot(
@@ -567,7 +567,7 @@ impl TestNode {
         };
 
         self.handle_message(msg);
-        let request = append_entries_request(
+        let call = append_entries_call(
             self,
             LogEntries::from_iter(
                 prev_entry,
@@ -579,11 +579,11 @@ impl TestNode {
             self,
             append_log_entry(prev_entry, cluster_config_entry(new_config.clone()))
         );
-        assert_action!(self, broadcast_message(&request));
+        assert_action!(self, broadcast_message(&call));
         assert_action!(self, set_election_timeout());
         assert_no_action!(self);
 
-        request
+        call
     }
 
     fn asserted_handle_append_entries_reply_success(
@@ -611,7 +611,7 @@ impl TestNode {
         assert_eq!(self.role(), Role::Candidate);
         assert_eq!(self.current_term(), next_term(prev_term));
 
-        let request = request_vote_request(
+        let call = request_vote_call(
             self.current_term(),
             self.id(),
             MessageSeqNo::new(self.seqno.get() - 1),
@@ -621,11 +621,11 @@ impl TestNode {
         assert_eq!(self.current_term(), next_term(prev_term));
         assert_action!(self, save_voted_for());
         assert_eq!(self.voted_for(), Some(self.id()));
-        assert_action!(self, broadcast_message(&request));
+        assert_action!(self, broadcast_message(&call));
         assert_action!(self, set_election_timeout());
         assert_no_action!(self);
 
-        request
+        call
     }
 
     fn asserted_candidate_election_timeout(&mut self) -> Message {
@@ -636,7 +636,7 @@ impl TestNode {
         assert_eq!(self.role(), Role::Candidate);
         assert_eq!(self.current_term(), next_term(prev_term));
 
-        let request = request_vote_request(
+        let call = request_vote_call(
             self.current_term(),
             self.id(),
             MessageSeqNo::new(self.seqno.get() - 1),
@@ -646,15 +646,15 @@ impl TestNode {
         assert_eq!(self.current_term(), next_term(prev_term));
         assert_action!(self, save_voted_for());
         assert_eq!(self.voted_for(), Some(self.id()));
-        assert_action!(self, broadcast_message(&request));
+        assert_action!(self, broadcast_message(&call));
         assert_action!(self, set_election_timeout());
         assert_no_action!(self);
 
-        request
+        call
     }
 
-    fn asserted_handle_request_vote_request_success(&mut self, msg: &Message) -> Message {
-        assert!(matches!(msg, Message::RequestVoteRequest { .. }));
+    fn asserted_handle_request_vote_call_success(&mut self, msg: &Message) -> Message {
+        assert!(matches!(msg, Message::RequestVoteCall { .. }));
 
         self.handle_message(&msg);
 
@@ -670,8 +670,8 @@ impl TestNode {
         reply
     }
 
-    fn asserted_handle_request_vote_request_failed(&mut self, msg: &Message) {
-        assert!(matches!(msg, Message::RequestVoteRequest { .. }));
+    fn asserted_handle_request_vote_call_failed(&mut self, msg: &Message) {
+        assert!(matches!(msg, Message::RequestVoteCall { .. }));
 
         self.handle_message(&msg);
         assert_action!(self, save_current_term());
@@ -690,7 +690,7 @@ impl TestNode {
 
         let tail = self.log().entries().last_position();
         self.handle_message(&msg);
-        let request = append_entries_request(
+        let call = append_entries_call(
             self,
             LogEntries::from_iter(tail, std::iter::once(term_entry(self.current_term()))),
         );
@@ -698,18 +698,18 @@ impl TestNode {
             self,
             append_log_entry(tail, term_entry(self.current_term()))
         );
-        assert_action!(self, broadcast_message(&request));
+        assert_action!(self, broadcast_message(&call));
         assert_action!(self, set_election_timeout());
         assert_no_action!(self);
 
-        request
+        call
     }
 
-    fn asserted_handle_append_entries_request_success_new_leader(
+    fn asserted_handle_append_entries_call_success_new_leader(
         &mut self,
         msg: &Message,
     ) -> Message {
-        assert!(matches!(msg, Message::AppendEntriesRequest { .. }));
+        assert!(matches!(msg, Message::AppendEntriesCall { .. }));
 
         let tail = self.log().entries().last_position();
         self.handle_message(&msg);
@@ -728,11 +728,11 @@ impl TestNode {
 
     fn asserted_heartbeat(&mut self) -> (HeartbeatPromise, Message) {
         let heartbeat = self.heartbeat();
-        let request =
-            append_entries_request(self, LogEntries::new(self.log().entries().last_position()));
-        assert_action!(self, broadcast_message(&request));
+        let call =
+            append_entries_call(self, LogEntries::new(self.log().entries().last_position()));
+        assert_action!(self, broadcast_message(&call));
         assert_no_action!(self);
-        (heartbeat, request)
+        (heartbeat, call)
     }
 }
 
@@ -787,13 +787,13 @@ fn cluster_config_entry(config: ClusterConfig) -> LogEntry {
     LogEntry::ClusterConfig(config)
 }
 
-fn request_vote_request(
+fn request_vote_call(
     term: Term,
     from: NodeId,
     seqno: MessageSeqNo,
     last_entry: LogPosition,
 ) -> Message {
-    Message::request_vote_request(term, from, seqno, last_entry)
+    Message::request_vote_call(term, from, seqno, last_entry)
 }
 
 fn request_vote_reply(
@@ -805,8 +805,8 @@ fn request_vote_reply(
     Message::request_vote_reply(term, from, seqno, vote_granted)
 }
 
-fn append_entries_request(leader: &Node, entries: LogEntries) -> Message {
-    Message::append_entries_request(
+fn append_entries_call(leader: &Node, entries: LogEntries) -> Message {
+    Message::append_entries_call(
         leader.current_term(),
         leader.id(),
         leader.commit_index(),
@@ -815,8 +815,8 @@ fn append_entries_request(leader: &Node, entries: LogEntries) -> Message {
     )
 }
 
-fn append_entries_reply(request: &Message, node: &Node) -> Message {
-    let Message::AppendEntriesRequest { header, .. } = request else {
+fn append_entries_reply(call: &Message, node: &Node) -> Message {
+    let Message::AppendEntriesCall { header, .. } = call else {
         panic!();
     };
     Message::append_entries_reply(

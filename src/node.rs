@@ -129,7 +129,7 @@ impl Node {
         // TODO: handle single node case
 
         let sn = self.seqno;
-        let request = Message::append_entries_request(
+        let call = Message::append_entries_call(
             self.current_term,
             self.id,
             self.commit_index,
@@ -143,7 +143,7 @@ impl Node {
             self.seqno.next(),
         );
         self.seqno = sn.next();
-        self.broadcast_message(request);
+        self.broadcast_message(call);
 
         let heartbeat = HeartbeatPromise::new(self.current_term, sn);
 
@@ -163,7 +163,7 @@ impl Node {
         // TODO: Create LogEnties instance only once
         let prev_entry = self.log.entries().last_position();
         self.append_log_entry(&entry); // TODO: merge the same kind actions
-        self.broadcast_message(Message::append_entries_request(
+        self.broadcast_message(Message::append_entries_call(
             self.current_term,
             self.id,
             self.commit_index,
@@ -329,11 +329,11 @@ impl Node {
         self.enqueue_action(Action::SaveVotedFor);
     }
 
-    // TODO: split into handle_request_vote_request, ... to make it possible to return errors
+    // TODO: split into handle_request_vote_call, ... to make it possible to return errors
     // or keep this method but return errors
     pub fn handle_message(&mut self, msg: &Message) {
         if self.current_term < msg.term() {
-            if matches!(msg, Message::RequestVoteRequest { .. })
+            if matches!(msg, Message::RequestVoteCall { .. })
                 && self.role.is_follower()
                 && self.voted_for.map_or(false, |id| id != msg.from())
             {
@@ -343,19 +343,19 @@ impl Node {
         }
 
         match msg {
-            Message::RequestVoteRequest {
+            Message::RequestVoteCall {
                 header,
                 last_position,
-            } => self.handle_request_vote_request(*header, *last_position),
+            } => self.handle_request_vote_call(*header, *last_position),
             Message::RequestVoteReply {
                 header,
                 vote_granted,
             } => self.handle_request_vote_reply(*header, *vote_granted),
-            Message::AppendEntriesRequest {
+            Message::AppendEntriesCall {
                 header,
                 leader_commit,
                 entries,
-            } => self.handle_append_entries_request(*header, *leader_commit, entries),
+            } => self.handle_append_entries_call(*header, *leader_commit, entries),
             Message::AppendEntriesReply {
                 header,
                 last_position,
@@ -363,7 +363,7 @@ impl Node {
         }
     }
 
-    fn handle_request_vote_request(&mut self, header: MessageHeader, last_position: LogPosition) {
+    fn handle_request_vote_call(&mut self, header: MessageHeader, last_position: LogPosition) {
         if header.term < self.current_term {
             self.send_message(
                 header.from,
@@ -474,7 +474,7 @@ impl Node {
         self.granted_votes.insert(self.id);
 
         let seqno = self.seqno.fetch_and_increment();
-        self.broadcast_message(Message::request_vote_request(
+        self.broadcast_message(Message::request_vote_call(
             self.current_term,
             self.id,
             seqno,
@@ -503,19 +503,19 @@ impl Node {
         self.enqueue_action(Action::SetElectionTimeout);
     }
 
-    fn reply_append_entries(&mut self, request_header: MessageHeader) {
+    fn reply_append_entries(&mut self, header: MessageHeader) {
         self.send_message(
-            request_header.from,
+            header.from,
             Message::append_entries_reply(
                 self.current_term,
                 self.id,
-                request_header.seqno,
+                header.seqno,
                 self.log.entries().last_position(),
             ),
         );
     }
 
-    fn handle_append_entries_request(
+    fn handle_append_entries_call(
         &mut self,
         header: MessageHeader,
         leader_commit: LogIndex,
@@ -613,10 +613,10 @@ impl Node {
         } else if last_position.index < self_last_position.index {
             // send delta
             let Some(delta) = self.log.entries().since(last_position) else {
-                // Wrong reply.
+                // TODO: handle this case (decrement index and retry to find out ...)
                 return;
             };
-            let msg = Message::append_entries_request(
+            let msg = Message::append_entries_call(
                 self.current_term,
                 self.id,
                 self.commit_index,
