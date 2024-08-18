@@ -614,7 +614,7 @@ impl TestNode {
         let request = request_vote_request(
             self.current_term(),
             self.id(),
-            self.seqno.prev(),
+            MessageSeqNo::new(self.seqno.get() - 1),
             self.log().entries().last_position(),
         );
         assert_action!(self, save_current_term());
@@ -639,7 +639,7 @@ impl TestNode {
         let request = request_vote_request(
             self.current_term(),
             self.id(),
-            self.seqno.prev(),
+            MessageSeqNo::new(self.seqno.get() - 1),
             self.log().entries().last_position(),
         );
         assert_action!(self, save_current_term());
@@ -810,7 +810,7 @@ fn append_entries_request(leader: &Node, entries: LogEntries) -> Message {
         leader.current_term(),
         leader.id(),
         leader.commit_index(),
-        MessageSeqNo::from_u64(leader.seqno.get() - 1),
+        MessageSeqNo::new(leader.seqno.get() - 1),
         entries,
     )
 }

@@ -140,31 +140,29 @@ pub struct MessageHeader {
     pub seqno: MessageSeqNo,
 }
 
+/// Message sequence number.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct MessageSeqNo(u64);
 
 impl MessageSeqNo {
-    pub const fn new() -> Self {
-        Self(1)
+    pub(crate) const UNKNOWN: Self = Self(0);
+    pub(crate) const INIT: Self = Self(1);
+
+    /// Makes a new [`MessageSeqNo`] instance.
+    pub const fn new(seqno: u64) -> Self {
+        Self(seqno)
     }
 
+    /// Returns the value of the sequence number.
     pub const fn get(self) -> u64 {
         self.0
     }
 
-    pub const fn from_u64(v: u64) -> Self {
-        Self(v)
-    }
-
-    pub const fn prev(self) -> Self {
-        Self(self.0 - 1)
-    }
-
-    pub const fn next(self) -> Self {
+    pub(crate) const fn next(self) -> Self {
         Self(self.0 + 1)
     }
 
-    pub fn fetch_and_increment(&mut self) -> Self {
+    pub(crate) fn fetch_and_increment(&mut self) -> Self {
         let v = *self;
         self.0 += 1;
         v

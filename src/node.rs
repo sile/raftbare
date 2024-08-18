@@ -73,7 +73,7 @@ impl Node {
             leader_index: LogIndex::new(0),
             followers: BTreeMap::new(),
             quorum,
-            seqno: MessageSeqNo::new(),
+            seqno: MessageSeqNo::INIT,
         }
     }
 
@@ -82,6 +82,7 @@ impl Node {
     // - Raft assumes the persistent storage is reliable.
     // - If the storage has corrupted or lost some log data, it's safe to remove the node then add it back to the cluster as a new node.
     // - Changing the node's ID is recommended.
+    // - (But this crate has limited support for recovering from the corrupted log data)
     pub fn restart(id: NodeId, current_term: Term, voted_for: Option<NodeId>, log: Log) -> Self {
         let mut node = Self::start(id);
 
@@ -208,13 +209,13 @@ impl Node {
             self.log.entries().last_position().index,
         );
         self.quorum
-            .update_seqnum(config, self.id, MessageSeqNo::new(), self.seqno);
+            .update_seqnum(config, self.id, MessageSeqNo::UNKNOWN, self.seqno);
 
         for (&id, follower) in &mut self.followers {
             self.quorum
                 .update_match_index(config, id, zero, follower.match_index);
             self.quorum
-                .update_seqnum(config, id, MessageSeqNo::new(), follower.max_sn);
+                .update_seqnum(config, id, MessageSeqNo::UNKNOWN, follower.max_sn);
         }
     }
 
@@ -702,7 +703,7 @@ impl Follower {
     pub fn new() -> Self {
         Self {
             match_index: LogIndex::new(0),
-            max_sn: MessageSeqNo::from_u64(0),
+            max_sn: MessageSeqNo::UNKNOWN,
         }
     }
 }

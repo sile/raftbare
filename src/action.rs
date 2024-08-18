@@ -221,14 +221,14 @@ mod tests {
         actions.set(Action::BroadcastMessage(Message::request_vote_request(
             Term::new(2),
             NodeId::new(3),
-            MessageSeqNo::from_u64(10),
+            MessageSeqNo::new(10),
             pos(2, 8),
         )));
         actions.set(Action::BroadcastMessage(Message::append_entries_request(
             Term::new(2),
             NodeId::new(3),
             LogIndex::new(10),
-            MessageSeqNo::from_u64(30),
+            MessageSeqNo::new(30),
             LogEntries::new(pos(2, 10)),
         )));
         assert!(matches!(
@@ -245,7 +245,7 @@ mod tests {
             Message::request_vote_request(
                 Term::new(2),
                 NodeId::new(3),
-                MessageSeqNo::from_u64(3),
+                MessageSeqNo::new(3),
                 pos(2, 8),
             ),
         ));
@@ -255,7 +255,7 @@ mod tests {
                 Term::new(2),
                 NodeId::new(3),
                 LogIndex::new(10),
-                MessageSeqNo::from_u64(30),
+                MessageSeqNo::new(30),
                 LogEntries::new(pos(2, 10)),
             ),
         ));

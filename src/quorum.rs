@@ -32,14 +32,14 @@ impl Quorum {
             .iter()
             .take(config.voters.len() / 2 + 1)
             .copied()
-            .map(|id| (MessageSeqNo::new(), id))
+            .map(|id| (MessageSeqNo::UNKNOWN, id))
             .collect::<BTreeSet<_>>();
         let new_majority_seqnums = config
             .new_voters
             .iter()
             .take(config.new_voters.len() / 2 + 1)
             .copied()
-            .map(|id| (MessageSeqNo::new(), id))
+            .map(|id| (MessageSeqNo::UNKNOWN, id))
             .collect::<BTreeSet<_>>();
 
         Self {
