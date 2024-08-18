@@ -172,7 +172,7 @@ impl Iterator for Actions {
 
 #[cfg(test)]
 mod tests {
-    use crate::{LogEntry, LogIndex, LogPosition, MessageSeqNum, Term};
+    use crate::{LogEntry, LogIndex, LogPosition, MessageSeqNo, Term};
 
     use super::*;
 
@@ -227,7 +227,7 @@ mod tests {
             Term::new(2),
             NodeId::new(3),
             LogIndex::new(10),
-            MessageSeqNum::from_u64(30),
+            MessageSeqNo::from_u64(30),
             LogEntries::new(pos(2, 10)),
         )));
         assert!(matches!(
@@ -247,7 +247,7 @@ mod tests {
                 Term::new(2),
                 NodeId::new(3),
                 LogIndex::new(10),
-                MessageSeqNum::from_u64(30),
+                MessageSeqNo::from_u64(30),
                 LogEntries::new(pos(2, 10)),
             ),
         ));

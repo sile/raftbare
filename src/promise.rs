@@ -1,4 +1,4 @@
-use crate::{LogPosition, MessageSeqNum, Node, Term};
+use crate::{LogPosition, MessageSeqNo, Node, Term};
 
 /// Promise of a commit that results in either rejection or acceptance.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -57,7 +57,7 @@ pub enum HeartbeatPromise {
     /// The promise is pending.
     ///
     /// This state can be updated to either [`HeartbeatPromise::Accepted`] or [`HeartbeatPromise::Rejected`] by invoking [`HeartbeatPromise::poll()`].
-    Pending(Term, MessageSeqNum),
+    Pending(Term, MessageSeqNo),
 
     /// The promise is rejected.
     Rejected,
@@ -67,7 +67,7 @@ pub enum HeartbeatPromise {
 }
 
 impl HeartbeatPromise {
-    pub(crate) fn new(term: Term, seqno: MessageSeqNum) -> Self {
+    pub(crate) fn new(term: Term, seqno: MessageSeqNo) -> Self {
         Self::Pending(term, seqno)
     }
 

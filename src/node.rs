@@ -3,7 +3,7 @@ use crate::{
     config::ClusterConfig,
     log::{LogEntries, LogEntry, LogIndex, LogPosition},
     message::{
-        AppendEntriesReply, AppendEntriesRequest, Message, MessageSeqNum, RequestVoteReply,
+        AppendEntriesReply, AppendEntriesRequest, Message, MessageSeqNo, RequestVoteReply,
         RequestVoteRequest,
     },
     quorum::Quorum,
@@ -51,7 +51,7 @@ pub struct Node {
     leader_index: LogIndex,
     followers: BTreeMap<NodeId, Follower>,
     quorum: Quorum,
-    pub leader_sn: MessageSeqNum, // TODO: priv
+    pub leader_sn: MessageSeqNo, // TODO: priv
 }
 
 impl Node {
@@ -76,7 +76,7 @@ impl Node {
             leader_index: LogIndex::new(0),
             followers: BTreeMap::new(),
             quorum,
-            leader_sn: MessageSeqNum::new(),
+            leader_sn: MessageSeqNo::new(),
         }
     }
 
@@ -206,13 +206,13 @@ impl Node {
             self.log.entries().last_position().index,
         );
         self.quorum
-            .update_seqnum(config, self.id, MessageSeqNum::new(), self.leader_sn);
+            .update_seqnum(config, self.id, MessageSeqNo::new(), self.leader_sn);
 
         for (&id, follower) in &mut self.followers {
             self.quorum
                 .update_match_index(config, id, zero, follower.match_index);
             self.quorum
-                .update_seqnum(config, id, MessageSeqNum::new(), follower.max_sn);
+                .update_seqnum(config, id, MessageSeqNo::new(), follower.max_sn);
         }
     }
 
@@ -474,7 +474,7 @@ impl Node {
         self.followers.clear();
         self.rebuild_followers();
         self.rebuild_quorum();
-        self.leader_sn = MessageSeqNum::new();
+        self.leader_sn = MessageSeqNo::new();
 
         self.propose(LogEntry::Term(self.current_term));
     }
@@ -670,14 +670,14 @@ pub enum ChangeClusterConfigError {
 #[derive(Debug, Clone)]
 pub struct Follower {
     pub match_index: LogIndex,
-    pub max_sn: MessageSeqNum,
+    pub max_sn: MessageSeqNo,
 }
 
 impl Follower {
     pub fn new() -> Self {
         Self {
             match_index: LogIndex::new(0),
-            max_sn: MessageSeqNum::from_u64(0),
+            max_sn: MessageSeqNo::from_u64(0),
         }
     }
 }

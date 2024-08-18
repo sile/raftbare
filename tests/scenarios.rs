@@ -1,6 +1,6 @@
 use raftbare::{
-    message::AppendEntriesRequest, Action, Actions, ClusterConfig, CommitPromise, HeartbeatPromise,
-    LogEntries, LogEntry, LogIndex, LogPosition, Message, MessageSeqNum, Node, NodeId, Role, Term,
+    Action, Actions, AppendEntriesRequest, ClusterConfig, CommitPromise, HeartbeatPromise,
+    LogEntries, LogEntry, LogIndex, LogPosition, Message, MessageSeqNo, Node, NodeId, Role, Term,
 };
 use std::ops::{Deref, DerefMut};
 
@@ -790,7 +790,7 @@ fn append_entries_request(leader: &Node, entries: LogEntries) -> Message {
         leader.current_term(),
         leader.id(),
         leader.commit_index(),
-        MessageSeqNum::from_u64(leader.leader_sn.get() - 1),
+        MessageSeqNo::from_u64(leader.leader_sn.get() - 1),
         entries,
     )
 }

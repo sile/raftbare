@@ -3,7 +3,7 @@
 mod action;
 mod config;
 mod log;
-pub mod message; // TODO:
+mod message;
 mod node;
 mod promise;
 mod quorum;
@@ -12,7 +12,10 @@ mod role;
 pub use action::{Action, Actions};
 pub use config::ClusterConfig;
 pub use log::{Log, LogEntries, LogEntry, LogIndex, LogPosition};
-pub use message::{Message, MessageSeqNum};
+pub use message::{
+    AppendEntriesReply, AppendEntriesRequest, Message, MessageSeqNo, RequestVoteReply,
+    RequestVoteRequest,
+};
 pub use node::{ChangeClusterConfigError, Node, NodeId};
 pub use promise::{CommitPromise, HeartbeatPromise};
 pub use role::Role;

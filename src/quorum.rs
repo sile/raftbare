@@ -1,4 +1,4 @@
-use crate::{config::ClusterConfig, log::LogIndex, message::MessageSeqNum, node::NodeId};
+use crate::{config::ClusterConfig, log::LogIndex, message::MessageSeqNo, node::NodeId};
 use std::collections::BTreeSet;
 
 #[derive(Debug, Clone)]
@@ -6,8 +6,8 @@ pub struct Quorum {
     majority_indices: BTreeSet<(LogIndex, NodeId)>,
     new_majority_indices: BTreeSet<(LogIndex, NodeId)>,
 
-    majority_seqnums: BTreeSet<(MessageSeqNum, NodeId)>,
-    new_majority_seqnums: BTreeSet<(MessageSeqNum, NodeId)>,
+    majority_seqnums: BTreeSet<(MessageSeqNo, NodeId)>,
+    new_majority_seqnums: BTreeSet<(MessageSeqNo, NodeId)>,
 }
 
 impl Quorum {
@@ -32,14 +32,14 @@ impl Quorum {
             .iter()
             .take(config.voters.len() / 2 + 1)
             .copied()
-            .map(|id| (MessageSeqNum::new(), id))
+            .map(|id| (MessageSeqNo::new(), id))
             .collect::<BTreeSet<_>>();
         let new_majority_seqnums = config
             .new_voters
             .iter()
             .take(config.new_voters.len() / 2 + 1)
             .copied()
-            .map(|id| (MessageSeqNum::new(), id))
+            .map(|id| (MessageSeqNo::new(), id))
             .collect::<BTreeSet<_>>();
 
         Self {
@@ -82,8 +82,8 @@ impl Quorum {
         &mut self,
         config: &ClusterConfig,
         node_id: NodeId,
-        old_seqnum: MessageSeqNum,
-        seqnum: MessageSeqNum,
+        old_seqnum: MessageSeqNo,
+        seqnum: MessageSeqNo,
     ) {
         if config.voters.contains(&node_id) {
             if self.majority_seqnums.first().map(|(i, _)| *i) < Some(seqnum) {
@@ -104,7 +104,7 @@ impl Quorum {
         }
     }
 
-    pub fn smallest_majority_seqnum(&self) -> MessageSeqNum {
+    pub fn smallest_majority_seqnum(&self) -> MessageSeqNo {
         let Some(i0) = self.majority_seqnums.first().map(|(i, _)| *i) else {
             unreachable!();
         };
