@@ -133,10 +133,16 @@ impl Message {
     }
 }
 
+/// Common header for all messages.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct MessageHeader {
+    /// Sender of the message.
     pub from: NodeId,
+
+    /// Term of the sender.
     pub term: Term,
+
+    /// Sequence number of the message.
     pub seqno: MessageSeqNo,
 }
 
