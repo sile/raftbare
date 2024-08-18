@@ -48,6 +48,7 @@ pub enum Action {
     /// On the receiving side, the message is handled by [`Node::handle_message()`](crate::Node::handle_message).
     ///
     /// Unlike storage-related actions, this action can be executed asynchronously and can be discarded if the communication link is busy.
+    /// Additionally, the reordering of messages to the same destination node is acceptable.
     BroadcastMessage(Message),
 
     /// Send a message to a specific node.
@@ -55,6 +56,7 @@ pub enum Action {
     /// On the receiving side, the message is handled by [`Node::handle_message()`](crate::Node::handle_message).
     ///
     /// Unlike storage-related actions, this action can be executed asynchronously and can be discarded if the communication link is busy.
+    /// Additionally, the reordering of messages to the same destination node is acceptable.
     ///
     /// Additionally, if an AppendEntriesRPC contains too many entries to be sent in a single message,
     /// they can be safely truncated using [`LogEntries::truncate()`](crate::LogEntries::truncate) before sending the message.
