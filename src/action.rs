@@ -154,11 +154,11 @@ impl Iterator for Actions {
             self.save_voted_for = false;
             return Some(Action::SaveVotedFor);
         }
-        if let Some(broadcast_message) = self.broadcast_message.take() {
-            return Some(Action::BroadcastMessage(broadcast_message));
-        }
         if let Some(log_entries) = self.append_log_entries.take() {
             return Some(Action::AppendLogEntries(log_entries));
+        }
+        if let Some(broadcast_message) = self.broadcast_message.take() {
+            return Some(Action::BroadcastMessage(broadcast_message));
         }
         if let Some((node_id, message)) = self.send_messages.pop_first() {
             return Some(Action::SendMessage(node_id, message));

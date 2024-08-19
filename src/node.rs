@@ -44,7 +44,39 @@ pub struct Node {
 }
 
 impl Node {
-    pub fn start(id: NodeId) -> Self {
+    pub fn start(id: NodeId, initial_voters: &[NodeId]) -> Self {
+        let mut node = Self::new(id);
+
+        let mut config = ClusterConfig::new();
+        config.voters.extend(initial_voters.iter().copied());
+        let entry = LogEntry::ClusterConfig(config);
+        node.actions
+            .set(Action::AppendLogEntries(LogEntries::from_iter(
+                LogPosition::ZERO,
+                std::iter::once(entry.clone()),
+            )));
+        node.log.entries_mut().push(entry.clone());
+        node.actions.set(Action::SetElectionTimeout);
+
+        node
+    }
+
+    // # Important
+    //
+    // - Raft assumes the persistent storage is reliable.
+    // - If the storage has corrupted or lost some log data, it's safe to remove the node then add it back to the cluster as a new node.
+    // - Changing the node's ID is recommended.
+    // - (But this crate has limited support for recovering from the corrupted log data)
+    pub fn restart(id: NodeId, current_term: Term, voted_for: Option<NodeId>, log: Log) -> Self {
+        let mut node = Self::new(id);
+
+        node.current_term = current_term;
+        node.voted_for = voted_for;
+        node.log = log;
+        node
+    }
+
+    fn new(id: NodeId) -> Self {
         let term = Term::new(0);
         let index = LogIndex::new(0);
         let config = ClusterConfig::new();
@@ -60,45 +92,6 @@ impl Node {
         }
     }
 
-    // # Important
-    //
-    // - Raft assumes the persistent storage is reliable.
-    // - If the storage has corrupted or lost some log data, it's safe to remove the node then add it back to the cluster as a new node.
-    // - Changing the node's ID is recommended.
-    // - (But this crate has limited support for recovering from the corrupted log data)
-    pub fn restart(id: NodeId, current_term: Term, voted_for: Option<NodeId>, log: Log) -> Self {
-        let mut node = Self::start(id);
-
-        node.current_term = current_term;
-        node.voted_for = voted_for;
-        node.log = log;
-        node
-    }
-
-    // TODO: remove(?)
-    pub fn create_cluster(&mut self) -> bool {
-        if self.current_term != Term::ZERO {
-            return false;
-        }
-
-        let mut config = self.log.latest_config().clone();
-        config.voters.insert(self.id);
-
-        let entry = LogEntry::ClusterConfig(config);
-        self.actions
-            .set(Action::AppendLogEntries(LogEntries::from_iter(
-                LogPosition::ZERO,
-                std::iter::once(entry.clone()),
-            )));
-        self.log.entries_mut().push(entry.clone());
-
-        self.set_current_term(Term::new(1));
-        self.set_voted_for(Some(self.id));
-        self.transition_to_leader();
-
-        true
-    }
-
     fn transition_to_leader(&mut self) {
         debug_assert_eq!(self.voted_for, Some(self.id));
 
@@ -112,6 +105,31 @@ impl Node {
         self.role = RoleState::Leader { followers, quorum };
 
         self.propose(LogEntry::Term(self.current_term));
+    }
+
+    fn transition_to_candidate(&mut self) {
+        self.set_current_term(self.current_term.next());
+        self.set_voted_for(Some(self.id));
+        self.role = RoleState::Candidate {
+            granted_votes: std::iter::once(self.id).collect(),
+        };
+
+        let seqno = self.seqno.fetch_and_increment();
+        self.actions
+            .set(Action::BroadcastMessage(Message::request_vote_call(
+                self.current_term,
+                self.id,
+                seqno,
+                self.log.entries().last_position(),
+            )));
+        self.actions.set(Action::SetElectionTimeout);
+    }
+
+    fn transition_to_follower(&mut self, term: Term) {
+        self.set_current_term(term);
+        self.set_voted_for(None);
+        self.role = RoleState::Follower;
+        self.actions.set(Action::SetElectionTimeout);
     }
 
     // TODO: remove
@@ -228,6 +246,7 @@ impl Node {
         }
     }
 
+    // TOOD: remove
     fn broadcast_message(&mut self, message: Message) {
         self.actions.set(Action::BroadcastMessage(message));
     }
@@ -393,6 +412,7 @@ impl Node {
         if self.voted_for != Some(header.from) {
             return;
         }
+        // TODO: increment seqno
         self.send_message(
             header.from,
             Message::request_vote_reply(self.current_term, self.id, header.seqno, true),
@@ -433,10 +453,10 @@ impl Node {
     pub fn handle_election_timeout(&mut self) {
         match self.role {
             RoleState::Follower => {
-                self.start_new_election();
+                self.transition_to_candidate();
             }
             RoleState::Candidate { .. } => {
-                self.start_new_election();
+                self.transition_to_candidate();
             }
             RoleState::Leader { .. } => {
                 self.heartbeat();
@@ -479,31 +499,6 @@ impl Node {
             self.actions.append_log_entries = None;
         }
         true
-    }
-
-    // TODO: rename
-    fn start_new_election(&mut self) {
-        self.set_current_term(self.current_term.next());
-        self.set_voted_for(Some(self.id));
-        self.role = RoleState::Candidate {
-            granted_votes: std::iter::once(self.id).collect(),
-        };
-
-        let seqno = self.seqno.fetch_and_increment();
-        self.broadcast_message(Message::request_vote_call(
-            self.current_term,
-            self.id,
-            seqno,
-            self.log.entries().last_position(),
-        ));
-        self.actions.set(Action::SetElectionTimeout);
-    }
-
-    fn transition_to_follower(&mut self, term: Term) {
-        self.set_current_term(term);
-        self.set_voted_for(None);
-        self.role = RoleState::Follower;
-        self.actions.set(Action::SetElectionTimeout);
     }
 
     fn reply_append_entries(&mut self, header: MessageHeader) {

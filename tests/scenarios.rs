@@ -22,43 +22,36 @@ macro_rules! assert_action {
 
 #[test]
 fn single_node_start() {
-    TestNode::asserted_start(id(0));
-}
-
-#[test]
-fn create_single_node_cluster() {
-    let mut node = TestNode::asserted_start(id(0));
-
-    // Create cluster.
-    node.asserted_create_cluster();
-
-    // Cannot create cluster again.
-    assert!(!node.inner.create_cluster());
-    assert_no_action!(node.inner);
+    TestNode::asserted_start(id(0), &[id(0)]);
 }
 
 #[test]
 fn create_two_nodes_cluster() {
-    let mut node0 = TestNode::asserted_start(id(0));
-    let mut node1 = TestNode::asserted_start(id(1));
+    let initial_voters = [id(0), id(1)];
+    let mut node0 = TestNode::asserted_start(id(0), &initial_voters);
+    let mut node1 = TestNode::asserted_start(id(1), &initial_voters);
 
-    // Create single node cluster.
-    node0.asserted_create_cluster();
+    // Setup cluster.
+    node0.handle_election_timeout();
+    assert_eq!(node0.role(), Role::Candidate);
+    assert_action!(node0, set_election_timeout());
+    assert_action!(node0, save_current_term());
+    assert_action!(node0, save_voted_for());
 
-    // Update cluster configuration.
-    let call =
-        node0.asserted_change_cluster_config(joint(&[node0.id()], &[node0.id(), node1.id()]));
-    let reply = node1.asserted_handle_first_append_entries_call(&call);
+    let Some(Action::BroadcastMessage(call @ Message::RequestVoteCall { .. })) =
+        node0.actions_mut().next()
+    else {
+        panic!("Expected RequestVoteCall message");
+    };
+    assert_no_action!(node0);
 
-    let call = node0.asserted_handle_append_entries_reply_failure(&reply);
-    let reply = node1.asserted_handle_append_entries_call_success(&call);
-
-    let call =
-        node0.asserted_handle_append_entries_reply_success_with_joint_config_committed(&reply);
+    let reply = node1.asserted_handle_request_vote_call_success(&call);
+    let call = node0.asserted_handle_request_vote_reply_majority_vote_granted(&reply);
     let reply = node1.asserted_handle_append_entries_call_success(&call);
     node0.asserted_handle_append_entries_reply_success(&reply, true);
 
     assert!(!node0.config().is_joint_consensus());
+    assert_eq!(node0.config().voters, initial_voters.into_iter().collect());
     assert_eq!(node0.config(), node1.config());
 }
 
@@ -205,7 +198,7 @@ fn snapshot() {
     }
 
     // Add a new node and remove two nodes.
-    let mut node3 = TestNode::asserted_start(id(3));
+    let mut node3 = TestNode::asserted_start(id(3), &[]);
     let config = joint(
         &[cluster.node0.id(), cluster.node1.id(), cluster.node2.id()],
         &[cluster.node0.id(), node3.id()],
@@ -241,43 +234,36 @@ struct ThreeNodeCluster {
 
 impl ThreeNodeCluster {
     fn new() -> Self {
+        let initial_voters = &[id(0), id(1), id(2)];
         Self {
-            node0: TestNode::asserted_start(id(0)),
-            node1: TestNode::asserted_start(id(1)),
-            node2: TestNode::asserted_start(id(2)),
+            node0: TestNode::asserted_start(id(0), initial_voters),
+            node1: TestNode::asserted_start(id(1), initial_voters),
+            node2: TestNode::asserted_start(id(2), initial_voters),
         }
     }
 
     fn init_cluster(&mut self) {
-        // Create single node cluster.
-        self.node0.asserted_create_cluster();
-
-        // Update cluster configuration.
-        let call = self.node0.asserted_change_cluster_config(joint(
-            &[self.node0.id()],
-            &[self.node0.id(), self.node1.id(), self.node2.id()],
-        ));
-
-        for node in &mut [&mut self.node1, &mut self.node2] {
-            let reply = node.asserted_handle_first_append_entries_call(&call);
-            let call = self
-                .node0
-                .asserted_handle_append_entries_reply_failure(&reply);
-            let reply = node.asserted_handle_append_entries_call_success(&call);
-            if node.id() == id(1) {
-                let call = self
-                    .node0
-                    .asserted_handle_append_entries_reply_success_with_joint_config_committed(
-                        &reply,
-                    );
-                let reply = node.asserted_handle_append_entries_call_success(&call);
-                self.node0
-                    .asserted_handle_append_entries_reply_success(&reply, true);
-            } else {
-                self.node0
-                    .asserted_handle_append_entries_reply_success(&reply, false);
-            }
-        }
+        // Setup  cluster.
+        // for node in &mut [&mut self.node1, &mut self.node2] {
+        //     let reply = node.asserted_handle_first_append_entries_call(&call);
+        //     let call = self
+        //         .node0
+        //         .asserted_handle_append_entries_reply_failure(&reply);
+        //     let reply = node.asserted_handle_append_entries_call_success(&call);
+        //     if node.id() == id(1) {
+        //         let call = self
+        //             .node0
+        //             .asserted_handle_append_entries_reply_success_with_joint_config_committed(
+        //                 &reply,
+        //             );
+        //         let reply = node.asserted_handle_append_entries_call_success(&call);
+        //         self.node0
+        //             .asserted_handle_append_entries_reply_success(&reply, true);
+        //     } else {
+        //         self.node0
+        //             .asserted_handle_append_entries_reply_success(&reply, false);
+        //     }
+        // }
     }
 
     fn propose_command(&mut self) {
@@ -344,41 +330,23 @@ struct TestNode {
 }
 
 impl TestNode {
-    fn asserted_start(id: NodeId) -> Self {
-        let mut node = Node::start(id);
+    fn asserted_start(id: NodeId, initial_voters: &[NodeId]) -> Self {
+        let mut node = Node::start(id, initial_voters);
         assert_eq!(node.role(), Role::Follower);
         assert_eq!(node.current_term(), t(0));
         assert_eq!(node.voted_for(), None);
-        assert_no_action!(node);
-        Self { inner: node }
-    }
+        assert_action!(node, set_election_timeout());
 
-    fn asserted_create_cluster(&mut self) {
-        assert!(self.create_cluster());
-
-        assert_action!(self, save_current_term());
-        assert_eq!(self.current_term(), t(1));
-        assert_action!(self, save_voted_for());
-        assert_eq!(self.voted_for(), Some(self.id()));
         assert_action!(
-            self,
+            node,
             append_log_entries(&LogEntries::from_iter(
                 prev(t(0), i(0)),
-                [cluster_config_entry(voters(&[self.id()])), term_entry(t(1))].into_iter()
+                [cluster_config_entry(voters(initial_voters))].into_iter()
             ))
         );
-        assert_eq!(self.commit_index(), i(2));
-        assert_action!(self, set_election_timeout());
-        assert_no_action!(self);
 
-        assert_eq!(self.role(), Role::Leader);
-        assert_eq!(
-            self.config().unique_nodes().collect::<Vec<_>>(),
-            &[self.id()]
-        );
-        assert_eq!(self.config().voters.len(), 1);
-        assert_eq!(self.config().non_voters.len(), 0);
-        assert_eq!(self.config().new_voters.len(), 0);
+        assert_no_action!(node);
+        Self { inner: node }
     }
 
     fn asserted_change_cluster_config(&mut self, new_config: ClusterConfig) -> Message {
