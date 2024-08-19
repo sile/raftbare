@@ -287,24 +287,24 @@ impl ThreeNodeCluster {
             if node.role() != Role::Leader {
                 continue;
             }
-            commit_promise = node.inner.propose_command();
+            commit_promise = node.propose_command();
             assert_action!(
                 node.inner,
                 append_log_entry(
-                    log_prev(node.inner.log().entries().last_position()),
+                    log_prev(node.log().entries().last_position()),
                     LogEntry::Command
                 )
             );
             let msg = append_entries_call(
                 &node.inner,
                 LogEntries::from_iter(
-                    log_prev(node.inner.log().entries().last_position()),
+                    log_prev(node.log().entries().last_position()),
                     std::iter::once(LogEntry::Command),
                 ),
             );
-            assert_action!(node.inner, broadcast_message(&msg));
-            assert_action!(node.inner, set_election_timeout());
-            assert_no_action!(node.inner);
+            assert_action!(node, broadcast_message(&msg));
+            assert_action!(node, set_election_timeout());
+            assert_no_action!(node);
             call = Some(msg);
             break;
         }
@@ -364,10 +364,11 @@ impl TestNode {
             self,
             append_log_entries(&LogEntries::from_iter(
                 prev(t(0), i(0)),
-                [term_entry(t(1)), cluster_config_entry(voters(&[self.id()]))].into_iter()
+                [cluster_config_entry(voters(&[self.id()])), term_entry(t(1))].into_iter()
             ))
         );
         assert_eq!(self.commit_index(), i(2));
+        assert_action!(self, set_election_timeout());
         assert_no_action!(self);
 
         assert_eq!(self.role(), Role::Leader);

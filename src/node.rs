@@ -31,27 +31,16 @@ impl NodeId {
 }
 
 /// Raft node.
-///
-/// TODO: doc about I/O
 #[derive(Debug, Clone)]
 pub struct Node {
     id: NodeId,
-    role: Role,
     voted_for: Option<NodeId>,
     current_term: Term,
     log: Log,
     commit_index: LogIndex,
-    actions: Actions,
-
-    // TODO: Factor out role specific states in an enum
-    // Candidate state
-    granted_votes: BTreeSet<NodeId>,
-
-    // Leader state
-    leader_index: LogIndex,
-    followers: BTreeMap<NodeId, Follower>,
-    quorum: Quorum,
     seqno: MessageSeqNo,
+    actions: Actions,
+    role: RoleState,
 }
 
 impl Node {
@@ -59,24 +48,15 @@ impl Node {
         let term = Term::new(0);
         let index = LogIndex::new(0);
         let config = ClusterConfig::new();
-        let quorum = Quorum::new(&config);
         Self {
             id,
-            role: Role::Follower,
             voted_for: None,
             current_term: term,
             log: Log::new(config, LogEntries::new(LogPosition::new(term, index))),
             commit_index: LogIndex::new(0),
-            actions: Actions::default(),
-
-            // candidate state
-            granted_votes: BTreeSet::new(),
-
-            // leader state
-            leader_index: LogIndex::new(0),
-            followers: BTreeMap::new(),
-            quorum,
             seqno: MessageSeqNo::INIT,
+            actions: Actions::default(),
+            role: RoleState::Follower,
         }
     }
 
@@ -95,42 +75,56 @@ impl Node {
         node
     }
 
+    // TODO: remove(?)
     pub fn create_cluster(&mut self) -> bool {
-        if self.current_term != Term::new(0) {
+        if self.current_term != Term::ZERO {
             return false;
         }
-
-        // TODO: factor out (with enter_leader())
-        self.role = Role::Leader;
-        self.set_current_term(self.current_term.next());
-        self.set_voted_for(Some(self.id));
 
         let mut config = self.log.latest_config().clone();
         config.voters.insert(self.id);
 
-        self.quorum = Quorum::new(&config);
+        let entry = LogEntry::ClusterConfig(config);
+        self.actions
+            .set(Action::AppendLogEntries(LogEntries::from_iter(
+                LogPosition::ZERO,
+                std::iter::once(entry.clone()),
+            )));
+        self.log.entries_mut().push(entry.clone());
 
-        // Optimized propose (TODO)
-        self.append_log_entry(&LogEntry::Term(self.current_term));
-        self.leader_index = self.log.entries().last_position().index;
-
-        self.append_log_entry(&LogEntry::ClusterConfig(config));
-        self.commit(self.log.entries().last_position().index);
-
-        debug_assert!(self.followers.is_empty());
-        debug_assert_eq!(self.quorum.commit_index(), self.commit_index);
+        self.set_current_term(Term::new(1));
+        self.set_voted_for(Some(self.id));
+        self.transition_to_leader();
 
         true
     }
 
+    fn transition_to_leader(&mut self) {
+        debug_assert_eq!(self.voted_for, Some(self.id));
+
+        let config = self.log.latest_config();
+        let quorum = Quorum::new(config);
+        let followers = config
+            .unique_nodes()
+            .filter(|id| *id != self.id)
+            .map(|id| (id, Follower::new()))
+            .collect();
+        self.role = RoleState::Leader { followers, quorum };
+
+        self.propose(LogEntry::Term(self.current_term));
+    }
+
+    // TODO: remove
     fn commit(&mut self, index: LogIndex) {
         self.commit_index = index;
     }
 
-    // TODOO: rename(?)
     pub fn heartbeat(&mut self) -> HeartbeatPromise {
-        // TODO: handle single node case
+        let RoleState::Leader { quorum, .. } = &mut self.role else {
+            return HeartbeatPromise::Rejected;
+        };
 
+        // TODO: handle single node case
         let sn = self.seqno;
         let call = Message::append_entries_call(
             self.current_term,
@@ -139,7 +133,7 @@ impl Node {
             sn,
             LogEntries::new(self.log.entries().last_position()),
         );
-        self.quorum.update_seqnum(
+        quorum.update_seqnum(
             self.log.latest_config(),
             self.id,
             self.seqno,
@@ -152,32 +146,40 @@ impl Node {
     }
 
     pub fn propose_command(&mut self) -> CommitPromise {
-        if self.role != Role::Leader {
+        if !matches!(self.role, RoleState::Leader { .. }) {
             return CommitPromise::Rejected;
         }
         self.propose(LogEntry::Command)
     }
 
     fn propose(&mut self, entry: LogEntry) -> CommitPromise {
-        debug_assert_eq!(self.role, Role::Leader);
+        debug_assert!(matches!(self.role, RoleState::Leader { .. }));
 
         // TODO: Create LogEnties instance only once
         let prev_entry = self.log.entries().last_position();
         self.append_log_entry(&entry); // TODO: merge the same kind actions
-        self.broadcast_message(Message::append_entries_call(
-            self.current_term,
-            self.id,
-            self.commit_index,
-            self.seqno,
-            LogEntries::from_iter(prev_entry, std::iter::once(entry)),
-        ));
-        self.quorum.update_seqnum(
-            self.log.latest_config(),
-            self.id,
-            self.seqno,
-            self.seqno.next(),
-        );
-        self.seqno = self.seqno.next();
+
+        let RoleState::Leader { quorum, followers } = &mut self.role else {
+            unreachable!();
+        };
+
+        if !followers.is_empty() {
+            self.actions
+                .set(Action::BroadcastMessage(Message::append_entries_call(
+                    self.current_term,
+                    self.id,
+                    self.commit_index,
+                    self.seqno,
+                    LogEntries::from_iter(prev_entry, std::iter::once(entry)),
+                )));
+            quorum.update_seqnum(
+                self.log.latest_config(),
+                self.id,
+                self.seqno,
+                self.seqno.next(),
+            );
+            self.seqno = self.seqno.next();
+        }
         self.actions.set(Action::SetElectionTimeout);
         self.update_commit_index_if_possible(); // TODO: check single node
 
@@ -188,35 +190,41 @@ impl Node {
     }
 
     fn rebuild_followers(&mut self) {
+        // TODO: refactor
+        let RoleState::Leader { followers, .. } = &mut self.role else {
+            unreachable!();
+        };
         let config = self.log.latest_config();
         for id in config.unique_nodes() {
-            if id == self.id {
+            if id == self.id || followers.contains_key(&id) {
                 continue;
             }
-            self.followers.insert(id, Follower::new());
+            followers.insert(id, Follower::new());
         }
-        self.followers.retain(|id, _| config.contains(*id));
+        followers.retain(|id, _| config.contains(*id));
     }
 
     fn rebuild_quorum(&mut self) {
+        // TODO: refactor
+        let RoleState::Leader { quorum, followers } = &mut self.role else {
+            unreachable!();
+        };
+
         let config = self.log.latest_config();
-        self.quorum = Quorum::new(config);
+        *quorum = Quorum::new(config);
 
         let zero = LogIndex::new(0);
-        self.quorum.update_match_index(
+        quorum.update_match_index(
             config,
             self.id,
             zero,
             self.log.entries().last_position().index,
         );
-        self.quorum
-            .update_seqnum(config, self.id, MessageSeqNo::UNKNOWN, self.seqno);
+        quorum.update_seqnum(config, self.id, MessageSeqNo::UNKNOWN, self.seqno);
 
-        for (&id, follower) in &mut self.followers {
-            self.quorum
-                .update_match_index(config, id, zero, follower.match_index);
-            self.quorum
-                .update_seqnum(config, id, MessageSeqNo::UNKNOWN, follower.max_sn);
+        for (&id, follower) in followers {
+            quorum.update_match_index(config, id, zero, follower.match_index);
+            quorum.update_seqnum(config, id, MessageSeqNo::UNKNOWN, follower.max_sn);
         }
     }
 
@@ -229,9 +237,11 @@ impl Node {
     }
 
     fn update_commit_index_if_possible(&mut self) {
-        debug_assert!(self.role.is_leader());
+        let RoleState::Leader { quorum, .. } = &mut self.role else {
+            unreachable!();
+        };
 
-        let new_commit_index = self.quorum.commit_index();
+        let new_commit_index = quorum.commit_index();
         if self.commit_index < new_commit_index
             && self.log.entries().get_term(new_commit_index) == Some(self.current_term)
         {
@@ -246,7 +256,7 @@ impl Node {
     }
 
     fn finalize_joint_consensus(&mut self) {
-        debug_assert!(self.role.is_leader());
+        debug_assert!(self.role().is_leader());
         debug_assert!(self.log.latest_config().is_joint_consensus());
 
         let mut new_config = self.log.latest_config().clone();
@@ -260,7 +270,7 @@ impl Node {
         &mut self,
         new_config: &ClusterConfig,
     ) -> Result<CommitPromise, ChangeConfigError> {
-        if !self.role.is_leader() {
+        if !self.role().is_leader() {
             return Err(ChangeConfigError::NotLeader);
         }
         if self.log.latest_config().voters != new_config.voters {
@@ -274,7 +284,7 @@ impl Node {
     }
 
     fn append_log_entry(&mut self, entry: &LogEntry) {
-        debug_assert!(self.role.is_leader());
+        debug_assert!(self.role().is_leader());
 
         let prev_index = self.log.entries().last_position().index;
         self.actions
@@ -285,8 +295,8 @@ impl Node {
         self.log.entries_mut().push(entry.clone());
 
         // TODO: unnecessary condition?
-        if self.role.is_leader() {
-            self.quorum.update_match_index(
+        if let RoleState::Leader { quorum, .. } = &mut self.role {
+            quorum.update_match_index(
                 self.log.latest_config(),
                 self.id,
                 prev_index,
@@ -296,7 +306,7 @@ impl Node {
 
         if let LogEntry::ClusterConfig(_) = entry {
             // TODO: unnecessary condition?
-            if self.role.is_leader() {
+            if self.role().is_leader() {
                 self.rebuild_followers();
                 self.rebuild_quorum();
             }
@@ -304,7 +314,7 @@ impl Node {
     }
 
     fn try_append_log_entries(&mut self, entries: &LogEntries) -> bool {
-        debug_assert!(self.role.is_follower());
+        debug_assert!(self.role().is_follower());
 
         if self.log.entries().contains(entries.last_position()) {
             // Already up-to-date.
@@ -336,12 +346,12 @@ impl Node {
     pub fn handle_message(&mut self, msg: &Message) {
         if self.current_term < msg.term() {
             if matches!(msg, Message::RequestVoteCall { .. })
-                && self.role.is_follower()
+                && self.role().is_follower()
                 && self.voted_for.map_or(false, |id| id != msg.from())
             {
                 return;
             }
-            self.enter_follower(msg.term());
+            self.transition_to_follower(msg.term());
         }
 
         match msg {
@@ -390,16 +400,19 @@ impl Node {
     }
 
     fn handle_request_vote_reply(&mut self, header: MessageHeader, vote_granted: bool) {
+        let RoleState::Candidate { granted_votes } = &mut self.role else {
+            return;
+        };
         if !vote_granted {
             return;
         }
-        self.granted_votes.insert(header.from);
+        granted_votes.insert(header.from);
 
         let config = self.log.latest_config();
         let n = config
             .voters
             .iter()
-            .filter(|v| self.granted_votes.contains(v))
+            .filter(|v| granted_votes.contains(v))
             .count();
         if n < self.log.latest_config().voter_majority_count() {
             return;
@@ -408,24 +421,24 @@ impl Node {
         let n = config
             .new_voters
             .iter()
-            .filter(|v| self.granted_votes.contains(v))
+            .filter(|v| granted_votes.contains(v))
             .count();
         if n < config.new_voter_majority_count() {
             return;
         }
 
-        self.enter_leader();
+        self.transition_to_leader();
     }
 
     pub fn handle_election_timeout(&mut self) {
         match self.role {
-            Role::Follower => {
+            RoleState::Follower => {
                 self.start_new_election();
             }
-            Role::Candidate => {
+            RoleState::Candidate { .. } => {
                 self.start_new_election();
             }
-            Role::Leader => {
+            RoleState::Leader { .. } => {
                 self.heartbeat();
             }
         }
@@ -440,7 +453,7 @@ impl Node {
             return false;
         }
         if self.log.entries().last_position().index < last_included_position.index {
-            return self.role != Role::Leader;
+            return self.role() != Role::Leader;
         }
         if !self.log.entries().contains(last_included_position) {
             return false;
@@ -468,12 +481,13 @@ impl Node {
         true
     }
 
+    // TODO: rename
     fn start_new_election(&mut self) {
-        self.role = Role::Candidate;
         self.set_current_term(self.current_term.next());
         self.set_voted_for(Some(self.id));
-        self.granted_votes.clear();
-        self.granted_votes.insert(self.id);
+        self.role = RoleState::Candidate {
+            granted_votes: std::iter::once(self.id).collect(),
+        };
 
         let seqno = self.seqno.fetch_and_increment();
         self.broadcast_message(Message::request_vote_call(
@@ -485,23 +499,10 @@ impl Node {
         self.actions.set(Action::SetElectionTimeout);
     }
 
-    fn enter_leader(&mut self) {
-        debug_assert_eq!(self.voted_for, Some(self.id));
-
-        self.role = Role::Leader;
-        self.followers.clear();
-        self.rebuild_followers();
-        self.rebuild_quorum();
-
-        self.propose(LogEntry::Term(self.current_term));
-    }
-
-    fn enter_follower(&mut self, term: Term) {
-        self.role = Role::Follower;
+    fn transition_to_follower(&mut self, term: Term) {
         self.set_current_term(term);
         self.set_voted_for(None);
-        // self.quorum.clear();
-        self.followers.clear();
+        self.role = RoleState::Follower;
         self.actions.set(Action::SetElectionTimeout);
     }
 
@@ -523,7 +524,7 @@ impl Node {
         leader_commit: LogIndex,
         entries: &LogEntries,
     ) {
-        if !self.role.is_follower() {
+        if !self.role().is_follower() {
             return;
         }
         if header.term < self.current_term {
@@ -552,11 +553,11 @@ impl Node {
     }
 
     fn handle_append_entries_reply(&mut self, header: MessageHeader, last_position: LogPosition) {
-        if !self.role.is_leader() {
+        let RoleState::Leader { followers, quorum } = &mut self.role else {
             return;
-        }
+        };
 
-        let Some(follower) = self.followers.get_mut(&header.from) else {
+        let Some(follower) = followers.get_mut(&header.from) else {
             // Replies from unknown nodes are ignored.
             return;
         };
@@ -568,7 +569,7 @@ impl Node {
         // TODO: Add old term check
 
         if follower.max_sn < header.seqno {
-            self.quorum.update_seqnum(
+            quorum.update_seqnum(
                 self.log.latest_config(),
                 header.from,
                 follower.max_sn,
@@ -590,7 +591,7 @@ impl Node {
                 let old_match_index = follower.match_index;
                 follower.match_index = last_position.index;
 
-                self.quorum.update_match_index(
+                quorum.update_match_index(
                     self.log.latest_config(),
                     header.from,
                     old_match_index,
@@ -624,8 +625,12 @@ impl Node {
                 self.seqno,
                 delta,
             );
-            self.send_message(header.from, msg);
-            self.quorum.update_seqnum(
+            self.actions.set(Action::SendMessage(header.from, msg));
+
+            let RoleState::Leader { quorum, .. } = &mut self.role else {
+                return;
+            };
+            quorum.update_seqnum(
                 self.log.latest_config(),
                 self.id,
                 self.seqno,
@@ -640,7 +645,11 @@ impl Node {
     }
 
     pub fn role(&self) -> Role {
-        self.role
+        match self.role {
+            RoleState::Follower => Role::Follower,
+            RoleState::Candidate { .. } => Role::Candidate,
+            RoleState::Leader { .. } => Role::Leader,
+        }
     }
 
     pub fn commit_index(&self) -> LogIndex {
@@ -677,9 +686,25 @@ impl Node {
         &mut self.actions
     }
 
-    pub(crate) fn quorum(&self) -> &Quorum {
-        &self.quorum
+    pub(crate) fn quorum(&self) -> Option<&Quorum> {
+        if let RoleState::Leader { quorum, .. } = &self.role {
+            Some(quorum)
+        } else {
+            None
+        }
     }
+}
+
+#[derive(Debug, Clone)]
+pub enum RoleState {
+    Follower,
+    Candidate {
+        granted_votes: BTreeSet<NodeId>,
+    },
+    Leader {
+        followers: BTreeMap<NodeId, Follower>,
+        quorum: Quorum,
+    },
 }
 
 // TODO: remove
