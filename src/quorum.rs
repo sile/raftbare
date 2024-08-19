@@ -58,21 +58,21 @@ impl Quorum {
         old_index: LogIndex,
         index: LogIndex,
     ) {
-        if config.voters.contains(&node_id) {
-            if self.majority_indices.first().map(|(i, _)| *i) < Some(index) {
-                self.majority_indices.insert((index, node_id));
-                if !self.majority_indices.remove(&(old_index, node_id)) {
-                    self.majority_indices.pop_first();
-                }
+        if config.voters.contains(&node_id)
+            && self.majority_indices.first().map(|(i, _)| *i) < Some(index)
+        {
+            self.majority_indices.insert((index, node_id));
+            if !self.majority_indices.remove(&(old_index, node_id)) {
+                self.majority_indices.pop_first();
             }
         }
 
-        if config.new_voters.contains(&node_id) {
-            if self.new_majority_indices.first().map(|(i, _)| *i) < Some(index) {
-                self.new_majority_indices.insert((index, node_id));
-                if !self.new_majority_indices.remove(&(old_index, node_id)) {
-                    self.new_majority_indices.pop_first();
-                }
+        if config.new_voters.contains(&node_id)
+            && self.new_majority_indices.first().map(|(i, _)| *i) < Some(index)
+        {
+            self.new_majority_indices.insert((index, node_id));
+            if !self.new_majority_indices.remove(&(old_index, node_id)) {
+                self.new_majority_indices.pop_first();
             }
         }
     }
@@ -85,21 +85,21 @@ impl Quorum {
         old_seqnum: MessageSeqNo,
         seqnum: MessageSeqNo,
     ) {
-        if config.voters.contains(&node_id) {
-            if self.majority_seqnums.first().map(|(i, _)| *i) < Some(seqnum) {
-                self.majority_seqnums.insert((seqnum, node_id));
-                if !self.majority_seqnums.remove(&(old_seqnum, node_id)) {
-                    self.majority_seqnums.pop_first();
-                }
+        if config.voters.contains(&node_id)
+            && self.majority_seqnums.first().map(|(i, _)| *i) < Some(seqnum)
+        {
+            self.majority_seqnums.insert((seqnum, node_id));
+            if !self.majority_seqnums.remove(&(old_seqnum, node_id)) {
+                self.majority_seqnums.pop_first();
             }
         }
 
-        if config.new_voters.contains(&node_id) {
-            if self.new_majority_seqnums.first().map(|(i, _)| *i) < Some(seqnum) {
-                self.new_majority_seqnums.insert((seqnum, node_id));
-                if !self.new_majority_seqnums.remove(&(old_seqnum, node_id)) {
-                    self.new_majority_seqnums.pop_first();
-                }
+        if config.new_voters.contains(&node_id)
+            && self.new_majority_seqnums.first().map(|(i, _)| *i) < Some(seqnum)
+        {
+            self.new_majority_seqnums.insert((seqnum, node_id));
+            if !self.new_majority_seqnums.remove(&(old_seqnum, node_id)) {
+                self.new_majority_seqnums.pop_first();
             }
         }
     }

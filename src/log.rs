@@ -276,8 +276,7 @@ impl LogEntries {
         self.contains_index(index).then(|| {
             self.terms
                 .range(..=index)
-                .rev()
-                .next()
+                .next_back()
                 .map(|(_, term)| *term)
                 .unwrap_or(self.prev_position.term)
         })
@@ -319,7 +318,7 @@ impl LogEntries {
     }
 
     pub(crate) fn get_config(&self, index: LogIndex) -> Option<&ClusterConfig> {
-        self.configs.range(..=index).map(|x| x.1).rev().next()
+        self.configs.range(..=index).map(|x| x.1).next_back()
     }
 
     /// Appends an entry to the back of this entries.

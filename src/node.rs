@@ -148,9 +148,7 @@ impl Node {
         self.seqno = sn.next();
         self.broadcast_message(call);
 
-        let heartbeat = HeartbeatPromise::new(self.current_term, sn);
-
-        heartbeat
+        HeartbeatPromise::new(self.current_term, sn)
     }
 
     pub fn propose_command(&mut self) -> CommitPromise {
@@ -610,7 +608,6 @@ impl Node {
             }
         }
 
-        let last_position = last_position;
         if last_position.index < self.log.entries().prev_position().index {
             // Send snapshot
             self.actions.set(Action::InstallSnapshot(header.from));
