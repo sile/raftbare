@@ -676,6 +676,10 @@ impl Node {
     pub fn actions_mut(&mut self) -> &mut Actions {
         &mut self.actions
     }
+
+    pub(crate) fn quorum(&self) -> &Quorum {
+        &self.quorum
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
