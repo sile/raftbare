@@ -266,7 +266,7 @@ impl Node {
         // TODO: leader not in new config steps down when the new config is committed
     }
 
-    pub fn propose_config_change(
+    pub fn propose_config(
         &mut self,
         new_config: &ClusterConfig,
     ) -> Result<CommitPromise, ChangeConfigError> {
