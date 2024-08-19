@@ -51,7 +51,7 @@ pub struct Node {
     leader_index: LogIndex,
     followers: BTreeMap<NodeId, Follower>,
     quorum: Quorum,
-    pub seqno: MessageSeqNo, // TODO: priv
+    seqno: MessageSeqNo,
 }
 
 impl Node {
@@ -682,6 +682,7 @@ impl Node {
     }
 }
 
+// TODO: remove
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ChangeConfigError {
     NotLeader,

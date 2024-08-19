@@ -610,10 +610,13 @@ impl TestNode {
         assert_eq!(self.role(), Role::Candidate);
         assert_eq!(self.current_term(), next_term(prev_term));
 
+        let Some(seqno) = self.actions().broadcast_message.as_ref().map(|a| a.seqno()) else {
+            panic!("No broadcast message action");
+        };
         let call = request_vote_call(
             self.current_term(),
             self.id(),
-            MessageSeqNo::new(self.seqno.get() - 1),
+            seqno,
             self.log().entries().last_position(),
         );
         assert_action!(self, save_current_term());
@@ -635,10 +638,13 @@ impl TestNode {
         assert_eq!(self.role(), Role::Candidate);
         assert_eq!(self.current_term(), next_term(prev_term));
 
+        let Some(seqno) = self.actions().broadcast_message.as_ref().map(|a| a.seqno()) else {
+            panic!("No broadcast message action");
+        };
         let call = request_vote_call(
             self.current_term(),
             self.id(),
-            MessageSeqNo::new(self.seqno.get() - 1),
+            seqno,
             self.log().entries().last_position(),
         );
         assert_action!(self, save_current_term());
@@ -810,7 +816,20 @@ fn append_entries_call(leader: &Node, entries: LogEntries) -> Message {
     let term = leader.current_term();
     let from = leader.id();
     let commit_index = leader.commit_index();
-    let seqno = MessageSeqNo::new(leader.seqno.get() - 1);
+    let seqno = leader
+        .actions()
+        .broadcast_message
+        .as_ref()
+        .map(|m| m.seqno())
+        .or_else(|| {
+            leader
+                .actions()
+                .send_messages
+                .values()
+                .map(|m| m.seqno())
+                .next()
+        })
+        .unwrap_or(MessageSeqNo::new(0));
     Message::AppendEntriesCall {
         header: MessageHeader { from, term, seqno },
         commit_index,
