@@ -91,6 +91,35 @@ impl ClusterConfig {
         }
     }
 
+    /// Converts this configuration to a joint consensus by adding and removing voters.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use raftbare::{Node, NodeId};
+    ///
+    /// fn add_node(node: &mut Node, adding_node_id: NodeId) {
+    ///     let new_config = node.config().to_joint_consensus(&[adding_node_id], &[]);
+    ///     assert_eq!(new_config.voters.len() + 1, new_config.new_voters.len());
+    ///
+    ///     node.propose_config(&new_config);
+    /// }
+    ///
+    /// fn remove_node(node: &mut Node, removing_id: NodeId) {
+    ///     let new_config = node.config().to_joint_consensus(&[], &[removing_id]);
+    ///     assert_eq!(new_config.voters.len() - 1, new_config.new_voters.len());
+    ///
+    ///     node.propose_config(&new_config);
+    /// }
+    /// ```
+    pub fn to_joint_consensus(&self, adding_voters: &[NodeId], removing_voters: &[NodeId]) -> Self {
+        let mut config = self.clone();
+        config.new_voters = config.voters.clone();
+        config.new_voters.extend(adding_voters.iter().copied());
+        config.new_voters.retain(|id| !removing_voters.contains(id));
+        config
+    }
+
     pub(crate) fn voter_majority_count(&self) -> usize {
         self.voters.len() / 2 + 1
     }
