@@ -44,6 +44,24 @@ pub struct Node {
 }
 
 impl Node {
+    /// Starts a new node with the initial voters in the cluster.
+    ///
+    /// Conceptually, `Node::start(id0, &[id1, id2])` is equivalent to the following steps:
+
+    /// use raftbase::{Node, NodeId};
+    ///
+    /// let id0 = NodeId::new(0);
+    /// let id1 = NodeId::new(1);
+    /// let id2 = NodeId::new(2);
+    ///
+    /// // Starts a single-node cluster.
+    /// let node = Node::start(id0, &[]);
+    ///
+    ///
+    /// Technically, it is possible to exclude `id` from `initial_voters` (although this wouldn't be meaningful).
+    ///
+    /// # Note
+    ///
     // Theoritically, it's recommended to pass the same initial_voters to all nodes (to replicate the exactly same log entries).
     // But, in practice, it's not necessary. Once the cluster is formed, the appropriate cluster configuration is replicated to all nodes.
     pub fn start(id: NodeId, initial_voters: &[NodeId]) -> Self {
@@ -330,21 +348,26 @@ impl Node {
         // TODO: leader not in new config steps down when the new config is committed
     }
 
-    pub fn propose_config(
-        &mut self,
-        new_config: &ClusterConfig,
-    ) -> Result<CommitPromise, ChangeConfigError> {
+    /// Propose a new cluster configuration.
+    ///
+    /// # Note
+    ///
+    /// error:
+    /// - NotLeader
+    /// - VotersMismatched
+    /// - JointConsensusInProgress
+    pub fn propose_config(&mut self, new_config: &ClusterConfig) -> CommitPromise {
         if !self.role().is_leader() {
-            return Err(ChangeConfigError::NotLeader);
+            return CommitPromise::Rejected;
         }
         if self.log.latest_config().voters != new_config.voters {
-            return Err(ChangeConfigError::VotersMismatched);
+            return CommitPromise::Rejected;
         }
         if self.log.latest_config().is_joint_consensus() {
-            return Err(ChangeConfigError::JointConsensusInProgress);
+            return CommitPromise::Rejected;
         }
 
-        Ok(self.propose(LogEntry::ClusterConfig(new_config.clone())))
+        self.propose(LogEntry::ClusterConfig(new_config.clone()))
     }
 
     pub fn heartbeat(&mut self) -> HeartbeatPromise {
@@ -725,14 +748,6 @@ pub enum RoleState {
         followers: BTreeMap<NodeId, Follower>,
         quorum: Quorum,
     },
-}
-
-// TODO: remove
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum ChangeConfigError {
-    NotLeader,
-    VotersMismatched,
-    JointConsensusInProgress,
 }
 
 #[derive(Debug, Clone)]

@@ -401,7 +401,7 @@ impl TestNode {
         let next_index = next_index(self.log().entries().last_position().index);
         let next_position = log_pos(self.current_term(), next_index);
         assert_eq!(
-            Ok(CommitPromise::Pending(next_position)),
+            CommitPromise::Pending(next_position),
             self.propose_config(&new_config)
         );
         let msg = append_entries_call(
