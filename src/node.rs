@@ -44,11 +44,14 @@ pub struct Node {
 }
 
 impl Node {
+    // Theoritically, it's recommended to pass the same initial_voters to all nodes (to replicate the exactly same log entries).
+    // But, in practice, it's not necessary. Once the cluster is formed, the appropriate cluster configuration is replicated to all nodes.
     pub fn start(id: NodeId, initial_voters: &[NodeId]) -> Self {
         let mut node = Self::new(id);
 
         let mut config = ClusterConfig::new();
-        config.voters.extend(initial_voters.iter().copied());
+        config.voters.insert(id);
+        config.new_voters.extend(initial_voters.iter().copied());
         let entry = LogEntry::ClusterConfig(config);
         node.actions
             .set(Action::AppendLogEntries(LogEntries::from_iter(

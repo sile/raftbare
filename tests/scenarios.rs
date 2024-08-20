@@ -48,10 +48,24 @@ fn create_two_nodes_cluster() {
     let reply = node1.asserted_handle_request_vote_call_success(&call);
     let call = node0.asserted_handle_request_vote_reply_majority_vote_granted(&reply);
     let reply = node1.asserted_handle_append_entries_call_success(&call);
-    node0.asserted_handle_append_entries_reply_success(&reply, true);
+    node0.asserted_handle_append_entries_reply_success(&reply, true, true);
 
     assert!(!node0.config().is_joint_consensus());
     assert_eq!(node0.config().voters, initial_voters.into_iter().collect());
+
+    assert!(node1.config().is_joint_consensus());
+    assert_eq!(node1.config().voters, [node1.id()].into_iter().collect());
+    assert_eq!(
+        node1.config().new_voters,
+        initial_voters.into_iter().collect()
+    );
+
+    let call = node0.take_broadcast_message();
+    let reply = node1.asserted_handle_append_entries_call_success(&call);
+    node0.asserted_handle_append_entries_reply_success(&reply, true, false);
+
+    assert!(!node1.config().is_joint_consensus());
+    assert_eq!(node1.config().voters, initial_voters.into_iter().collect());
     assert_eq!(node0.config(), node1.config());
 }
 
@@ -88,10 +102,10 @@ fn election() {
 
     cluster
         .node1
-        .asserted_handle_append_entries_reply_success(&reply_from_node0, true);
+        .asserted_handle_append_entries_reply_success(&reply_from_node0, true, false);
     cluster
         .node1
-        .asserted_handle_append_entries_reply_success(&reply_from_node2, false);
+        .asserted_handle_append_entries_reply_success(&reply_from_node2, false, false);
 
     // Manual heartbeat.
     let (mut heartbeat, call) = cluster.node1.asserted_heartbeat();
@@ -174,7 +188,7 @@ fn truncate_log() {
 
     cluster
         .node2
-        .asserted_handle_append_entries_reply_success(&reply, true);
+        .asserted_handle_append_entries_reply_success(&reply, true, false);
 
     assert_no_action!(cluster.node0);
     assert_no_action!(cluster.node1);
@@ -208,7 +222,7 @@ fn snapshot() {
         let reply = node.asserted_handle_append_entries_call_success(&call);
         cluster
             .node0
-            .asserted_handle_append_entries_reply_success(&reply, false);
+            .asserted_handle_append_entries_reply_success(&reply, false, false);
     }
 
     // Cannot append (need snapshot).
@@ -315,7 +329,7 @@ impl ThreeNodeCluster {
             }
 
             for reply in replies {
-                node.asserted_handle_append_entries_reply_success(&reply, first);
+                node.asserted_handle_append_entries_reply_success(&reply, first, false);
                 assert_eq!(node.commit_index(), commit_position.index);
                 first = false;
             }
@@ -327,9 +341,17 @@ impl ThreeNodeCluster {
 #[derive(Debug)]
 struct TestNode {
     inner: Node,
+    actions: Actions,
 }
 
 impl TestNode {
+    fn take_broadcast_message(&mut self) -> Message {
+        self.actions
+            .broadcast_message
+            .take()
+            .expect("No broadcast message.")
+    }
+
     fn asserted_start(id: NodeId, initial_voters: &[NodeId]) -> Self {
         let mut node = Node::start(id, initial_voters);
         assert_eq!(node.role(), Role::Follower);
@@ -341,12 +363,15 @@ impl TestNode {
             node,
             append_log_entries(&LogEntries::from_iter(
                 prev(t(0), i(0)),
-                [cluster_config_entry(voters(initial_voters))].into_iter()
+                [cluster_config_entry(joint(&[id], initial_voters))].into_iter()
             ))
         );
 
         assert_no_action!(node);
-        Self { inner: node }
+        Self {
+            inner: node,
+            actions: Actions::default(),
+        }
     }
 
     fn asserted_change_cluster_config(&mut self, new_config: ClusterConfig) -> Message {
@@ -558,15 +583,38 @@ impl TestNode {
         &mut self,
         reply: &Message,
         commit_index_will_be_updated: bool,
+        joint_consensus_will_be_finalized: bool,
     ) {
         assert!(matches!(reply, Message::AppendEntriesReply { .. }));
+
+        let old_last_position = self.log().entries().last_position();
         self.handle_message(reply);
+        self.actions = self.inner.actions().clone();
 
         let Message::AppendEntriesReply { last_position, .. } = reply else {
             unreachable!();
         };
         if commit_index_will_be_updated {
             assert_eq!(self.commit_index(), last_position.index);
+        }
+        if joint_consensus_will_be_finalized {
+            assert_action!(self, set_election_timeout());
+
+            let config = self.config().clone();
+            assert_action!(
+                self,
+                append_log_entry(old_last_position, cluster_config_entry(config.clone()))
+            );
+            assert_action!(
+                self,
+                broadcast_message(&append_entries_call(
+                    self,
+                    LogEntries::from_iter(
+                        old_last_position,
+                        std::iter::once(cluster_config_entry(config.clone()))
+                    )
+                ))
+            );
         }
         assert_no_action!(self);
     }
