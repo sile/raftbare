@@ -95,6 +95,74 @@ impl Node {
         }
     }
 
+    /// Returns the identifier of this node.
+    pub fn id(&self) -> NodeId {
+        self.id
+    }
+
+    /// Returns the role of this node.
+    pub fn role(&self) -> Role {
+        match self.role {
+            RoleState::Follower => Role::Follower,
+            RoleState::Candidate { .. } => Role::Candidate,
+            RoleState::Leader { .. } => Role::Leader,
+        }
+    }
+
+    /// Returns the current term of this node.
+    pub fn current_term(&self) -> Term {
+        self.current_term
+    }
+
+    /// Returns the identifier of the node for which this node voted in the current term.
+    ///
+    /// If `self.role()` is not [`Role::Candidate`], the returned node may be the leader of the current term.
+    pub fn voted_for(&self) -> Option<NodeId> {
+        self.voted_for
+    }
+
+    /// Returns the in-memory representation of the local log of this node.
+    pub fn log(&self) -> &Log {
+        &self.log
+    }
+
+    /// Returns the commit index of this node.
+    ///
+    /// [`LogEntry::Command`] entries up to this index are safely applied to the state machine managed by the user.
+    pub fn commit_index(&self) -> LogIndex {
+        self.commit_index
+    }
+
+    /// Returns the current cluster configuration of this node.
+    ///
+    /// This is shorthand for `self.log().latest_config()`.
+    pub fn config(&self) -> &ClusterConfig {
+        self.log.latest_config()
+    }
+
+    /// Returns an iterator over the identifiers of the peers of this node.
+    ///
+    /// "Peers" means all unique nodes in the current cluster configuration except for this node.
+    pub fn peers(&self) -> impl '_ + Iterator<Item = NodeId> {
+        self.config()
+            .unique_nodes()
+            .filter(move |&node| node != self.id)
+    }
+
+    /// Returns a reference to the pending actions for this node.
+    pub fn actions(&self) -> &Actions {
+        &self.actions
+    }
+
+    /// Returns a mutable reference to the pending actions for this node.
+    ///
+    /// # Note
+    ///
+    /// It is the user's responsibility to execute these actions.
+    pub fn actions_mut(&mut self) -> &mut Actions {
+        &mut self.actions
+    }
+
     fn transition_to_leader(&mut self) {
         debug_assert_eq!(self.voted_for, Some(self.id));
 
@@ -138,32 +206,6 @@ impl Node {
     // TODO: remove
     fn commit(&mut self, index: LogIndex) {
         self.commit_index = index;
-    }
-
-    pub fn heartbeat(&mut self) -> HeartbeatPromise {
-        let RoleState::Leader { quorum, .. } = &mut self.role else {
-            return HeartbeatPromise::Rejected;
-        };
-
-        // TODO: handle single node case
-        let sn = self.seqno;
-        let call = Message::append_entries_call(
-            self.current_term,
-            self.id,
-            self.commit_index,
-            sn,
-            LogEntries::new(self.log.entries().last_position()),
-        );
-        quorum.update_seqnum(
-            self.log.latest_config(),
-            self.id,
-            self.seqno,
-            self.seqno.next(),
-        );
-        self.seqno = sn.next();
-        self.broadcast_message(call);
-
-        HeartbeatPromise::new(self.current_term, sn)
     }
 
     pub fn propose_command(&mut self) -> CommitPromise {
@@ -303,6 +345,32 @@ impl Node {
         }
 
         Ok(self.propose(LogEntry::ClusterConfig(new_config.clone())))
+    }
+
+    pub fn heartbeat(&mut self) -> HeartbeatPromise {
+        let RoleState::Leader { quorum, .. } = &mut self.role else {
+            return HeartbeatPromise::Rejected;
+        };
+
+        // TODO: handle single node case
+        let sn = self.seqno;
+        let call = Message::append_entries_call(
+            self.current_term,
+            self.id,
+            self.commit_index,
+            sn,
+            LogEntries::new(self.log.entries().last_position()),
+        );
+        quorum.update_seqnum(
+            self.log.latest_config(),
+            self.id,
+            self.seqno,
+            self.seqno.next(),
+        );
+        self.seqno = sn.next();
+        self.broadcast_message(call);
+
+        HeartbeatPromise::new(self.current_term, sn)
     }
 
     fn append_log_entry(&mut self, entry: &LogEntry) {
@@ -636,52 +704,6 @@ impl Node {
             );
             self.seqno = self.seqno.next();
         }
-    }
-
-    pub fn id(&self) -> NodeId {
-        self.id
-    }
-
-    pub fn role(&self) -> Role {
-        match self.role {
-            RoleState::Follower => Role::Follower,
-            RoleState::Candidate { .. } => Role::Candidate,
-            RoleState::Leader { .. } => Role::Leader,
-        }
-    }
-
-    pub fn commit_index(&self) -> LogIndex {
-        self.commit_index
-    }
-
-    pub fn voted_for(&self) -> Option<NodeId> {
-        self.voted_for
-    }
-
-    pub fn current_term(&self) -> Term {
-        self.current_term
-    }
-
-    pub fn config(&self) -> &ClusterConfig {
-        self.log.latest_config()
-    }
-
-    pub fn peers(&self) -> impl '_ + Iterator<Item = NodeId> {
-        self.config()
-            .unique_nodes()
-            .filter(move |&node| node != self.id)
-    }
-
-    pub fn log(&self) -> &Log {
-        &self.log
-    }
-
-    pub fn actions(&self) -> &Actions {
-        &self.actions
-    }
-
-    pub fn actions_mut(&mut self) -> &mut Actions {
-        &mut self.actions
     }
 
     pub(crate) fn quorum(&self) -> Option<&Quorum> {
