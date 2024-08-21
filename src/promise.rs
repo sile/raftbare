@@ -36,17 +36,17 @@ impl CommitPromise {
     }
 
     /// Returns [`true`] if the promise is pending.
-    pub fn is_pending(&self) -> bool {
+    pub fn is_pending(self) -> bool {
         matches!(self, Self::Pending(..))
     }
 
     /// Returns [`true`] if the promise is rejected.
-    pub fn is_rejected(&self) -> bool {
+    pub fn is_rejected(self) -> bool {
         matches!(self, Self::Rejected)
     }
 
     /// Returns [`true`] if the promise is accepted.
-    pub fn is_accepted(&self) -> bool {
+    pub fn is_accepted(self) -> bool {
         matches!(self, Self::Accepted)
     }
 }
@@ -89,17 +89,17 @@ impl HeartbeatPromise {
     }
 
     /// Returns [`true`] if the promise is pending.
-    pub fn is_pending(&self) -> bool {
+    pub fn is_pending(self) -> bool {
         matches!(self, Self::Pending { .. })
     }
 
     /// Returns [`true`] if the promise is rejected.
-    pub fn is_rejected(&self) -> bool {
+    pub fn is_rejected(self) -> bool {
         matches!(self, Self::Rejected)
     }
 
     /// Returns [`true`] if the promise is accepted.
-    pub fn is_accepted(&self) -> bool {
+    pub fn is_accepted(self) -> bool {
         matches!(self, Self::Accepted)
     }
 }
