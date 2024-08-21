@@ -9,10 +9,10 @@ pub enum CommitPromise {
     Pending(LogPosition),
 
     /// The promise is rejected.
-    Rejected,
+    Rejected(LogPosition),
 
     /// The promise is accepted.
-    Accepted,
+    Accepted(LogPosition),
 }
 
 impl CommitPromise {
@@ -28,26 +28,35 @@ impl CommitPromise {
             return *self;
         };
         if position.index <= node.commit_index() {
-            *self = Self::Accepted;
+            *self = Self::Accepted(position);
         } else if !node.log().entries().contains(position) {
-            *self = Self::Rejected;
+            *self = Self::Rejected(position);
         }
         *self
     }
 
+    /// Returns the log position that the commit promise is associated with.
+    pub fn log_position(self) -> LogPosition {
+        match self {
+            Self::Pending(position) => position,
+            Self::Accepted(position) => position,
+            Self::Rejected(position) => position,
+        }
+    }
+
     /// Returns [`true`] if the promise is pending.
     pub fn is_pending(self) -> bool {
-        matches!(self, Self::Pending(..))
+        matches!(self, Self::Pending(_))
     }
 
     /// Returns [`true`] if the promise is rejected.
     pub fn is_rejected(self) -> bool {
-        matches!(self, Self::Rejected)
+        matches!(self, Self::Rejected(_))
     }
 
     /// Returns [`true`] if the promise is accepted.
     pub fn is_accepted(self) -> bool {
-        matches!(self, Self::Accepted)
+        matches!(self, Self::Accepted(_))
     }
 }
 

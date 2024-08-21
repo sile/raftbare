@@ -151,13 +151,13 @@ impl Node {
     /// will result in undefined behavior.
     pub fn create_cluster(&mut self, initial_voters: &[NodeId]) -> CommitPromise {
         if self.log.entries().last_position() != LogPosition::ZERO {
-            return CommitPromise::Rejected;
+            return CommitPromise::Rejected(self.log().last_position().next());
         }
         if !self.config().voters.is_empty() {
-            return CommitPromise::Rejected;
+            return CommitPromise::Rejected(self.log().last_position().next());
         }
         if initial_voters.is_empty() {
-            return CommitPromise::Rejected;
+            return CommitPromise::Rejected(self.log().last_position().next());
         }
 
         let mut config = ClusterConfig::new();
@@ -304,9 +304,25 @@ impl Node {
         self.commit_index = index;
     }
 
+    /// Proposes a user-defined command.
+    ///
+    /// This crate does not manage the detail of user-defined commands, so this method takes no arguments.
+    ///
+    /// This method returns a [`CommitPromise`] that will be resolved when the command is committed or rejected.
+    ///
+    /// Committed commands can be determined by calling [`Node::commit_index()`] and
+    /// applied to the state machine managed by the user.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`CommitPromise::Rejected`] if this node is not the leader.
+    ///
+    /// # Examples
+    ///
+    /// TODO
     pub fn propose_command(&mut self) -> CommitPromise {
         if !matches!(self.role, RoleState::Leader { .. }) {
-            return CommitPromise::Rejected;
+            return CommitPromise::Rejected(self.log().last_position().next());
         }
         self.propose(LogEntry::Command)
     }
@@ -436,13 +452,13 @@ impl Node {
     /// - JointConsensusInProgress
     pub fn propose_config(&mut self, new_config: &ClusterConfig) -> CommitPromise {
         if !self.role().is_leader() {
-            return CommitPromise::Rejected;
+            return CommitPromise::Rejected(self.log().last_position().next());
         }
         if self.log.latest_config().voters != new_config.voters {
-            return CommitPromise::Rejected;
+            return CommitPromise::Rejected(self.log().last_position().next());
         }
         if self.log.latest_config().is_joint_consensus() {
-            return CommitPromise::Rejected;
+            return CommitPromise::Rejected(self.log().last_position().next());
         }
 
         self.propose(LogEntry::ClusterConfig(new_config.clone()))
