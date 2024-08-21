@@ -367,7 +367,7 @@ impl TestNode {
         assert_no_action!(node);
 
         if !initial_voters.is_empty() {
-            assert!(node.create_cluster(initial_voters));
+            assert!(node.create_cluster(initial_voters).is_pending());
 
             assert_eq!(node.role(), Role::Candidate);
             assert_action!(node, set_election_timeout());

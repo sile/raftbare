@@ -86,6 +86,19 @@ impl Node {
     /// `current_term`, `voted_for`, and `log` are restored from persistent storage.
     /// Note that managing the persistent storage is outside the scope of this crate.
     ///
+    /// # Notes
+    ///
+    /// Raft algorithm assumes the persistent storage is reliable.
+    /// So, for example, if the local log of the node has corrupted or lost some log tail entries,
+    /// it is safest to remove the node from the cluster then add it back as a new node.
+    ///
+    /// In practice, such storage failures are usually tolerable when the majority of nodes in the cluster
+    /// are healthy (i.e., the restarted node can restored its previous state).
+    ///
+    /// But be careful, whether the degraded safety guarantee is acceptable or not highly depends on
+    /// the application.
+    ///
+    /// # Examples
     /// ```
     /// use raftbare::{Node, NodeId};
     ///
@@ -104,16 +117,6 @@ impl Node {
     /// // Unlike `Node::start()`, the restarted node has actions to execute.
     /// assert!(!node.actions().is_empty());
     /// ```
-    ///
-    /// # Notes
-    ///
-    /// Raft algorithm assumes the persistent storage is reliable.
-    /// So, for example, if the local log of the node has corrupted or lost some log tail entries,
-    /// it is safest to remove the node from the cluster then add it back as a new node.
-    ///
-    /// In practice, such storage failures are tolerable when the majority of nodes in the cluster are healthy
-    /// (i.e., the restarted node can restored its previous state).
-    /// But be careful, whether the degraded safety guarantee is acceptable or not highly depends on the application.
     pub fn restart(id: NodeId, current_term: Term, voted_for: Option<NodeId>, log: Log) -> Self {
         let mut node = Self::new(id);
 
@@ -125,15 +128,36 @@ impl Node {
         node
     }
 
-    pub fn create_cluster(&mut self, initial_voters: &[NodeId]) -> bool {
+    /// Creates a new cluster.
+    ///
+    /// This method returns a [`CommitPromise`] that will be accepted
+    /// when the initial cluster configuration is successfully committed.
+    ///
+    /// To proceed the cluster creation, the user needs to handle the queued actions after calling this method.
+    ///
+    /// # Errors
+    ///
+    /// This method returns [`CommitPromise::Rejected`] if:
+    /// - This node (`self`) is not a newly started node.
+    /// - `initial_voters` is empty.
+    ///
+    /// Theoretically, it is acceptable to exclude the self node from `initial_voters`
+    /// (although it is not practical).
+    ///
+    /// # Notes
+    ///
+    /// Raft algorithm assumes that each node in a cluster belongs to only one cluster at a time.
+    /// Therefore, including nodes that are already part of another cluster in the `initial_voters`
+    /// will result in undefined behavior.
+    pub fn create_cluster(&mut self, initial_voters: &[NodeId]) -> CommitPromise {
         if self.log.entries().last_position() != LogPosition::ZERO {
-            return false;
+            return CommitPromise::Rejected;
         }
         if !self.config().voters.is_empty() {
-            return false;
+            return CommitPromise::Rejected;
         }
         if initial_voters.is_empty() {
-            return false;
+            return CommitPromise::Rejected;
         }
 
         let mut config = ClusterConfig::new();
@@ -147,7 +171,8 @@ impl Node {
         self.log.entries_mut().push(entry.clone());
 
         self.transition_to_candidate();
-        true
+
+        CommitPromise::Pending(self.log.last_position())
     }
 
     fn new(id: NodeId) -> Self {
