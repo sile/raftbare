@@ -137,7 +137,7 @@ impl Node {
     ///
     /// # Preconditions
     ///
-    /// This method returns `CommitPromise::Rejected(LogPosition::NEVER)` if:
+    /// This method returns `CommitPromise::Rejected(LogPosition::INVALID)` if:
     /// - This node (`self`) is not a newly started node.
     /// - `initial_voters` is empty.
     ///
@@ -151,13 +151,13 @@ impl Node {
     /// will result in undefined behavior.
     pub fn create_cluster(&mut self, initial_voters: &[NodeId]) -> CommitPromise {
         if self.log.entries().last_position() != LogPosition::ZERO {
-            return CommitPromise::Rejected(LogPosition::NEVER);
+            return CommitPromise::Rejected(LogPosition::INVALID);
         }
         if !self.config().voters.is_empty() {
-            return CommitPromise::Rejected(LogPosition::NEVER);
+            return CommitPromise::Rejected(LogPosition::INVALID);
         }
         if initial_voters.is_empty() {
-            return CommitPromise::Rejected(LogPosition::NEVER);
+            return CommitPromise::Rejected(LogPosition::INVALID);
         }
 
         let mut config = ClusterConfig::new();
@@ -321,7 +321,7 @@ impl Node {
     ///
     /// # Preconditions
     ///
-    /// This method returns `CommitPromise::Rejected(LogPosition::NEVER)` if:
+    /// This method returns `CommitPromise::Rejected(LogPosition::INVALID)` if:
     /// - This node is not the leader
     ///
     /// # Examples
@@ -379,7 +379,7 @@ impl Node {
     /// ```
     pub fn propose_command(&mut self) -> CommitPromise {
         if !matches!(self.role, RoleState::Leader { .. }) {
-            return CommitPromise::Rejected(LogPosition::NEVER);
+            return CommitPromise::Rejected(LogPosition::INVALID);
         }
         self.propose(LogEntry::Command)
     }
