@@ -29,7 +29,7 @@ fn single_node_start() {
 fn create_two_nodes_cluster() {
     let initial_voters = [id(0), id(1)];
     let mut node0 = TestNode::asserted_start(id(0), &initial_voters);
-    let mut node1 = TestNode::asserted_start(id(1), &initial_voters);
+    let mut node1 = TestNode::asserted_start(id(1), &[]);
 
     // Setup cluster.
     node0.handle_election_timeout();
@@ -47,8 +47,9 @@ fn create_two_nodes_cluster() {
 
     let reply = node1.asserted_handle_request_vote_call_success(&call);
     let call = node0.asserted_handle_request_vote_reply_majority_vote_granted(&reply);
-    let reply = node1.asserted_handle_append_entries_call_success(&call);
-    node0.asserted_handle_append_entries_reply_success(&reply, true, true);
+    //let reply = node1.asserted_handle_append_entries_call_success(&call);
+    let reply = node1.asserted_handle_append_entries_call_failure(&call);
+    node0.asserted_handle_append_entries_reply_success(&reply, false, false);
 
     assert!(!node0.config().is_joint_consensus());
     assert_eq!(node0.config().voters, initial_voters.into_iter().collect());
@@ -251,8 +252,8 @@ impl ThreeNodeCluster {
         let initial_voters = &[id(0), id(1), id(2)];
         Self {
             node0: TestNode::asserted_start(id(0), initial_voters),
-            node1: TestNode::asserted_start(id(1), initial_voters),
-            node2: TestNode::asserted_start(id(2), initial_voters),
+            node1: TestNode::asserted_start(id(1), &[]),
+            node2: TestNode::asserted_start(id(2), &[]),
         }
     }
 
@@ -375,21 +376,32 @@ impl TestNode {
     }
 
     fn asserted_start(id: NodeId, initial_voters: &[NodeId]) -> Self {
-        let mut node = Node::start(id, initial_voters);
+        let mut node = Node::start(id);
         assert_eq!(node.role(), Role::Follower);
         assert_eq!(node.current_term(), t(0));
         assert_eq!(node.voted_for(), None);
-        assert_action!(node, set_election_timeout());
-
-        assert_action!(
-            node,
-            append_log_entries(&LogEntries::from_iter(
-                prev(t(0), i(0)),
-                [cluster_config_entry(joint(&[id], initial_voters))].into_iter()
-            ))
-        );
-
         assert_no_action!(node);
+
+        if !initial_voters.is_empty() {
+            assert!(node.create_cluster(initial_voters));
+
+            assert_eq!(node.role(), Role::Candidate);
+            assert_action!(node, set_election_timeout());
+            assert_action!(node, save_current_term());
+            assert_action!(node, save_voted_for());
+            assert_action!(
+                node,
+                append_log_entries(&LogEntries::from_iter(
+                    prev(t(0), i(0)),
+                    [cluster_config_entry(joint(initial_voters, &[]))].into_iter()
+                ))
+            );
+            assert!(matches!(
+                node.actions_mut().next(),
+                Some(Action::BroadcastMessage(Message::RequestVoteCall { .. }))
+            ));
+            assert_no_action!(node);
+        }
         Self {
             inner: node,
             actions: Actions::default(),

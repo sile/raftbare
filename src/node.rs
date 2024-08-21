@@ -64,22 +64,30 @@ impl Node {
     ///
     // Theoritically, it's recommended to pass the same initial_voters to all nodes (to replicate the exactly same log entries).
     // But, in practice, it's not necessary. Once the cluster is formed, the appropriate cluster configuration is replicated to all nodes.
-    pub fn start(id: NodeId, initial_voters: &[NodeId]) -> Self {
-        let mut node = Self::new(id);
+    pub fn start(id: NodeId) -> Self {
+        Self::new(id)
+    }
+
+    pub fn create_cluster(&mut self, initial_voters: &[NodeId]) -> bool {
+        if self.log.entries().last_position() != LogPosition::ZERO {
+            return false;
+        }
+        if initial_voters.is_empty() {
+            return false;
+        }
 
         let mut config = ClusterConfig::new();
-        config.voters.insert(id);
-        config.new_voters.extend(initial_voters.iter().copied());
+        config.voters.extend(initial_voters.iter().copied());
         let entry = LogEntry::ClusterConfig(config);
-        node.actions
+        self.actions
             .set(Action::AppendLogEntries(LogEntries::from_iter(
                 LogPosition::ZERO,
                 std::iter::once(entry.clone()),
             )));
-        node.log.entries_mut().push(entry.clone());
-        node.actions.set(Action::SetElectionTimeout);
+        self.log.entries_mut().push(entry.clone());
 
-        node
+        self.transition_to_candidate();
+        true
     }
 
     // # Important
@@ -638,7 +646,7 @@ impl Node {
         // TODO(?): Don't reply if request.leader_sn is old
         //          (the reply will be discarded in the leader side anyway)
         self.reply_append_entries(header);
-        // TODO: reset election timeout
+        self.actions.set(Action::SetElectionTimeout);
     }
 
     fn handle_append_entries_reply(&mut self, header: MessageHeader, last_position: LogPosition) {
