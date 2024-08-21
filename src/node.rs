@@ -72,6 +72,9 @@ impl Node {
         if self.log.entries().last_position() != LogPosition::ZERO {
             return false;
         }
+        if !self.config().voters.is_empty() {
+            return false;
+        }
         if initial_voters.is_empty() {
             return false;
         }
