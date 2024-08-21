@@ -47,26 +47,16 @@ fn create_two_nodes_cluster() {
 
     let reply = node1.asserted_handle_request_vote_call_success(&call);
     let call = node0.asserted_handle_request_vote_reply_majority_vote_granted(&reply);
-    //let reply = node1.asserted_handle_append_entries_call_success(&call);
     let reply = node1.asserted_handle_append_entries_call_failure(&call);
-    node0.asserted_handle_append_entries_reply_success(&reply, false, false);
+    let call = node0.asserted_handle_append_entries_reply_failure(&reply);
 
     assert!(!node0.config().is_joint_consensus());
     assert_eq!(node0.config().voters, initial_voters.into_iter().collect());
 
-    assert!(node1.config().is_joint_consensus());
-    assert_eq!(node1.config().voters, [node1.id()].into_iter().collect());
-    assert_eq!(
-        node1.config().new_voters,
-        initial_voters.into_iter().collect()
-    );
+    assert_eq!(node1.config().unique_nodes().count(), 0);
 
-    let call = node0.take_broadcast_message();
     let reply = node1.asserted_handle_append_entries_call_success(&call);
     node0.asserted_handle_append_entries_reply_success(&reply, true, false);
-
-    assert!(!node1.config().is_joint_consensus());
-    assert_eq!(node1.config().voters, initial_voters.into_iter().collect());
     assert_eq!(node0.config(), node1.config());
 }
 
@@ -283,24 +273,18 @@ impl ThreeNodeCluster {
 
         let call = self.node0.take_broadcast_message();
         for node in &mut [&mut self.node1, &mut self.node2] {
-            let reply = node.asserted_handle_append_entries_call_success(&call);
-            if node.id() == id(1) {
-                self.node0
-                    .asserted_handle_append_entries_reply_success(&reply, true, true);
-            }
-        }
-        assert!(!self.node0.config().is_joint_consensus());
-        assert!(self.node1.config().is_joint_consensus());
-        assert!(self.node2.config().is_joint_consensus());
-
-        let call = self.node0.take_broadcast_message();
-        for node in &mut [&mut self.node1, &mut self.node2] {
+            let reply = node.asserted_handle_append_entries_call_failure(&call);
+            let call = self
+                .node0
+                .asserted_handle_append_entries_reply_failure(&reply);
             let reply = node.asserted_handle_append_entries_call_success(&call);
             if node.id() == id(1) {
                 self.node0
                     .asserted_handle_append_entries_reply_success(&reply, true, false);
             }
         }
+        assert_eq!(self.node0.config(), self.node1.config());
+        assert_eq!(self.node0.config(), self.node2.config());
     }
 
     fn propose_command(&mut self) {
@@ -477,6 +461,7 @@ impl TestNode {
             );
         }
         assert_action!(self, send_message(msg.from(), &reply));
+        assert_action!(self, set_election_timeout());
         assert_no_action!(self);
 
         reply
@@ -612,6 +597,18 @@ impl TestNode {
             );
         }
         assert_no_action!(self);
+    }
+
+    fn asserted_handle_append_entries_reply_failure(&mut self, reply: &Message) -> Message {
+        assert!(matches!(reply, Message::AppendEntriesReply { .. }));
+
+        self.handle_message(reply);
+        let Some(call) = self.actions_mut().send_messages.remove(&reply.from()) else {
+            panic!("No send message action");
+        };
+        assert_no_action!(self);
+
+        call
     }
 
     fn asserted_follower_election_timeout(&mut self) -> Message {
