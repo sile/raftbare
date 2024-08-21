@@ -103,7 +103,7 @@ fn election() {
     let reply = cluster
         .node0
         .asserted_handle_append_entries_call_success(&call);
-    cluster.node1.handle_message(&reply);
+    cluster.node1.handle_message(reply);
     assert!(heartbeat.poll(&cluster.node1).is_accepted());
     assert_no_action!(cluster.node1);
 
@@ -118,7 +118,7 @@ fn election() {
     let reply = cluster
         .node2
         .asserted_handle_append_entries_call_success(&call);
-    cluster.node1.handle_message(&reply);
+    cluster.node1.handle_message(reply);
     assert_no_action!(cluster.node1);
 }
 
@@ -434,7 +434,7 @@ impl TestNode {
         let prev_commit_index = self.commit_index();
         let prev_voted_for = self.voted_for();
 
-        self.handle_message(msg);
+        self.handle_message(msg.clone());
         assert_eq!(
             self.log().entries().last_position(),
             entries.last_position()
@@ -477,7 +477,7 @@ impl TestNode {
         let prev_voted_for = self.voted_for();
         let prev_term = self.current_term();
 
-        self.handle_message(msg);
+        self.handle_message(msg.clone());
         assert_ne!(
             self.log().entries().last_position(),
             entries.last_position()
@@ -514,7 +514,7 @@ impl TestNode {
         };
         assert!(since(self.log().entries(), *last_position).is_none());
 
-        self.handle_message(msg);
+        self.handle_message(msg.clone());
         assert_action!(self, Action::InstallSnapshot(header.from));
         assert_no_action!(self);
 
@@ -539,7 +539,7 @@ impl TestNode {
             unreachable!();
         };
 
-        self.handle_message(msg);
+        self.handle_message(msg.clone());
         let call = append_entries_call(
             self,
             LogEntries::from_iter(
@@ -568,7 +568,7 @@ impl TestNode {
         assert!(matches!(reply, Message::AppendEntriesReply { .. }));
 
         let old_last_position = self.log().entries().last_position();
-        self.handle_message(reply);
+        self.handle_message(reply.clone());
         self.actions = self.inner.actions().clone();
 
         let Message::AppendEntriesReply { last_position, .. } = reply else {
@@ -602,7 +602,7 @@ impl TestNode {
     fn asserted_handle_append_entries_reply_failure(&mut self, reply: &Message) -> Message {
         assert!(matches!(reply, Message::AppendEntriesReply { .. }));
 
-        self.handle_message(reply);
+        self.handle_message(reply.clone());
         let Some(call) = self.actions_mut().send_messages.remove(&reply.from()) else {
             panic!("No send message action");
         };
@@ -670,7 +670,7 @@ impl TestNode {
     fn asserted_handle_request_vote_call_success(&mut self, msg: &Message) -> Message {
         assert!(matches!(msg, Message::RequestVoteCall { .. }));
 
-        self.handle_message(&msg);
+        self.handle_message(msg.clone());
 
         let reply = request_vote_reply(msg.term(), self.id(), msg.seqno(), true);
         assert_action!(self, save_current_term());
@@ -687,7 +687,7 @@ impl TestNode {
     fn asserted_handle_request_vote_call_failed(&mut self, msg: &Message) {
         assert!(matches!(msg, Message::RequestVoteCall { .. }));
 
-        self.handle_message(&msg);
+        self.handle_message(msg.clone());
         assert_action!(self, save_current_term());
         assert_eq!(self.current_term(), msg.term());
         assert_action!(self, Action::SaveVotedFor);
@@ -703,7 +703,7 @@ impl TestNode {
         assert!(matches!(msg, Message::RequestVoteReply { .. }));
 
         let tail = self.log().entries().last_position();
-        self.handle_message(&msg);
+        self.handle_message(msg.clone());
         self.actions = self.inner.actions().clone();
         let call = append_entries_call(
             self,
@@ -724,7 +724,7 @@ impl TestNode {
         assert!(matches!(msg, Message::AppendEntriesCall { .. }));
 
         let tail = self.log().entries().last_position();
-        self.handle_message(&msg);
+        self.handle_message(msg.clone());
         let reply = append_entries_reply(&msg, self);
         assert_action!(self, save_current_term());
         assert_eq!(self.current_term(), msg.term());

@@ -647,9 +647,24 @@ impl Node {
         self.actions.set(Action::SaveVotedFor);
     }
 
-    // TODO: split into handle_request_vote_call, ... to make it possible to return errors
-    // or keep this method but return errors
-    pub fn handle_message(&mut self, msg: &Message) {
+    /// Handles an incoming message from other nodes.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// let mut node = /* ... ; */
+    /// # raftbare::Node::start(raftbare::NodeId::new(1));
+    ///
+    /// let msg = /* ... ; */
+    /// # raftbare::Message::RequestVoteReply { header: raftbare::MessageHeader { from: raftbare::NodeId::new(1), term: raftbare::Term::new(1), seqno: raftbare::MessageSeqNo::new(3) }, vote_granted: true };
+    /// node.handle_message(msg);
+    ///
+    /// // Execute actions queued by the message handling.
+    /// for action in node.actions_mut() {
+    ///     // ...
+    /// }
+    /// ```
+    pub fn handle_message(&mut self, msg: Message) {
         if self.current_term < msg.term() {
             if matches!(msg, Message::RequestVoteCall { .. })
                 && self.role().is_follower()
@@ -664,20 +679,20 @@ impl Node {
             Message::RequestVoteCall {
                 header,
                 last_position,
-            } => self.handle_request_vote_call(*header, *last_position),
+            } => self.handle_request_vote_call(header, last_position),
             Message::RequestVoteReply {
                 header,
                 vote_granted,
-            } => self.handle_request_vote_reply(*header, *vote_granted),
+            } => self.handle_request_vote_reply(header, vote_granted),
             Message::AppendEntriesCall {
                 header,
                 commit_index,
                 entries,
-            } => self.handle_append_entries_call(*header, *commit_index, entries),
+            } => self.handle_append_entries_call(header, commit_index, entries),
             Message::AppendEntriesReply {
                 header,
                 last_position,
-            } => self.handle_append_entries_reply(*header, *last_position),
+            } => self.handle_append_entries_reply(header, last_position),
         }
     }
 
@@ -804,7 +819,7 @@ impl Node {
         &mut self,
         header: MessageHeader,
         leader_commit: LogIndex,
-        entries: &LogEntries,
+        entries: LogEntries,
     ) {
         if !self.role().is_follower() {
             return;
@@ -819,7 +834,7 @@ impl Node {
             self.set_voted_for(Some(header.from));
         }
 
-        if self.try_append_log_entries(entries) {
+        if self.try_append_log_entries(&entries) {
             let next_commit_index = leader_commit
                 .min(self.log.entries().last_position().index)
                 .min(entries.last_position().index); // TODO: Add note comment (entries could be truncated by action implementor)
