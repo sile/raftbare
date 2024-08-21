@@ -551,6 +551,18 @@ impl Node {
         self.propose(LogEntry::ClusterConfig(new_config))
     }
 
+    /// Sends a heartbeat to all followers.
+    ///
+    /// This method returns a [`HeartbeatPromise`] that will be accepted when a majority of followers
+    /// respond with success. If the term changes, the promise will be rejected.
+    ///
+    /// Typically, this method is used to confirm that the current node is still the leader
+    /// before processing a query request about the state machine managed by the user.
+    ///
+    /// # Preconditions
+    ///
+    /// This method returns [`HeartbeatPromise::Rejected`] if the following preconditions are not met:
+    /// - The node is not the leader.
     pub fn heartbeat(&mut self) -> HeartbeatPromise {
         let RoleState::Leader { quorum, .. } = &mut self.role else {
             return HeartbeatPromise::Rejected;
