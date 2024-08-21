@@ -102,6 +102,8 @@ impl Node {
         node.current_term = current_term;
         node.voted_for = voted_for;
         node.log = log;
+        node.actions.set(Action::SetElectionTimeout);
+
         node
     }
 
