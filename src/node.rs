@@ -44,26 +44,39 @@ pub struct Node {
 }
 
 impl Node {
-    /// Starts a new node with the initial voters in the cluster.
+    /// Starts a new node.
     ///
-    /// Conceptually, `Node::start(id0, &[id1, id2])` is equivalent to the following steps:
-
-    /// use raftbase::{Node, NodeId};
+    /// To create a new cluster, call [`Node::create_cluster()`] after starting the node.
     ///
-    /// let id0 = NodeId::new(0);
-    /// let id1 = NodeId::new(1);
-    /// let id2 = NodeId::new(2);
+    /// If the node has already been part of a cluster, please use [`Node::restart()`] instead.
     ///
-    /// // Starts a single-node cluster.
-    /// let node = Node::start(id0, &[]);
+    /// # Examples
     ///
+    /// ```
+    /// use raftbare::{LogPosition, Node, NodeId};
     ///
-    /// Technically, it is possible to exclude `id` from `initial_voters` (although this wouldn't be meaningful).
+    /// // Starts three nodes.
+    /// let mut node0 = Node::start(NodeId::new(0));
+    /// let node1 = Node::start(NodeId::new(1));
+    /// let node2 = Node::start(NodeId::new(2));
     ///
-    /// # Note
+    /// for node in [&node0, &node1, &node2] {
+    ///     assert!(node.role().is_follower());
+    ///     assert_eq!(node.config().unique_nodes().count(), 0);
+    ///     assert_eq!(node.log().last_position(), LogPosition::ZERO);
+    ///     assert!(node.actions().is_empty());
+    /// }
     ///
-    // Theoritically, it's recommended to pass the same initial_voters to all nodes (to replicate the exactly same log entries).
-    // But, in practice, it's not necessary. Once the cluster is formed, the appropriate cluster configuration is replicated to all nodes.
+    /// // Creates a new cluster.
+    /// node0.create_cluster(&[node0.id(), node1.id(), node2.id()]);
+    ///
+    /// assert!(node0.role().is_candidate());
+    /// assert_eq!(node0.config().unique_nodes().count(), 3);
+    /// assert_ne!(node0.log().last_position(), LogPosition::ZERO);
+    /// assert!(!node0.actions().is_empty());
+    ///
+    /// // [NOTE] To complete the cluster creation, the user needs to handle the queued actions.
+    /// ```
     pub fn start(id: NodeId) -> Self {
         Self::new(id)
     }

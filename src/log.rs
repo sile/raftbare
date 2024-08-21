@@ -50,9 +50,16 @@ impl Log {
         &mut self.entries
     }
 
+    /// Returns the position of the last entry in this log.
+    ///
+    /// This is equivalent to `self.entries().last_position()`.
+    pub fn last_position(&self) -> LogPosition {
+        self.entries.last_position()
+    }
+
     /// Returns the log position where the snapshot was taken.
     ///
-    /// This is equivalent to `self.entries().prev_position`.
+    /// This is equivalent to `self.entries().prev_position()`.
     pub fn snapshot_position(&self) -> LogPosition {
         self.entries.prev_position
     }

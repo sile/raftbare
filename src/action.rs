@@ -136,6 +136,17 @@ impl Actions {
             }
         }
     }
+
+    /// Returns [`true`] if there are no actions to execute.
+    pub fn is_empty(&self) -> bool {
+        !self.set_election_timeout
+            && !self.save_current_term
+            && !self.save_voted_for
+            && self.append_log_entries.is_none()
+            && self.broadcast_message.is_none()
+            && self.send_messages.is_empty()
+            && self.install_snapshots.is_empty()
+    }
 }
 
 impl Iterator for Actions {
