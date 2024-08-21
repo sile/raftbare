@@ -752,6 +752,25 @@ impl Node {
         self.transition_to_leader();
     }
 
+    /// Handles an election timeout.
+    ///
+    /// This method is typically invoked when the timeout set by [`Action::SetElectionTimeout`] expires.
+    /// However, it can also be invoked by other means, such as to trigger a new election
+    /// as quickly as possible when the crate user knows there is no leader.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// let mut node = /* ... ; */
+    /// # raftbare::Node::start(raftbare::NodeId::new(1));
+    ///
+    /// node.handle_election_timeout();
+    ///
+    /// // Execute actions queued by the timeout handling.
+    /// for action in node.actions_mut() {
+    ///     // ...
+    /// }
+    /// ```
     pub fn handle_election_timeout(&mut self) {
         match self.role {
             RoleState::Follower => {
