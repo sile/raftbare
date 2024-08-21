@@ -102,14 +102,14 @@ impl ClusterConfig {
     ///     let new_config = node.config().to_joint_consensus(&[adding_node_id], &[]);
     ///     assert_eq!(new_config.voters.len() + 1, new_config.new_voters.len());
     ///
-    ///     node.propose_config(&new_config);
+    ///     node.propose_config(new_config);
     /// }
     ///
     /// fn remove_node(node: &mut Node, removing_id: NodeId) {
     ///     let new_config = node.config().to_joint_consensus(&[], &[removing_id]);
     ///     assert_eq!(new_config.voters.len() - 1, new_config.new_voters.len());
     ///
-    ///     node.propose_config(&new_config);
+    ///     node.propose_config(new_config);
     /// }
     /// ```
     pub fn to_joint_consensus(&self, adding_voters: &[NodeId], removing_voters: &[NodeId]) -> Self {

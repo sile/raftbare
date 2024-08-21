@@ -137,7 +137,7 @@ impl Node {
     ///
     /// # Preconditions
     ///
-    /// This method returns `CommitPromise::Rejected(LogPosition::INVALID)` if:
+    /// This method returns `CommitPromise::Rejected(LogPosition::NEVER)` if the following preconditions are not met:
     /// - This node (`self`) is not a newly started node.
     /// - `initial_voters` is empty.
     ///
@@ -304,7 +304,7 @@ impl Node {
         self.commit_index = index;
     }
 
-    /// Proposes a user-defined command.
+    /// Proposes a user-defined command ([`LogEntry::Command`]).
     ///
     /// This method returns a [`CommitPromise`] that will be resolved when the command is committed or rejected.
     /// Committed commands can be applied to the state machine managed by the user.
@@ -321,7 +321,7 @@ impl Node {
     ///
     /// # Preconditions
     ///
-    /// This method returns `CommitPromise::Rejected(LogPosition::INVALID)` if:
+    /// This method returns `CommitPromise::Rejected(LogPosition::NEVER)` if the following preconditions are not met:
     /// - This node is not the leader
     ///
     /// # Pipelining
@@ -504,15 +504,40 @@ impl Node {
         // TODO: leader not in new config steps down when the new config is committed
     }
 
-    /// Propose a new cluster configuration.
+    /// Proposes a new cluster configuration ([`LogEntry::ClusterConfig`]).
     ///
-    /// # Note
+    /// If `new_config.new_voters` is not empty, the cluster will transition into a joint consensus state.
+    /// In this state, leader elections and commit proposals require a majority from both the old and
+    /// new voters independently.
+    /// Once `new_config` is committed, a new configuration, which includes only the new voters
+    /// (and any non-voters, if any), will be automatically proposed to finalize the joint consensus.
     ///
-    /// error:
-    /// - NotLeader
-    /// - VotersMismatched
-    /// - JointConsensusInProgress
-    pub fn propose_config(&mut self, new_config: &ClusterConfig) -> CommitPromise {
+    /// `new_config.new_voters` does not need to include the self node.
+    /// If it does not, the leader self node will transition to a follower
+    /// when the final configuration is committed.
+    ///
+    /// Note that a change in `new_config.non_voters` does not require a joint consensus.
+    ///
+    /// # Preconditions
+    ///
+    /// This method returns `CommitPromise::Rejected(LogPosition::NEVER)` if the following preconditions are not met:
+    /// - The node is not the leader.
+    /// - `new_config.voters` is different from `self.config().voters`.
+    /// - A joint consensus (i.e., another configuration change) is already in progress.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use raftbare::NodeId;
+    ///
+    /// let mut node = /* ... ; */
+    /// # raftbare::Node::start(NodeId::new(1));
+    ///
+    /// // Propose a new configuration with adding node 4 and removing node 2.
+    /// let new_config = node.config().to_joint_consensus(&[NodeId::new(4)], &[NodeId::new(2)]);
+    /// node.propose_config(new_config);
+    /// ```
+    pub fn propose_config(&mut self, new_config: ClusterConfig) -> CommitPromise {
         if !self.role().is_leader() {
             return CommitPromise::Rejected(self.log().last_position().next());
         }
@@ -523,7 +548,7 @@ impl Node {
             return CommitPromise::Rejected(self.log().last_position().next());
         }
 
-        self.propose(LogEntry::ClusterConfig(new_config.clone()))
+        self.propose(LogEntry::ClusterConfig(new_config))
     }
 
     pub fn heartbeat(&mut self) -> HeartbeatPromise {
