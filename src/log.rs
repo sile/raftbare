@@ -478,6 +478,9 @@ impl LogPosition {
     /// The initial log position ([`Term::ZERO`] and [`LogIndex::ZERO`]).
     pub const ZERO: Self = Self::new(Term::ZERO, LogIndex::ZERO);
 
+    /// A never-happened log position.
+    pub const NEVER: Self = Self::new(Term::new(u64::MAX), LogIndex::ZERO);
+
     pub(crate) const fn new(term: Term, index: LogIndex) -> Self {
         Self { term, index }
     }
