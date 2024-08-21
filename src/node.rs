@@ -46,7 +46,7 @@ pub struct Node {
 impl Node {
     /// Starts a new node.
     ///
-    /// To create a new cluster, call [`Node::create_cluster()`] after starting the node.
+    /// To create a new cluster, please call [`Node::create_cluster()`] after starting the node.
     ///
     /// If the node has already been part of a cluster, please use [`Node::restart()`] instead.
     ///
@@ -81,6 +81,50 @@ impl Node {
         Self::new(id)
     }
 
+    /// Restarts a node.
+    ///
+    /// `current_term`, `voted_for`, and `log` are restored from persistent storage.
+    /// Note that managing the persistent storage is outside the scope of this crate.
+    ///
+    /// ```
+    /// use raftbare::{Node, NodeId};
+    ///
+    /// // Loads the persistent state.
+    /// let current_term = /* ... ; */
+    /// # raftbare::Term::new(1);
+    /// let voted_for = /* ... ; */
+    /// # None;
+    /// let log = /* ... ; */
+    /// # raftbare::Log::new(raftbare::ClusterConfig::new(), raftbare::LogEntries::new(raftbare::LogPosition::ZERO));
+    ///
+    /// // Restarts a node.
+    /// let node = Node::restart(NodeId::new(0), current_term, voted_for, log);
+    /// assert!(node.role().is_follower());
+    ///
+    /// // Unlike `Node::start()`, the restarted node has actions to execute.
+    /// assert!(!node.actions().is_empty());
+    /// ```
+    ///
+    /// # Notes
+    ///
+    /// Raft algorithm assumes the persistent storage is reliable.
+    /// So, for example, if the local log of the node has corrupted or lost some log tail entries,
+    /// it is safest to remove the node from the cluster then add it back as a new node.
+    ///
+    /// In practice, such storage failures are tolerable when the majority of nodes in the cluster are healthy
+    /// (i.e., the restarted node can restored its previous state).
+    /// But be careful, whether the degraded safety guarantee is acceptable or not highly depends on the application.
+    pub fn restart(id: NodeId, current_term: Term, voted_for: Option<NodeId>, log: Log) -> Self {
+        let mut node = Self::new(id);
+
+        node.current_term = current_term;
+        node.voted_for = voted_for;
+        node.log = log;
+        node.actions.set(Action::SetElectionTimeout);
+
+        node
+    }
+
     pub fn create_cluster(&mut self, initial_voters: &[NodeId]) -> bool {
         if self.log.entries().last_position() != LogPosition::ZERO {
             return false;
@@ -104,23 +148,6 @@ impl Node {
 
         self.transition_to_candidate();
         true
-    }
-
-    // # Important
-    //
-    // - Raft assumes the persistent storage is reliable.
-    // - If the storage has corrupted or lost some log data, it's safe to remove the node then add it back to the cluster as a new node.
-    // - Changing the node's ID is recommended.
-    // - (But this crate has limited support for recovering from the corrupted log data)
-    pub fn restart(id: NodeId, current_term: Term, voted_for: Option<NodeId>, log: Log) -> Self {
-        let mut node = Self::new(id);
-
-        node.current_term = current_term;
-        node.voted_for = voted_for;
-        node.log = log;
-        node.actions.set(Action::SetElectionTimeout);
-
-        node
     }
 
     fn new(id: NodeId) -> Self {
