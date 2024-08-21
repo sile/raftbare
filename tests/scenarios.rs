@@ -288,7 +288,7 @@ impl ThreeNodeCluster {
     }
 
     fn propose_command(&mut self) {
-        let mut commit_promise = CommitPromise::Rejected;
+        let mut commit_promise = CommitPromise::Rejected(LogPosition::ZERO);
         let mut call = None;
         for node in &mut [&mut self.node0, &mut self.node1, &mut self.node2] {
             if node.role() != Role::Leader {

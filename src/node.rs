@@ -135,7 +135,7 @@ impl Node {
     ///
     /// To proceed the cluster creation, the user needs to handle the queued actions after calling this method.
     ///
-    /// # Errors
+    /// # Preconditions
     ///
     /// This method returns [`CommitPromise::Rejected`] if:
     /// - This node (`self`) is not a newly started node.
@@ -306,20 +306,77 @@ impl Node {
 
     /// Proposes a user-defined command.
     ///
-    /// This crate does not manage the detail of user-defined commands, so this method takes no arguments.
-    ///
     /// This method returns a [`CommitPromise`] that will be resolved when the command is committed or rejected.
+    /// Committed commands can be applied to the state machine managed by the user.
     ///
-    /// Committed commands can be determined by calling [`Node::commit_index()`] and
-    /// applied to the state machine managed by the user.
+    /// The [`CommitPromise`] is useful for determining when to send the command result back to the client
+    /// that triggered the command (if such a client exists).
+    /// To detect all committed commands that need to be applied to the state machine,
+    /// it is recommended to use [`Node::commit_index()`] since it considers commands proposed by other nodes.
     ///
-    /// # Errors
+    /// Note that this crate does not manage the detail of user-defined commands,
+    /// so this method takes no arguments.
+    /// It is the user's responsibility to mapping the log index of the proposed command to
+    /// the actual command data.
     ///
-    /// Returns [`CommitPromise::Rejected`] if this node is not the leader.
+    /// # Preconditions
+    ///
+    /// This methods returns [`CommitPromise::Rejected`] if:
+    /// - This node is not the leader
     ///
     /// # Examples
     ///
-    /// TODO
+    /// ```
+    /// use raftbare::{LogEntry, LogIndex, NodeId, Node};
+    ///
+    /// let mut node = /* ... ; */
+    /// # Node::start(NodeId::new(0));
+    ///
+    /// let mut commit_promise = node.propose_command();
+    /// if commit_promise.is_rejected() {
+    ///     // `node` is not the leader.
+    ///     if let Some(maybe_leader) = node.voted_for() {
+    ///         // Retry with the possible leader.
+    ///         // ...
+    ///     }
+    ///     return;
+    /// }
+    ///
+    /// // Need to map the log index to the actual command data for
+    /// // exeucting `Action::AppendLogEntries(_)` queued by the node.
+    /// assert!(node.actions().append_log_entries.is_some());
+    /// let index = commit_promise.log_position().index;
+    /// # let _ = index;
+    /// // ... executing actions ...
+    ///
+    /// while commit_promise.poll(&mut node).is_pending() {
+    ///     // ... executing actions ...
+    /// }
+    ///
+    /// if commit_promise.is_rejected() {
+    ///    // Reply to the client that the command is rejected.
+    ///    // ...
+    ///    return;
+    /// }
+    /// assert!(commit_promise.is_accepted());
+    ///
+    /// // Apply all committed commands to the state machine.
+    /// let last_applied_index = /* ...; */
+    /// # raftbare::LogIndex::ZERO;
+    /// for index in (last_applied_index.get() - 1)..=node.commit_index().get() {
+    ///     let index = LogIndex::new(index);
+    ///     if node.log().entries().get_entry(index) != Some(LogEntry::Command) {
+    ///         continue;
+    ///     }
+    ///     // Apply the command to the state machine.
+    ///     // ...
+    ///
+    ///     if index == commit_promise.log_position().index {
+    ///         // Reply to the client that the command is committed.
+    ///         // ...
+    ///     }
+    /// }
+    /// ```
     pub fn propose_command(&mut self) -> CommitPromise {
         if !matches!(self.role, RoleState::Leader { .. }) {
             return CommitPromise::Rejected(self.log().last_position().next());
