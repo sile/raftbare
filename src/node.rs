@@ -336,7 +336,7 @@ impl Node {
     /// if commit_promise.is_rejected() {
     ///     // `node` is not the leader.
     ///     if let Some(maybe_leader) = node.voted_for() {
-    ///         // Retry with the possible leader.
+    ///         // Retry with the possible leader or reply to the client that the command is rejected.
     ///         // ...
     ///     }
     ///     return;
@@ -354,7 +354,7 @@ impl Node {
     /// }
     ///
     /// if commit_promise.is_rejected() {
-    ///    // Reply to the client that the command is rejected.
+    ///    // Retry with another node or reply to the client that the command is rejected.
     ///    // ...
     ///    return;
     /// }
