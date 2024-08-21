@@ -324,6 +324,11 @@ impl Node {
     /// This method returns `CommitPromise::Rejected(LogPosition::INVALID)` if:
     /// - This node is not the leader
     ///
+    /// # Pipelining
+    ///
+    /// [`Node::propose_command()`] can be called multiple times before any action is executed.
+    /// In such cases, the pending actions are consolidated, reducing the overall I/O cost.
+    ///
     /// # Examples
     ///
     /// ```
