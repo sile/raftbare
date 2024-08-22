@@ -90,7 +90,7 @@ impl HeartbeatPromise {
         if node.current_term() != term {
             *self = Self::Rejected;
         } else if let Some(quorum) = node.quorum() {
-            if seqno <= quorum.smallest_majority_seqnum() {
+            if seqno <= quorum.smallest_majority_seqno() {
                 *self = Self::Accepted;
             }
         }

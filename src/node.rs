@@ -404,7 +404,7 @@ impl Node {
                     self.seqno,
                     LogEntries::from_iter(prev_entry, std::iter::once(entry)),
                 )));
-            quorum.update_seqnum(
+            quorum.update_seqno(
                 self.log.latest_config(),
                 self.id,
                 self.seqno,
@@ -452,11 +452,11 @@ impl Node {
             zero,
             self.log.entries().last_position().index,
         );
-        quorum.update_seqnum(config, self.id, MessageSeqNo::UNKNOWN, self.seqno);
+        quorum.update_seqno(config, self.id, MessageSeqNo::UNKNOWN, self.seqno);
 
         for (&id, follower) in followers {
             quorum.update_match_index(config, id, zero, follower.match_index);
-            quorum.update_seqnum(config, id, MessageSeqNo::UNKNOWN, follower.max_sn);
+            quorum.update_seqno(config, id, MessageSeqNo::UNKNOWN, follower.max_sn);
         }
     }
 
@@ -572,7 +572,7 @@ impl Node {
             sn,
             LogEntries::new(self.log.entries().last_position()),
         );
-        quorum.update_seqnum(
+        quorum.update_seqno(
             self.log.latest_config(),
             self.id,
             self.seqno,
@@ -895,7 +895,7 @@ impl Node {
         // TODO: Add old term check
 
         if follower.max_sn < header.seqno {
-            quorum.update_seqnum(
+            quorum.update_seqno(
                 self.log.latest_config(),
                 header.from,
                 follower.max_sn,
@@ -956,7 +956,7 @@ impl Node {
             let RoleState::Leader { quorum, .. } = &mut self.role else {
                 return;
             };
-            quorum.update_seqnum(
+            quorum.update_seqno(
                 self.log.latest_config(),
                 self.id,
                 self.seqno,

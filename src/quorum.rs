@@ -6,8 +6,8 @@ pub struct Quorum {
     majority_indices: BTreeSet<(LogIndex, NodeId)>,
     new_majority_indices: BTreeSet<(LogIndex, NodeId)>,
 
-    majority_seqnums: BTreeSet<(MessageSeqNo, NodeId)>,
-    new_majority_seqnums: BTreeSet<(MessageSeqNo, NodeId)>,
+    majority_seqnos: BTreeSet<(MessageSeqNo, NodeId)>,
+    new_majority_seqnos: BTreeSet<(MessageSeqNo, NodeId)>,
 }
 
 impl Quorum {
@@ -27,14 +27,14 @@ impl Quorum {
             .map(|id| (LogIndex::new(0), id))
             .collect::<BTreeSet<_>>();
 
-        let majority_seqnums = config
+        let majority_seqnos = config
             .voters
             .iter()
             .take(config.voters.len() / 2 + 1)
             .copied()
             .map(|id| (MessageSeqNo::UNKNOWN, id))
             .collect::<BTreeSet<_>>();
-        let new_majority_seqnums = config
+        let new_majority_seqnos = config
             .new_voters
             .iter()
             .take(config.new_voters.len() / 2 + 1)
@@ -45,8 +45,8 @@ impl Quorum {
         Self {
             majority_indices,
             new_majority_indices,
-            majority_seqnums,
-            new_majority_seqnums,
+            majority_seqnos,
+            new_majority_seqnos,
         }
     }
 
@@ -78,37 +78,37 @@ impl Quorum {
     }
 
     // TODO: return Some(LogIndex) if least value is updated
-    pub fn update_seqnum(
+    pub fn update_seqno(
         &mut self,
         config: &ClusterConfig,
         node_id: NodeId,
-        old_seqnum: MessageSeqNo,
-        seqnum: MessageSeqNo,
+        old_seqno: MessageSeqNo,
+        seqno: MessageSeqNo,
     ) {
         if config.voters.contains(&node_id)
-            && self.majority_seqnums.first().map(|(i, _)| *i) < Some(seqnum)
+            && self.majority_seqnos.first().map(|(i, _)| *i) < Some(seqno)
         {
-            self.majority_seqnums.insert((seqnum, node_id));
-            if !self.majority_seqnums.remove(&(old_seqnum, node_id)) {
-                self.majority_seqnums.pop_first();
+            self.majority_seqnos.insert((seqno, node_id));
+            if !self.majority_seqnos.remove(&(old_seqno, node_id)) {
+                self.majority_seqnos.pop_first();
             }
         }
 
         if config.new_voters.contains(&node_id)
-            && self.new_majority_seqnums.first().map(|(i, _)| *i) < Some(seqnum)
+            && self.new_majority_seqnos.first().map(|(i, _)| *i) < Some(seqno)
         {
-            self.new_majority_seqnums.insert((seqnum, node_id));
-            if !self.new_majority_seqnums.remove(&(old_seqnum, node_id)) {
-                self.new_majority_seqnums.pop_first();
+            self.new_majority_seqnos.insert((seqno, node_id));
+            if !self.new_majority_seqnos.remove(&(old_seqno, node_id)) {
+                self.new_majority_seqnos.pop_first();
             }
         }
     }
 
-    pub fn smallest_majority_seqnum(&self) -> MessageSeqNo {
-        let Some(i0) = self.majority_seqnums.first().map(|(i, _)| *i) else {
+    pub fn smallest_majority_seqno(&self) -> MessageSeqNo {
+        let Some(i0) = self.majority_seqnos.first().map(|(i, _)| *i) else {
             unreachable!();
         };
-        if let Some(i1) = self.new_majority_seqnums.first().map(|(i, _)| *i) {
+        if let Some(i1) = self.new_majority_seqnos.first().map(|(i, _)| *i) {
             i0.min(i1)
         } else {
             i0
