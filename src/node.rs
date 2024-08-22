@@ -138,8 +138,8 @@ impl Node {
     /// # Preconditions
     ///
     /// This method returns `CommitPromise::Rejected(LogPosition::NEVER)` if the following preconditions are not met:
-    /// - This node (`self`) is not a newly started node.
-    /// - `initial_voters` is empty.
+    /// - This node (`self`) is a newly started node.
+    /// - `initial_voters` contains at least one node.
     ///
     /// Theoretically, it is acceptable to exclude the self node from `initial_voters`
     /// (although it is not practical).
@@ -322,7 +322,7 @@ impl Node {
     /// # Preconditions
     ///
     /// This method returns `CommitPromise::Rejected(LogPosition::NEVER)` if the following preconditions are not met:
-    /// - This node is not the leader
+    /// - `self.role().is_leader()` is [`true`].
     ///
     /// # Pipelining
     ///
@@ -521,9 +521,9 @@ impl Node {
     /// # Preconditions
     ///
     /// This method returns `CommitPromise::Rejected(LogPosition::NEVER)` if the following preconditions are not met:
-    /// - The node is not the leader.
-    /// - `new_config.voters` is different from `self.config().voters`.
-    /// - A joint consensus (i.e., another configuration change) is already in progress.
+    /// - `self.role().is_leader()` is [`true`].
+    /// - `new_config.voters` is equal to `self.config().voters`.
+    /// - `self.config().is_joint_consensus()` is [`false`] (i.e., there is no other configuration change in progress).
     ///
     /// # Examples
     ///
@@ -562,7 +562,7 @@ impl Node {
     /// # Preconditions
     ///
     /// This method returns [`HeartbeatPromise::Rejected`] if the following preconditions are not met:
-    /// - The node is not the leader.
+    /// - `self.role().is_leader()` is [`true`].
     pub fn heartbeat(&mut self) -> HeartbeatPromise {
         let RoleState::Leader { quorum, .. } = &mut self.role else {
             return HeartbeatPromise::Rejected;
@@ -790,6 +790,7 @@ impl Node {
         last_included_config: &ClusterConfig,
         last_included_position: LogPosition,
     ) -> bool {
+        // TODO(?): Remove this redundant check.
         if last_included_position.index < self.log.entries().prev_position().index {
             return false;
         }
@@ -802,6 +803,20 @@ impl Node {
         self.log.entries().get_config(last_included_position.index) == Some(last_included_config)
     }
 
+    /// Updates this node's log ([`Log`]) to reflect the installation of a snapshot.
+    ///
+    /// If the node log contains `last_included_position`, log entries up to `last_included_position` are removed.
+    /// If `last_included_position` is greater than the last log position, the log is replaced with an empty log starting at `last_included_position`.
+    ///
+    /// Note that how to install a snapshot is outside of the scope of this crate.
+    ///
+    /// # Preconditions
+    ///
+    /// This method returns [`false`] and ignores the installation if the following conditions are not met:
+    /// - `last_included_position` is valid, which means:
+    ///   - `self.log.entries().contains(last_included_position)` is [`true`].
+    ///   - Additionally, if `self.role().is_leader()` is [`false`], it is also acceptable if `last_included_position.index` is greater than `self.log.last_position().index`.
+    /// - `last_included_config` is the configuration at `last_included_position.index`.
     pub fn handle_snapshot_installed(
         &mut self,
         last_included_config: ClusterConfig,
