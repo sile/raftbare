@@ -299,11 +299,6 @@ impl Node {
         self.actions.set(Action::SetElectionTimeout);
     }
 
-    // TODO: remove
-    fn commit(&mut self, index: LogIndex) {
-        self.commit_index = index;
-    }
-
     /// Proposes a user-defined command ([`LogEntry::Command`]).
     ///
     /// This method returns a [`CommitPromise`] that will be resolved when the command is committed or rejected.
@@ -483,7 +478,7 @@ impl Node {
         if self.commit_index < new_commit_index
             && self.log.entries().get_term(new_commit_index) == Some(self.current_term)
         {
-            self.commit(new_commit_index);
+            self.commit_index = new_commit_index;
 
             if self.log.latest_config().is_joint_consensus()
                 && self.log.latest_config_index() <= new_commit_index
@@ -873,7 +868,7 @@ impl Node {
                 .min(self.log.entries().last_position().index)
                 .min(entries.last_position().index); // TODO: Add note comment (entries could be truncated by action implementor)
             if self.commit_index < next_commit_index {
-                self.commit(next_commit_index);
+                self.commit_index = next_commit_index;
             }
         }
 
