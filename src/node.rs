@@ -387,30 +387,24 @@ impl Node {
     fn propose(&mut self, entry: LogEntry) -> CommitPromise {
         debug_assert!(matches!(self.role, RoleState::Leader { .. }));
 
-        // TODO: Create LogEnties instance only once
         let prev_entry = self.log.entries().last_position();
-        self.append_log_entry(&entry); // TODO: merge the same kind actions
+        self.append_log_entry(&entry);
 
         let RoleState::Leader { quorum, followers } = &mut self.role else {
             unreachable!();
         };
 
         if !followers.is_empty() {
-            self.actions
-                .set(Action::BroadcastMessage(Message::append_entries_call(
-                    self.current_term,
-                    self.id,
-                    self.commit_index,
-                    self.seqno,
-                    LogEntries::from_iter(prev_entry, std::iter::once(entry)),
-                )));
-            quorum.update_seqno(
-                self.log.latest_config(),
+            let old_seqno = self.seqno.fetch_and_increment();
+            let call = Message::append_entries_call(
+                self.current_term,
                 self.id,
+                self.commit_index,
                 self.seqno,
-                self.seqno.next(),
+                LogEntries::from_iter(prev_entry, std::iter::once(entry)),
             );
-            self.seqno = self.seqno.next();
+            self.actions.set(Action::BroadcastMessage(call));
+            quorum.update_seqno(self.log.latest_config(), self.id, old_seqno, self.seqno);
         }
         self.actions.set(Action::SetElectionTimeout);
         self.update_commit_index_if_possible(); // TODO: check single node
@@ -458,15 +452,6 @@ impl Node {
             quorum.update_match_index(config, id, zero, follower.match_index);
             quorum.update_seqno(config, id, MessageSeqNo::UNKNOWN, follower.max_sn);
         }
-    }
-
-    // TOOD: remove
-    fn broadcast_message(&mut self, message: Message) {
-        self.actions.set(Action::BroadcastMessage(message));
-    }
-
-    fn send_message(&mut self, destination: NodeId, message: Message) {
-        self.actions.set(Action::SendMessage(destination, message));
     }
 
     fn update_commit_index_if_possible(&mut self) {
@@ -564,24 +549,18 @@ impl Node {
         };
 
         // TODO: handle single node case
-        let sn = self.seqno;
+        let old_seqno = self.seqno.fetch_and_increment();
         let call = Message::append_entries_call(
             self.current_term,
             self.id,
             self.commit_index,
-            sn,
+            self.seqno,
             LogEntries::new(self.log.entries().last_position()),
         );
-        quorum.update_seqno(
-            self.log.latest_config(),
-            self.id,
-            self.seqno,
-            self.seqno.next(),
-        );
-        self.seqno = sn.next();
-        self.broadcast_message(call);
+        quorum.update_seqno(self.log.latest_config(), self.id, old_seqno, self.seqno);
+        self.actions.set(Action::BroadcastMessage(call));
 
-        HeartbeatPromise::new(self.current_term, sn)
+        HeartbeatPromise::new(self.current_term, self.seqno)
     }
 
     fn append_log_entry(&mut self, entry: &LogEntry) {
@@ -693,10 +672,9 @@ impl Node {
 
     fn handle_request_vote_call(&mut self, header: MessageHeader, last_position: LogPosition) {
         if header.term < self.current_term {
-            self.send_message(
-                header.from,
-                Message::request_vote_reply(self.current_term, self.id, header.seqno, false),
-            );
+            let reply =
+                Message::request_vote_reply(self.current_term, self.id, header.seqno, false);
+            self.actions.set(Action::SendMessage(header.from, reply));
             return;
         }
         if self.log.entries().last_position().index > last_position.index {
@@ -709,11 +687,9 @@ impl Node {
         if self.voted_for != Some(header.from) {
             return;
         }
-        // TODO: increment seqno
-        self.send_message(
-            header.from,
-            Message::request_vote_reply(self.current_term, self.id, header.seqno, true),
-        );
+
+        let reply = Message::request_vote_reply(self.current_term, self.id, header.seqno, true);
+        self.actions.set(Action::SendMessage(header.from, reply));
     }
 
     fn handle_request_vote_reply(&mut self, header: MessageHeader, vote_granted: bool) {
@@ -832,16 +808,14 @@ impl Node {
         true
     }
 
-    fn reply_append_entries(&mut self, header: MessageHeader) {
-        self.send_message(
-            header.from,
-            Message::append_entries_reply(
-                self.current_term,
-                self.id,
-                header.seqno,
-                self.log.entries().last_position(),
-            ),
+    fn reply_append_entries(&mut self, call: MessageHeader) {
+        let reply = Message::append_entries_reply(
+            self.current_term,
+            self.id,
+            call.seqno,
+            self.log.last_position(),
         );
+        self.actions.set(Action::SendMessage(call.from, reply));
     }
 
     fn handle_append_entries_call(
@@ -944,25 +918,20 @@ impl Node {
                 // TODO: handle this case (decrement index and retry to find out ...)
                 return;
             };
-            let msg = Message::append_entries_call(
+            let old_seqno = self.seqno.fetch_and_increment();
+            let call = Message::append_entries_call(
                 self.current_term,
                 self.id,
                 self.commit_index,
                 self.seqno,
                 delta,
             );
-            self.actions.set(Action::SendMessage(header.from, msg));
+            self.actions.set(Action::SendMessage(header.from, call));
 
             let RoleState::Leader { quorum, .. } = &mut self.role else {
                 return;
             };
-            quorum.update_seqno(
-                self.log.latest_config(),
-                self.id,
-                self.seqno,
-                self.seqno.next(),
-            );
-            self.seqno = self.seqno.next();
+            quorum.update_seqno(self.log.latest_config(), self.id, old_seqno, self.seqno);
         }
     }
 

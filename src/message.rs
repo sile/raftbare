@@ -192,7 +192,7 @@ pub struct MessageHeader {
 pub struct MessageSeqNo(u64);
 
 impl MessageSeqNo {
-    pub(crate) const UNKNOWN: Self = Self(0);
+    pub(crate) const UNKNOWN: Self = Self(0); // TODO: remove
     pub(crate) const INIT: Self = Self(1);
 
     /// Makes a new [`MessageSeqNo`] instance.
@@ -203,10 +203,6 @@ impl MessageSeqNo {
     /// Returns the value of the sequence number.
     pub const fn get(self) -> u64 {
         self.0
-    }
-
-    pub(crate) const fn next(self) -> Self {
-        Self(self.0 + 1)
     }
 
     pub(crate) fn fetch_and_increment(&mut self) -> Self {
