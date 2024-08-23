@@ -62,16 +62,11 @@ impl Quorum {
         let old_entry = (old_index, node_id);
         let new_entry = (index, node_id);
 
-        if config.voters.contains(&node_id)
-            && self.majority_indices.first().map(|(i, _)| *i) < Some(index)
-        {
-            update_majority_set(&mut self.majority_indices, old_entry, new_entry);
+        if config.voters.contains(&node_id) {
+            update_majority(&mut self.majority_indices, old_entry, new_entry);
         }
-
-        if config.new_voters.contains(&node_id)
-            && self.new_majority_indices.first().map(|(i, _)| *i) < Some(index)
-        {
-            update_majority_set(&mut self.new_majority_indices, old_entry, new_entry);
+        if config.new_voters.contains(&node_id) {
+            update_majority(&mut self.new_majority_indices, old_entry, new_entry);
         }
     }
 
@@ -87,16 +82,11 @@ impl Quorum {
         let old_entry = (old_seqno, node_id);
         let new_entry = (seqno, node_id);
 
-        if config.voters.contains(&node_id)
-            && self.majority_seqnos.first().map(|(i, _)| *i) < Some(seqno)
-        {
-            update_majority_set(&mut self.majority_seqnos, old_entry, new_entry);
+        if config.voters.contains(&node_id) {
+            update_majority(&mut self.majority_seqnos, old_entry, new_entry);
         }
-
-        if config.new_voters.contains(&node_id)
-            && self.new_majority_seqnos.first().map(|(i, _)| *i) < Some(seqno)
-        {
-            update_majority_set(&mut self.new_majority_seqnos, old_entry, new_entry);
+        if config.new_voters.contains(&node_id) {
+            update_majority(&mut self.new_majority_seqnos, old_entry, new_entry);
         }
     }
 
@@ -123,7 +113,15 @@ impl Quorum {
     }
 }
 
-fn update_majority_set<T: Ord>(set: &mut BTreeSet<T>, old_entry: T, new_entry: T) {
+fn update_majority<T: Ord>(
+    set: &mut BTreeSet<(T, NodeId)>,
+    old_entry: (T, NodeId),
+    new_entry: (T, NodeId),
+) {
+    if set.first().map_or(true, |min| new_entry.0 <= min.0) {
+        return;
+    }
+
     set.insert(new_entry);
     if !set.remove(&old_entry) {
         set.pop_first();
