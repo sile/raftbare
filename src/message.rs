@@ -192,8 +192,7 @@ pub struct MessageHeader {
 pub struct MessageSeqNo(u64);
 
 impl MessageSeqNo {
-    pub(crate) const UNKNOWN: Self = Self(0); // TODO: remove
-    pub(crate) const INIT: Self = Self(1);
+    pub(crate) const ZERO: Self = Self(0);
 
     /// Makes a new [`MessageSeqNo`] instance.
     pub const fn new(seqno: u64) -> Self {

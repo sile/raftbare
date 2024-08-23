@@ -185,7 +185,7 @@ impl Node {
             current_term: term,
             log: Log::new(config, LogEntries::new(LogPosition::new(term, index))),
             commit_index: LogIndex::new(0),
-            seqno: MessageSeqNo::INIT,
+            seqno: MessageSeqNo::ZERO,
             actions: Actions::default(),
             role: RoleState::Follower,
         }
@@ -446,11 +446,11 @@ impl Node {
             zero,
             self.log.entries().last_position().index,
         );
-        quorum.update_seqno(config, self.id, MessageSeqNo::UNKNOWN, self.seqno);
+        quorum.update_seqno(config, self.id, MessageSeqNo::ZERO, self.seqno);
 
         for (&id, follower) in followers {
             quorum.update_match_index(config, id, zero, follower.match_index);
-            quorum.update_seqno(config, id, MessageSeqNo::UNKNOWN, follower.max_sn);
+            quorum.update_seqno(config, id, MessageSeqNo::ZERO, follower.max_sn);
         }
     }
 
@@ -966,7 +966,7 @@ impl Follower {
     pub fn new() -> Self {
         Self {
             match_index: LogIndex::new(0),
-            max_sn: MessageSeqNo::UNKNOWN,
+            max_sn: MessageSeqNo::ZERO,
         }
     }
 }
