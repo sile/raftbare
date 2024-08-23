@@ -57,7 +57,7 @@ impl Quorum {
         old_index: LogIndex,
         index: LogIndex,
     ) {
-        debug_assert!(old_index < index);
+        debug_assert!(old_index <= index);
 
         let old_entry = (old_index, node_id);
         let new_entry = (index, node_id);
@@ -88,7 +88,7 @@ impl Quorum {
         old_seqno: MessageSeqNo,
         seqno: MessageSeqNo,
     ) {
-        debug_assert!(old_seqno < seqno);
+        debug_assert!(old_seqno <= seqno);
 
         let old_entry = (old_seqno, node_id);
         let new_entry = (seqno, node_id);
