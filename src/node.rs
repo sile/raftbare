@@ -388,7 +388,7 @@ impl Node {
         debug_assert!(matches!(self.role, RoleState::Leader { .. }));
 
         let prev_entry = self.log.entries().last_position();
-        self.append_log_entry(&entry);
+        self.append_proposed_log_entry(&entry);
 
         let RoleState::Leader { quorum, followers } = &mut self.role else {
             unreachable!();
@@ -407,7 +407,9 @@ impl Node {
             quorum.update_seqno(self.log.latest_config(), self.id, old_seqno, self.seqno);
         }
         self.actions.set(Action::SetElectionTimeout);
-        self.update_commit_index_if_possible(); // TODO: check single node
+
+        // [NOTE] The following call is necessary for a self-node-only cluster.
+        self.update_commit_index_if_possible();
 
         let index = self.log.entries().last_position().index;
         let term = self.current_term;
@@ -416,22 +418,25 @@ impl Node {
     }
 
     fn rebuild_followers(&mut self) {
-        // TODO: refactor
         let RoleState::Leader { followers, .. } = &mut self.role else {
             unreachable!();
         };
+
         let config = self.log.latest_config();
+
+        // Add new followers.
         for id in config.unique_nodes() {
             if id == self.id || followers.contains_key(&id) {
                 continue;
             }
             followers.insert(id, Follower::new());
         }
+
+        // Remove followers not in the latest configuration.
         followers.retain(|id, _| config.contains(*id));
     }
 
     fn rebuild_quorum(&mut self) {
-        // TODO: refactor
         let RoleState::Leader { quorum, followers } = &mut self.role else {
             unreachable!();
         };
@@ -439,18 +444,17 @@ impl Node {
         let config = self.log.latest_config();
         *quorum = Quorum::new(config);
 
-        let zero = LogIndex::new(0);
         quorum.update_match_index(
             config,
             self.id,
-            zero,
-            self.log.entries().last_position().index,
+            LogIndex::ZERO,
+            self.log.last_position().index,
         );
         quorum.update_seqno(config, self.id, MessageSeqNo::ZERO, self.seqno);
 
         for (&id, follower) in followers {
-            quorum.update_match_index(config, id, zero, follower.match_index);
-            quorum.update_seqno(config, id, MessageSeqNo::ZERO, follower.max_sn);
+            quorum.update_match_index(config, id, LogIndex::ZERO, follower.match_index);
+            quorum.update_seqno(config, id, MessageSeqNo::ZERO, follower.max_seqno);
         }
     }
 
@@ -563,37 +567,33 @@ impl Node {
         HeartbeatPromise::new(self.current_term, self.seqno)
     }
 
-    fn append_log_entry(&mut self, entry: &LogEntry) {
-        debug_assert!(self.role().is_leader());
+    fn append_proposed_log_entry(&mut self, entry: &LogEntry) {
+        let RoleState::Leader { quorum, .. } = &mut self.role else {
+            unreachable!();
+        };
 
-        let prev_index = self.log.entries().last_position().index;
+        let old_index = self.log.last_position().index;
         self.actions
             .set(Action::AppendLogEntries(LogEntries::from_iter(
-                self.log.entries().last_position(),
+                self.log.last_position(),
                 std::iter::once(entry.clone()),
             )));
         self.log.entries_mut().push(entry.clone());
 
-        // TODO: unnecessary condition?
-        if let RoleState::Leader { quorum, .. } = &mut self.role {
-            quorum.update_match_index(
-                self.log.latest_config(),
-                self.id,
-                prev_index,
-                self.log.entries().last_position().index,
-            );
-        }
+        quorum.update_match_index(
+            self.log.latest_config(),
+            self.id,
+            old_index,
+            self.log.last_position().index,
+        );
 
-        if let LogEntry::ClusterConfig(_) = entry {
-            // TODO: unnecessary condition?
-            if self.role().is_leader() {
-                self.rebuild_followers();
-                self.rebuild_quorum();
-            }
+        if matches!(entry, LogEntry::ClusterConfig(_)) {
+            self.rebuild_followers();
+            self.rebuild_quorum();
         }
     }
 
-    fn try_append_log_entries(&mut self, entries: &LogEntries) -> bool {
+    fn append_log_entries_from_leader(&mut self, entries: &LogEntries) -> bool {
         debug_assert!(self.role().is_follower());
 
         if self.log.entries().contains(entries.last_position()) {
@@ -837,7 +837,7 @@ impl Node {
             self.set_voted_for(Some(header.from));
         }
 
-        if self.try_append_log_entries(&entries) {
+        if self.append_log_entries_from_leader(&entries) {
             let next_commit_index = leader_commit
                 .min(self.log.entries().last_position().index)
                 .min(entries.last_position().index); // TODO: Add note comment (entries could be truncated by action implementor)
@@ -868,14 +868,14 @@ impl Node {
         //       => no term check prohibits this case)
         // TODO: Add old term check
 
-        if follower.max_sn < header.seqno {
+        if follower.max_seqno < header.seqno {
             quorum.update_seqno(
                 self.log.latest_config(),
                 header.from,
-                follower.max_sn,
+                follower.max_seqno,
                 header.seqno,
             );
-            follower.max_sn = header.seqno;
+            follower.max_seqno = header.seqno;
         }
 
         if last_position.index < follower.match_index {
@@ -959,14 +959,14 @@ pub enum RoleState {
 #[derive(Debug, Clone)]
 pub struct Follower {
     pub match_index: LogIndex,
-    pub max_sn: MessageSeqNo,
+    pub max_seqno: MessageSeqNo,
 }
 
 impl Follower {
     pub fn new() -> Self {
         Self {
             match_index: LogIndex::new(0),
-            max_sn: MessageSeqNo::ZERO,
+            max_seqno: MessageSeqNo::ZERO,
         }
     }
 }
