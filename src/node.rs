@@ -150,7 +150,7 @@ impl Node {
     /// Therefore, including nodes that are already part of another cluster in the `initial_voters`
     /// will result in undefined behavior.
     pub fn create_cluster(&mut self, initial_voters: &[NodeId]) -> CommitPromise {
-        if self.log.entries().last_position() != LogPosition::ZERO {
+        if self.log.last_position() != LogPosition::ZERO {
             return CommitPromise::Rejected(LogPosition::INVALID);
         }
         if !self.config().voters.is_empty() {
@@ -176,15 +176,13 @@ impl Node {
     }
 
     fn new(id: NodeId) -> Self {
-        let term = Term::new(0);
-        let index = LogIndex::new(0);
         let config = ClusterConfig::new();
         Self {
             id,
             voted_for: None,
-            current_term: term,
-            log: Log::new(config, LogEntries::new(LogPosition::new(term, index))),
-            commit_index: LogIndex::new(0),
+            current_term: Term::ZERO,
+            log: Log::new(config, LogEntries::new(LogPosition::ZERO)),
+            commit_index: LogIndex::ZERO,
             seqno: MessageSeqNo::ZERO,
             actions: Actions::default(),
             role: RoleState::Follower,
