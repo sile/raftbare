@@ -474,7 +474,7 @@ impl Node {
             unreachable!();
         };
 
-        let new_commit_index = quorum.commit_index();
+        let new_commit_index = quorum.smallest_majority_index();
         if self.commit_index < new_commit_index
             && self.log.entries().get_term(new_commit_index) == Some(self.current_term)
         {

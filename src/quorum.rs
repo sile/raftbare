@@ -65,19 +65,13 @@ impl Quorum {
         if config.voters.contains(&node_id)
             && self.majority_indices.first().map(|(i, _)| *i) < Some(index)
         {
-            self.majority_indices.insert(new_entry);
-            if !self.majority_indices.remove(&old_entry) {
-                self.majority_indices.pop_first();
-            }
+            update_majority_set(&mut self.majority_indices, old_entry, new_entry);
         }
 
         if config.new_voters.contains(&node_id)
             && self.new_majority_indices.first().map(|(i, _)| *i) < Some(index)
         {
-            self.new_majority_indices.insert(new_entry);
-            if !self.new_majority_indices.remove(&old_entry) {
-                self.new_majority_indices.pop_first();
-            }
+            update_majority_set(&mut self.new_majority_indices, old_entry, new_entry);
         }
     }
 
@@ -96,19 +90,13 @@ impl Quorum {
         if config.voters.contains(&node_id)
             && self.majority_seqnos.first().map(|(i, _)| *i) < Some(seqno)
         {
-            self.majority_seqnos.insert(new_entry);
-            if !self.majority_seqnos.remove(&old_entry) {
-                self.majority_seqnos.pop_first();
-            }
+            update_majority_set(&mut self.majority_seqnos, old_entry, new_entry);
         }
 
         if config.new_voters.contains(&node_id)
             && self.new_majority_seqnos.first().map(|(i, _)| *i) < Some(seqno)
         {
-            self.new_majority_seqnos.insert(new_entry);
-            if !self.new_majority_seqnos.remove(&old_entry) {
-                self.new_majority_seqnos.pop_first();
-            }
+            update_majority_set(&mut self.new_majority_seqnos, old_entry, new_entry);
         }
     }
 
@@ -123,7 +111,7 @@ impl Quorum {
         }
     }
 
-    pub fn commit_index(&self) -> LogIndex {
+    pub fn smallest_majority_index(&self) -> LogIndex {
         let Some(i0) = self.majority_indices.first().map(|(i, _)| *i) else {
             unreachable!();
         };
@@ -132,5 +120,12 @@ impl Quorum {
         } else {
             i0
         }
+    }
+}
+
+fn update_majority_set<T: Ord>(set: &mut BTreeSet<T>, old_entry: T, new_entry: T) {
+    set.insert(new_entry);
+    if !set.remove(&old_entry) {
+        set.pop_first();
     }
 }
