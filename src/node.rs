@@ -761,11 +761,7 @@ impl Node {
         last_included_config: &ClusterConfig,
         last_included_position: LogPosition,
     ) -> bool {
-        // TODO(?): Remove this redundant check.
-        if last_included_position.index < self.log.entries().prev_position().index {
-            return false;
-        }
-        if self.log.entries().last_position().index < last_included_position.index {
+        if self.commit_index() < last_included_position.index {
             return self.role() != Role::Leader;
         }
         if !self.log.entries().contains(last_included_position) {
@@ -786,7 +782,7 @@ impl Node {
     /// This method returns [`false`] and ignores the installation if the following conditions are not met:
     /// - `last_included_position` is valid, which means:
     ///   - `self.log.entries().contains(last_included_position)` is [`true`].
-    ///   - Additionally, if `self.role().is_leader()` is [`false`], it is also acceptable if `last_included_position.index` is greater than `self.log.last_position().index`.
+    ///   - Additionally, if `self.role().is_leader()` is [`false`], it is also acceptable if `last_included_position.index` is greater than `self.commit_index()`.
     /// - `last_included_config` is the configuration at `last_included_position.index`.
     pub fn handle_snapshot_installed(
         &mut self,
@@ -846,8 +842,6 @@ impl Node {
             }
         }
 
-        // TODO(?): Don't reply if request.leader_sn is old
-        //          (the reply will be discarded in the leader side anyway)
         self.reply_append_entries(header);
         self.actions.set(Action::SetElectionTimeout);
     }
@@ -945,7 +939,7 @@ impl Node {
 }
 
 #[derive(Debug, Clone)]
-pub enum RoleState {
+enum RoleState {
     Follower,
     Candidate {
         granted_votes: BTreeSet<NodeId>,
@@ -957,7 +951,7 @@ pub enum RoleState {
 }
 
 #[derive(Debug, Clone)]
-pub struct Follower {
+struct Follower {
     pub match_index: LogIndex,
     pub max_seqno: MessageSeqNo,
 }
