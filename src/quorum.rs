@@ -50,7 +50,6 @@ impl Quorum {
         }
     }
 
-    // TODO: return Some(LogIndex) if least value is updated
     pub fn update_match_index(
         &mut self,
         config: &ClusterConfig,
@@ -58,11 +57,16 @@ impl Quorum {
         old_index: LogIndex,
         index: LogIndex,
     ) {
+        debug_assert!(old_index < index);
+
+        let old_entry = (old_index, node_id);
+        let new_entry = (index, node_id);
+
         if config.voters.contains(&node_id)
             && self.majority_indices.first().map(|(i, _)| *i) < Some(index)
         {
-            self.majority_indices.insert((index, node_id));
-            if !self.majority_indices.remove(&(old_index, node_id)) {
+            self.majority_indices.insert(new_entry);
+            if !self.majority_indices.remove(&old_entry) {
                 self.majority_indices.pop_first();
             }
         }
@@ -70,14 +74,13 @@ impl Quorum {
         if config.new_voters.contains(&node_id)
             && self.new_majority_indices.first().map(|(i, _)| *i) < Some(index)
         {
-            self.new_majority_indices.insert((index, node_id));
-            if !self.new_majority_indices.remove(&(old_index, node_id)) {
+            self.new_majority_indices.insert(new_entry);
+            if !self.new_majority_indices.remove(&old_entry) {
                 self.new_majority_indices.pop_first();
             }
         }
     }
 
-    // TODO: return Some(LogIndex) if least value is updated
     pub fn update_seqno(
         &mut self,
         config: &ClusterConfig,
@@ -85,11 +88,16 @@ impl Quorum {
         old_seqno: MessageSeqNo,
         seqno: MessageSeqNo,
     ) {
+        debug_assert!(old_seqno < seqno);
+
+        let old_entry = (old_seqno, node_id);
+        let new_entry = (seqno, node_id);
+
         if config.voters.contains(&node_id)
             && self.majority_seqnos.first().map(|(i, _)| *i) < Some(seqno)
         {
-            self.majority_seqnos.insert((seqno, node_id));
-            if !self.majority_seqnos.remove(&(old_seqno, node_id)) {
+            self.majority_seqnos.insert(new_entry);
+            if !self.majority_seqnos.remove(&old_entry) {
                 self.majority_seqnos.pop_first();
             }
         }
@@ -97,8 +105,8 @@ impl Quorum {
         if config.new_voters.contains(&node_id)
             && self.new_majority_seqnos.first().map(|(i, _)| *i) < Some(seqno)
         {
-            self.new_majority_seqnos.insert((seqno, node_id));
-            if !self.new_majority_seqnos.remove(&(old_seqno, node_id)) {
+            self.new_majority_seqnos.insert(new_entry);
+            if !self.new_majority_seqnos.remove(&old_entry) {
                 self.new_majority_seqnos.pop_first();
             }
         }
