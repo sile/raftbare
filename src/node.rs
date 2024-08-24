@@ -298,7 +298,7 @@ impl Node {
     }
 
     fn transition_to_follower(&mut self, term: Term) {
-        debug_assert!(self.current_term < term);
+        debug_assert!(self.current_term <= term);
 
         self.set_current_term(term);
         self.set_voted_for(None);
@@ -471,17 +471,23 @@ impl Node {
         {
             return;
         }
+        // [NOTE] Commit index is updated.
 
         self.commit_index = new_commit_index;
 
         if new_commit_index < self.log.latest_config_index() {
             return;
         }
+        // [NOTE] The latest configuration has been committed.
 
         if self.log.latest_config().is_joint_consensus() {
             self.finalize_joint_consensus();
         } else if !self.log.latest_config().voters.contains(&self.id) {
+            // The leader, who is not a voter in the latest committed configuration, steps down here.
             //
+            // The new election will begin after the followers detect the leader's absence
+            // (i.e., when the election timeout expires on the followers).
+            self.transition_to_follower(self.current_term);
         }
     }
 
@@ -494,8 +500,6 @@ impl Node {
         debug_assert!(!new_config.voters.is_empty());
 
         self.propose(LogEntry::ClusterConfig(new_config));
-
-        // TODO: leader not in new config steps down when the new config is committed
     }
 
     /// Proposes a new cluster configuration ([`LogEntry::ClusterConfig`]).
