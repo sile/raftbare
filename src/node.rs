@@ -276,6 +276,10 @@ impl Node {
     }
 
     fn transition_to_candidate(&mut self) {
+        if self.log.latest_config().non_voters.contains(&self.id) {
+            return;
+        }
+
         self.set_current_term(self.current_term.next());
         self.set_voted_for(Some(self.id));
         self.role = RoleState::Candidate {
@@ -462,16 +466,22 @@ impl Node {
         };
 
         let new_commit_index = quorum.smallest_majority_index();
-        if self.commit_index < new_commit_index
-            && self.log.entries().get_term(new_commit_index) == Some(self.current_term)
+        if new_commit_index <= self.commit_index
+            || self.log.entries().get_term(new_commit_index) != Some(self.current_term)
         {
-            self.commit_index = new_commit_index;
+            return;
+        }
 
-            if self.log.latest_config().is_joint_consensus()
-                && self.log.latest_config_index() <= new_commit_index
-            {
-                self.finalize_joint_consensus();
-            }
+        self.commit_index = new_commit_index;
+
+        if new_commit_index < self.log.latest_config_index() {
+            return;
+        }
+
+        if self.log.latest_config().is_joint_consensus() {
+            self.finalize_joint_consensus();
+        } else if !self.log.latest_config().voters.contains(&self.id) {
+            //
         }
     }
 
@@ -481,6 +491,8 @@ impl Node {
 
         let mut new_config = self.log.latest_config().clone();
         new_config.voters = std::mem::take(&mut new_config.new_voters);
+        debug_assert!(!new_config.voters.is_empty());
+
         self.propose(LogEntry::ClusterConfig(new_config));
 
         // TODO: leader not in new config steps down when the new config is committed
@@ -505,6 +517,7 @@ impl Node {
     /// This method returns `CommitPromise::Rejected(LogPosition::NEVER)` if the following preconditions are not met:
     /// - `self.role().is_leader()` is [`true`].
     /// - `new_config.voters` is equal to `self.config().voters`.
+    /// - A node is either a voter or a non-voter in the new configuration (not both).
     /// - `self.config().is_joint_consensus()` is [`false`] (i.e., there is no other configuration change in progress).
     ///
     /// # Examples
@@ -524,6 +537,11 @@ impl Node {
             return CommitPromise::Rejected(LogPosition::INVALID);
         }
         if self.log.latest_config().voters != new_config.voters {
+            return CommitPromise::Rejected(LogPosition::INVALID);
+        }
+        if !new_config.voters.is_disjoint(&new_config.non_voters)
+            || !new_config.new_voters.is_disjoint(&new_config.non_voters)
+        {
             return CommitPromise::Rejected(LogPosition::INVALID);
         }
         if self.log.latest_config().is_joint_consensus() {
