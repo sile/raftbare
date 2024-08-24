@@ -848,7 +848,11 @@ impl Node {
         self.actions.set(Action::SetElectionTimeout);
     }
 
-    fn handle_append_entries_reply(&mut self, header: MessageHeader, last_position: LogPosition) {
+    fn handle_append_entries_reply(
+        &mut self,
+        header: MessageHeader,
+        follower_last_position: LogPosition,
+    ) {
         let RoleState::Leader {
             followers, quorum, ..
         } = &mut self.role
@@ -883,10 +887,10 @@ impl Node {
         );
         follower.max_seqno = header.seqno;
 
-        if !self.log.entries().contains(last_position) {
-            if let Some(term) = self.log.entries().get_term(last_position.index) {
+        if !self.log.entries().contains(follower_last_position) {
+            if let Some(term) = self.log.entries().get_term(follower_last_position.index) {
                 // Delete the follower's last log entry.
-                let index = last_position.index;
+                let index = follower_last_position.index;
                 let seqno = self.next_seqno();
                 let call = Message::append_entries_call(
                     self.current_term,
@@ -896,12 +900,12 @@ impl Node {
                     LogEntries::new(LogPosition { term, index }),
                 );
                 self.actions.set(Action::SendMessage(header.from, call));
-            } else if self.log.last_position().index < last_position.index {
+            } else if self.log.last_position().index < follower_last_position.index {
                 // Something seems strange.
                 // However, as the leader log grows, a divergence point will be detected.
             } else {
                 // The follower's log is too old. Needs to install a snapshot.
-                debug_assert!(last_position.index <= self.log.snapshot_position().index);
+                debug_assert!(follower_last_position.index <= self.log.snapshot_position().index);
                 self.actions.set(Action::InstallSnapshot(header.from));
             }
 
@@ -911,11 +915,12 @@ impl Node {
         // [NOTE]
         // This check should be done here because `self.log.last_position()` may be updated in
         // `self.update_commit_index_if_possible()`.
-        let is_follower_up_to_date = last_position.index == self.log.last_position().index;
+        let is_follower_up_to_date = follower_last_position.index == self.log.last_position().index;
 
-        if follower.match_index < last_position.index {
+        #[allow(clippy::comparison_chain)]
+        if follower.match_index < follower_last_position.index {
             let old_match_index = follower.match_index;
-            follower.match_index = last_position.index;
+            follower.match_index = follower_last_position.index;
 
             quorum.update_match_index(
                 self.log.latest_config(),
@@ -927,7 +932,7 @@ impl Node {
             if self.commit_index < follower.match_index {
                 self.update_commit_index_if_possible();
             }
-        } else if last_position.index < follower.match_index {
+        } else if follower_last_position.index < follower.match_index {
             // [NOTE]
             // The Raft algorithm assumes that storage is reliable.
             // Therefore, theoretically, this case should not occur.
@@ -942,9 +947,9 @@ impl Node {
             // The follower's log is up-to-date.
             return;
         }
-        debug_assert!(self.log.entries().contains(last_position));
+        debug_assert!(self.log.entries().contains(follower_last_position));
 
-        let Some(delta) = self.log.entries().since(last_position) else {
+        let Some(delta) = self.log.entries().since(follower_last_position) else {
             unreachable!();
         };
         let seqno = self.next_seqno();
