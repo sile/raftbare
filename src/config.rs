@@ -58,6 +58,10 @@ pub struct ClusterConfig {
     ///
     /// Non-voting nodes do not participate in the leader election and log entry commit quorum,
     /// but they do replicate log entries from the leader.
+    /// However, they can become the leader if they gain votes from a majority of the voters.
+    /// If this behavior is not desired, please disregard
+    /// [`Action::SetElectionTimeout`](crate::Action::SetElectionTimeout) for non-voting nodes
+    /// to prevent their transition from follower to candidate.
     ///
     /// When adding more than half of the current number of nodes to a cluster that has a large snapshot or many log entries,
     /// it is recommended to first add the new nodes as non-voters to avoid blocking subsequent log commits.
