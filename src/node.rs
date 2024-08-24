@@ -597,7 +597,7 @@ impl Node {
             unreachable!();
         };
 
-        let old_index = self.log.last_position().index;
+        let old_last_index = self.log.last_position().index;
         self.actions
             .set(Action::AppendLogEntries(LogEntries::from_iter(
                 self.log.last_position(),
@@ -608,7 +608,7 @@ impl Node {
         quorum.update_match_index(
             self.log.latest_config(),
             self.id,
-            old_index,
+            old_last_index,
             self.log.last_position().index,
         );
 
@@ -641,8 +641,10 @@ impl Node {
         }
 
         // Append.
-        self.actions.set(Action::AppendLogEntries(entries.clone()));
-        self.log.entries_mut().append(entries);
+        let entries = entries.strip_common_prefix(self.log.entries());
+        self.log.entries_mut().append(&entries);
+        self.actions.set(Action::AppendLogEntries(entries));
+
         true
     }
 

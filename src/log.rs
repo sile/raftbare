@@ -426,6 +426,31 @@ impl LogEntries {
             .extend(entries.configs.iter().map(|(k, v)| (*k, v.clone())));
         self.last_position = entries.last_position;
     }
+
+    pub(crate) fn strip_common_prefix(&self, local_entries: &Self) -> Self {
+        debug_assert!(local_entries.contains(self.prev_position));
+        debug_assert!(!local_entries.contains(self.last_position));
+
+        if self.prev_position == local_entries.last_position {
+            return self.clone();
+        } else if self.contains(local_entries.last_position) {
+            return self
+                .since(local_entries.last_position)
+                .expect("unreachable");
+        }
+
+        let mut last_common_position = self.prev_position;
+        for (&index, &term) in &self.terms {
+            let position = LogPosition { term, index };
+            if !local_entries.contains(position) {
+                last_common_position.index = LogIndex::new(index.get() - 1);
+                debug_assert!(local_entries.contains(last_common_position));
+                return self.since(last_common_position).expect("unreachable");
+            }
+            last_common_position.term = term;
+        }
+        unreachable!();
+    }
 }
 
 impl std::iter::Extend<LogEntry> for LogEntries {
@@ -608,11 +633,79 @@ mod tests {
         assert_eq!(entries.since(pos(0, 3)), None); // Term mismatch
     }
 
+    #[test]
+    fn log_entries_strip_common_prefix() {
+        let local_entries = entries(
+            LogPosition::ZERO,
+            &[
+                LogEntry::Term(Term::ZERO),
+                LogEntry::Command,
+                LogEntry::Term(Term::new(1)),
+                LogEntry::Command,
+                LogEntry::Command,
+            ],
+        );
+        assert_eq!(local_entries.last_position, pos(1, 5));
+
+        // remove.prev == local.last
+        let remote_entries = entries(pos(1, 5), &[LogEntry::Command]);
+        assert_eq!(
+            remote_entries
+                .strip_common_prefix(&local_entries)
+                .prev_position,
+            pos(1, 5)
+        );
+
+        // No divergence
+        let remote_entries = entries(pos(1, 4), &[LogEntry::Command, LogEntry::Command]);
+        assert_eq!(
+            remote_entries
+                .strip_common_prefix(&local_entries)
+                .prev_position,
+            pos(1, 5)
+        );
+
+        // Divergence
+        let remote_entries = entries(
+            pos(1, 4),
+            &[
+                LogEntry::Term(Term::new(2)),
+                LogEntry::Command,
+                LogEntry::Term(Term::new(3)),
+            ],
+        );
+        assert_eq!(
+            remote_entries
+                .strip_common_prefix(&local_entries)
+                .prev_position,
+            pos(1, 4)
+        );
+
+        let remote_entries = entries(
+            pos(1, 3),
+            &[
+                LogEntry::Term(Term::new(1)),
+                LogEntry::Term(Term::new(2)),
+                LogEntry::Command,
+            ],
+        );
+        assert_eq!(
+            remote_entries
+                .strip_common_prefix(&local_entries)
+                .prev_position,
+            pos(1, 4)
+        );
+    }
+
     fn two_entries(prev_position: LogPosition, entry0: LogEntry, entry1: LogEntry) -> LogEntries {
         let mut entries = LogEntries::new(prev_position);
         entries.push(entry0);
         entries.push(entry1);
         entries
+    }
+
+    fn entries(prev_position: LogPosition, entries: &[LogEntry]) -> LogEntries {
+        LogEntries::from_iter(prev_position, entries.iter().cloned())
     }
 
     fn i(index: u64) -> LogIndex {
