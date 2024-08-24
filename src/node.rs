@@ -664,6 +664,10 @@ impl Node {
                     .checked_sub(self.log.snapshot_position().index.get() + 1);
                 if let Some(new_len) = new_len {
                     self.log.entries_mut().truncate(new_len as usize);
+                    debug_assert_eq!(
+                        self.log.last_position().index.get() + 1,
+                        entries.prev_position().index.get()
+                    );
                 } else {
                     // The local snapshot does not match the leader's log.
                     // Such a situation should never occur if the Raft properties are satisfied.
