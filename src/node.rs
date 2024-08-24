@@ -681,10 +681,9 @@ impl Node {
                 && !matches!(self.role, RoleState::Candidate { .. })
                 && self.voted_for.map_or(false, |id| id != msg.from())
             {
-                // This message may originate from a removed node and should be ignored
-                // to prevent disrupting the cluster.
-                //
-                // Please refer to the section 6 of the Raft paper for more details.
+                // This message might have been sent from a removed node and should be ignored
+                // to prevent disruption of the cluster.
+                // For more details, please refer to section 6 of the Raft paper.
                 return;
             }
             self.transition_to_follower(msg.term());
@@ -762,97 +761,6 @@ impl Node {
         }
 
         self.transition_to_leader();
-    }
-
-    /// Handles an election timeout.
-    ///
-    /// This method is typically invoked when the timeout set by [`Action::SetElectionTimeout`] expires.
-    /// However, it can also be invoked by other means, such as to trigger a new election
-    /// as quickly as possible when the crate user knows there is no leader.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// let mut node = /* ... ; */
-    /// # raftbare::Node::start(raftbare::NodeId::new(1));
-    ///
-    /// node.handle_election_timeout();
-    ///
-    /// // Execute actions queued by the timeout handling.
-    /// for action in node.actions_mut() {
-    ///     // ...
-    /// }
-    /// ```
-    pub fn handle_election_timeout(&mut self) {
-        match self.role {
-            RoleState::Follower => {
-                self.transition_to_candidate();
-            }
-            RoleState::Candidate { .. } => {
-                self.transition_to_candidate();
-            }
-            RoleState::Leader { .. } => {
-                self.heartbeat();
-            }
-        }
-    }
-
-    fn is_valid_snapshot(
-        &self,
-        last_included_config: &ClusterConfig,
-        last_included_position: LogPosition,
-    ) -> bool {
-        if self.commit_index() < last_included_position.index {
-            return self.role() != Role::Leader;
-        }
-        if !self.log.entries().contains(last_included_position) {
-            return false;
-        }
-        self.log.entries().get_config(last_included_position.index) == Some(last_included_config)
-    }
-
-    /// Updates this node's log ([`Log`]) to reflect the installation of a snapshot.
-    ///
-    /// If the node log contains `last_included_position`, log entries up to `last_included_position` are removed.
-    /// If `last_included_position` is greater than the last log position, the log is replaced with an empty log starting at `last_included_position`.
-    ///
-    /// Note that how to install a snapshot is outside of the scope of this crate.
-    ///
-    /// # Preconditions
-    ///
-    /// This method returns [`false`] and ignores the installation if the following conditions are not met:
-    /// - `last_included_position` is valid, which means:
-    ///   - `self.log.entries().contains(last_included_position)` is [`true`].
-    ///   - Additionally, if `self.role().is_leader()` is [`false`], it is also acceptable if `last_included_position.index` is greater than `self.commit_index()`.
-    /// - `last_included_config` is the configuration at `last_included_position.index`.
-    pub fn handle_snapshot_installed(
-        &mut self,
-        last_included_config: ClusterConfig,
-        last_included_position: LogPosition,
-    ) -> bool {
-        if !self.is_valid_snapshot(&last_included_config, last_included_position) {
-            return false;
-        }
-        if let Some(entries) = self.log.entries().since(last_included_position) {
-            self.log = Log::new(last_included_config, entries);
-        } else {
-            self.log = Log::new(
-                last_included_config,
-                LogEntries::new(last_included_position),
-            );
-            self.actions.append_log_entries = None;
-        }
-        true
-    }
-
-    fn reply_append_entries(&mut self, call: MessageHeader) {
-        let reply = Message::append_entries_reply(
-            self.current_term,
-            self.id,
-            call.seqno,
-            self.log.last_position(),
-        );
-        self.actions.set(Action::SendMessage(call.from, reply));
     }
 
     fn handle_append_entries_call(
@@ -967,6 +875,102 @@ impl Node {
             );
             self.actions.set(Action::SendMessage(header.from, call));
         }
+    }
+
+    fn reply_append_entries(&mut self, call: MessageHeader) {
+        let reply = Message::append_entries_reply(
+            self.current_term,
+            self.id,
+            call.seqno,
+            self.log.last_position(),
+        );
+        self.actions.set(Action::SendMessage(call.from, reply));
+    }
+
+    /// Handles an election timeout.
+    ///
+    /// This method is typically invoked when the timeout set by [`Action::SetElectionTimeout`] expires.
+    /// However, it can also be invoked by other means, such as to trigger a new election
+    /// as quickly as possible when the crate user knows there is no leader.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// let mut node = /* ... ; */
+    /// # raftbare::Node::start(raftbare::NodeId::new(1));
+    ///
+    /// node.handle_election_timeout();
+    ///
+    /// // Execute actions queued by the timeout handling.
+    /// for action in node.actions_mut() {
+    ///     // ...
+    /// }
+    /// ```
+    pub fn handle_election_timeout(&mut self) {
+        match self.role {
+            RoleState::Follower => {
+                self.transition_to_candidate();
+            }
+            RoleState::Candidate { .. } => {
+                self.transition_to_candidate();
+            }
+            RoleState::Leader { .. } => {
+                self.heartbeat();
+            }
+        }
+    }
+
+    /// Updates this node's log ([`Log`]) to reflect the installation of a snapshot.
+    ///
+    /// If the node log contains `last_included_position`, log entries up to `last_included_position` are removed.
+    /// If `last_included_position` is greater than the last log position, the log is replaced with an empty log starting at `last_included_position`.
+    ///
+    /// Note that how to install a snapshot is outside of the scope of this crate.
+    ///
+    /// # Preconditions
+    ///
+    /// This method returns [`false`] and ignores the installation if the following conditions are not met:
+    /// - `last_included_position` is valid, which means:
+    ///   - `self.log.entries().contains(last_included_position)` is [`true`].
+    ///   - Additionally, if `self.role().is_leader()` is [`false`], it is also acceptable if `last_included_position.index` is greater than `self.commit_index()`.
+    /// - `last_included_config` is the configuration at `last_included_position.index`.
+    pub fn handle_snapshot_installed(
+        &mut self,
+        last_included_config: ClusterConfig,
+        last_included_position: LogPosition,
+    ) -> bool {
+        if !self.is_valid_snapshot(&last_included_config, last_included_position) {
+            return false;
+        }
+        if let Some(entries) = self.log.entries().since(last_included_position) {
+            self.log = Log::new(last_included_config, entries);
+        } else {
+            self.log = Log::new(
+                last_included_config,
+                LogEntries::new(last_included_position),
+            );
+        }
+
+        if !self.role().is_leader() {
+            // The snapshot installation may have invalidated the pending action.
+            self.actions.append_log_entries = None;
+        }
+
+        true
+    }
+
+    fn is_valid_snapshot(
+        &self,
+        last_included_config: &ClusterConfig,
+        last_included_position: LogPosition,
+    ) -> bool {
+        if self.commit_index() < last_included_position.index {
+            return self.role() != Role::Leader;
+        }
+        if !self.log.entries().contains(last_included_position) {
+            return false;
+        }
+        self.log.entries().get_config(last_included_position.index) == Some(last_included_config)
     }
 
     pub(crate) fn quorum(&self) -> Option<&Quorum> {
