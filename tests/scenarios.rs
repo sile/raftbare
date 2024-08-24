@@ -227,6 +227,12 @@ fn snapshot() {
     assert!(node3.handle_snapshot_installed(snapshot_config, snapshot_position));
 
     // Append after snapshot.
+    let (_, call) = cluster.node0.asserted_heartbeat();
+    let reply = node3.asserted_handle_append_entries_call_failure(&call);
+
+    let call = cluster
+        .node0
+        .asserted_handle_append_entries_reply_failure(&reply);
     let reply = node3.asserted_handle_append_entries_call_success(&call);
     cluster
         .node0

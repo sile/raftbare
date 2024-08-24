@@ -304,7 +304,7 @@ impl Node {
                 self.current_term,
                 self.id,
                 seqno,
-                self.log.entries().last_position(),
+                self.log.last_position(),
             )));
         self.actions.set(Action::SetElectionTimeout);
     }
@@ -643,6 +643,8 @@ impl Node {
     fn append_log_entries_from_leader(&mut self, entries: &LogEntries) -> bool {
         debug_assert!(self.role().is_follower());
 
+        // TODO: truncate last position if need
+
         if self.log.entries().contains(entries.last_position()) {
             // Already up-to-date.
             return self.log().last_position() == entries.last_position();
@@ -758,6 +760,10 @@ impl Node {
         if !vote_granted {
             return;
         }
+        if header.term < self.current_term {
+            // Delayed (obsolete) reply from an old term.
+            return;
+        }
         granted_votes.insert(header.from);
 
         let config = self.log.latest_config();
@@ -826,77 +832,109 @@ impl Node {
             return;
         };
 
+        if header.term < self.current_term {
+            // Delayed (obsolete) reply from an old term.
+            return;
+        }
+
         let Some(follower) = followers.get_mut(&header.from) else {
             // Replies from unknown nodes are ignored.
             return;
         };
 
-        // TODO: Add doc about seqno A/B problem is not occured here
-        //      (high seqno request sent by before-restarting node is too delayed to be replied, and
-        //       delivered the reply to the same restarted node. => max_sn is wrongly updated?
-        //       => no term check prohibits this case)
-        // TODO: Add old term check
+        if header.seqno <= follower.max_seqno {
+            // Duplicate or delayed (reordered) reply.
+            //
+            // [NOTE]
+            // When a node restarts, the seqno is reset to 0.
+            // However, within a term, the seqno values are guaranteed to increase monotonically.
+            return;
+        }
 
-        if follower.max_seqno < header.seqno {
-            quorum.update_seqno(
+        quorum.update_seqno(
+            self.log.latest_config(),
+            header.from,
+            follower.max_seqno,
+            header.seqno,
+        );
+        follower.max_seqno = header.seqno;
+
+        if !self.log.entries().contains(last_position) {
+            let prev_index = last_position.index.get().checked_sub(1).map(LogIndex::new);
+            let prev_term = prev_index.and_then(|i| self.log.entries().get_term(i));
+
+            if let (Some(term), Some(index)) = (prev_term, prev_index) {
+                // Delete the follower's last log entry.
+                let prev_position = LogPosition { term, index };
+                let seqno = self.next_seqno();
+                let call = Message::append_entries_call(
+                    self.current_term,
+                    self.id,
+                    self.commit_index,
+                    seqno,
+                    LogEntries::new(prev_position),
+                );
+                self.actions.set(Action::SendMessage(header.from, call));
+            } else if self.log.last_position().index < last_position.index {
+                // Something seems strange.
+                // However, as the leader log grows, a divergence point will be detected.
+            } else {
+                // The follower's log is too old. Needs to install a snapshot.
+                debug_assert!(last_position.index <= self.log.snapshot_position().index);
+                self.actions.set(Action::InstallSnapshot(header.from));
+            }
+
+            return;
+        }
+
+        // [NOTE]
+        // This check should be done here because `self.log.last_position()` may be updated in
+        // `self.update_commit_index_if_possible()`.
+        let is_follower_up_to_date = last_position.index == self.log.last_position().index;
+
+        if follower.match_index < last_position.index {
+            let old_match_index = follower.match_index;
+            follower.match_index = last_position.index;
+
+            quorum.update_match_index(
                 self.log.latest_config(),
                 header.from,
-                follower.max_seqno,
-                header.seqno,
+                old_match_index,
+                follower.match_index,
             );
-            follower.max_seqno = header.seqno;
+
+            if self.commit_index < follower.match_index {
+                self.update_commit_index_if_possible();
+            }
+        } else if last_position.index < follower.match_index {
+            // [NOTE]
+            // The Raft algorithm assumes that storage is reliable.
+            // Therefore, theoretically, this case should not occur.
+            // However, in practice, it is possible for the follower's log to be fully or partially lost.
+            // To recover log entries as much as possible in such cases,
+            // this crate allows proceeding even if the above condition is met.
+            // But be cautious, as there is a risk of compromising the properties guaranteed by
+            // the Raft algorithm.
         }
 
-        if last_position.index < follower.match_index {
-            // Maybe delayed reply.
-            // (or the follower's storage has been corrupted. Raft does not handle this case though.)
-            // TODO: consider follower.last_sn instead of match index here
+        if is_follower_up_to_date {
+            // The follower's log is up-to-date.
             return;
+        }
+        debug_assert!(self.log.entries().contains(last_position));
+
+        let Some(delta) = self.log.entries().since(last_position) else {
+            unreachable!();
         };
-
-        let self_last_position = self.log.entries().last_position(); // Save the current last entry before (maybe) updating it.
-        if self.log.entries().contains(last_position) {
-            if follower.match_index < last_position.index {
-                let old_match_index = follower.match_index;
-                follower.match_index = last_position.index;
-
-                quorum.update_match_index(
-                    self.log.latest_config(),
-                    header.from,
-                    old_match_index,
-                    follower.match_index,
-                );
-
-                if self.commit_index < follower.match_index {
-                    self.update_commit_index_if_possible();
-                }
-            }
-
-            if last_position.index == self.log.entries().last_position().index {
-                // Up-to-date.
-                return;
-            }
-        }
-
-        if last_position.index < self.log.entries().prev_position().index {
-            // Send snapshot
-            self.actions.set(Action::InstallSnapshot(header.from));
-        } else if last_position.index < self_last_position.index {
-            // send delta
-            let Some(delta) = self.log.entries().since(last_position) else {
-                // TODO: handle this case (decrement index and retry to find out ...)
-                return;
-            };
-            let seqno = self.next_seqno();
-            let call = Message::append_entries_call(
-                self.current_term,
-                self.id,
-                self.commit_index,
-                seqno,
-                delta,
-            );
-            self.actions.set(Action::SendMessage(header.from, call));
-        }
+        let seqno = self.next_seqno();
+        let call = Message::append_entries_call(
+            self.current_term,
+            self.id,
+            self.commit_index,
+            seqno,
+            delta,
+        );
+        self.actions.set(Action::SendMessage(header.from, call));
     }
 
     fn reply_append_entries(&mut self, call: MessageHeader) {
