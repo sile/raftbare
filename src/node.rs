@@ -557,7 +557,7 @@ impl Node {
 
     /// Sends a heartbeat to all followers.
     ///
-    /// This method returns a [`HeartbeatPromise`] that will be accepted when a majority of followers
+    /// This method returns a [`HeartbeatPromise`] that will be accepted when a majority of voters
     /// respond with success. If the term changes, the promise will be rejected.
     ///
     /// Typically, this method is used to confirm that the current node is still the leader
@@ -572,18 +572,24 @@ impl Node {
             return HeartbeatPromise::Rejected;
         }
 
-        // TODO: handle single node case
         let seqno = self.next_seqno();
-        let call = Message::append_entries_call(
-            self.current_term,
-            self.id,
-            self.commit_index,
-            seqno,
-            LogEntries::new(self.log.entries().last_position()),
-        );
-        self.actions.set(Action::BroadcastMessage(call));
 
-        HeartbeatPromise::new(self.current_term, self.seqno)
+        let RoleState::Leader { followers, .. } = &self.role else {
+            unreachable!();
+        };
+        if !followers.is_empty() {
+            let call = Message::append_entries_call(
+                self.current_term,
+                self.id,
+                self.commit_index,
+                seqno,
+                LogEntries::new(self.log.entries().last_position()),
+            );
+            self.actions.set(Action::BroadcastMessage(call));
+        }
+        self.actions.set(Action::SetElectionTimeout);
+
+        HeartbeatPromise::new(self.current_term, seqno)
     }
 
     fn append_proposed_log_entry(&mut self, entry: &LogEntry) {

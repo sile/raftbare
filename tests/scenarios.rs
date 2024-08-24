@@ -113,6 +113,7 @@ fn election() {
         &cluster.node1,
         LogEntries::new(cluster.node1.log().entries().last_position()),
     );
+    assert_action!(cluster.node1, set_election_timeout());
     assert_action!(cluster.node1, broadcast_message(&call));
 
     let reply = cluster
@@ -741,6 +742,7 @@ impl TestNode {
     fn asserted_heartbeat(&mut self) -> (HeartbeatPromise, Message) {
         let heartbeat = self.heartbeat();
         let call = append_entries_call(self, LogEntries::new(self.log().entries().last_position()));
+        assert_action!(self, set_election_timeout());
         assert_action!(self, broadcast_message(&call));
         assert_no_action!(self);
         (heartbeat, call)
