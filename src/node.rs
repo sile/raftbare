@@ -643,14 +643,28 @@ impl Node {
     fn append_log_entries_from_leader(&mut self, entries: &LogEntries) -> bool {
         debug_assert!(self.role().is_follower());
 
-        // TODO: truncate last position if need
-
         if self.log.entries().contains(entries.last_position()) {
             // Already up-to-date.
             return self.log().last_position() == entries.last_position();
         }
         if !self.log.entries().contains(entries.prev_position()) {
             // Cannot append.
+            if self
+                .log
+                .entries()
+                .contains_index(entries.prev_position().index)
+            {
+                // Remove the divergence entries.
+                // Note that `Action::AppendLogEntries` is not triggered until
+                // the root of the divergence point is identified.
+                let n = entries
+                    .prev_position()
+                    .index
+                    .get()
+                    .checked_sub(self.log.snapshot_position().index.get() + 1)
+                    .unwrap_or(0);
+                self.log.entries_mut().truncate(n as usize);
+            }
             return false;
         }
 
@@ -860,19 +874,16 @@ impl Node {
         follower.max_seqno = header.seqno;
 
         if !self.log.entries().contains(last_position) {
-            let prev_index = last_position.index.get().checked_sub(1).map(LogIndex::new);
-            let prev_term = prev_index.and_then(|i| self.log.entries().get_term(i));
-
-            if let (Some(term), Some(index)) = (prev_term, prev_index) {
+            if let Some(term) = self.log.entries().get_term(last_position.index) {
                 // Delete the follower's last log entry.
-                let prev_position = LogPosition { term, index };
+                let index = last_position.index;
                 let seqno = self.next_seqno();
                 let call = Message::append_entries_call(
                     self.current_term,
                     self.id,
                     self.commit_index,
                     seqno,
-                    LogEntries::new(prev_position),
+                    LogEntries::new(LogPosition { term, index }),
                 );
                 self.actions.set(Action::SendMessage(header.from, call));
             } else if self.log.last_position().index < last_position.index {
