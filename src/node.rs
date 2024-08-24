@@ -678,9 +678,13 @@ impl Node {
     pub fn handle_message(&mut self, msg: Message) {
         if self.current_term < msg.term() {
             if matches!(msg, Message::RequestVoteCall { .. })
-                && self.role().is_follower()
+                && !matches!(self.role, RoleState::Candidate { .. })
                 && self.voted_for.map_or(false, |id| id != msg.from())
             {
+                // This message may originate from a removed node and should be ignored
+                // to prevent disrupting the cluster.
+                //
+                // Please refer to the section 6 of the Raft paper for more details.
                 return;
             }
             self.transition_to_follower(msg.term());
@@ -857,12 +861,13 @@ impl Node {
         leader_commit: LogIndex,
         entries: LogEntries,
     ) {
-        if !self.role().is_follower() {
-            return;
-        }
         if header.term < self.current_term {
             // Stale request.
             self.reply_append_entries(header);
+            return;
+        }
+
+        if !self.role().is_follower() {
             return;
         }
 

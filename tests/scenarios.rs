@@ -76,9 +76,12 @@ fn election() {
     cluster.init_cluster();
 
     // Trigger a new election.
-    let call = cluster.node1.asserted_follower_election_timeout();
+    let _call = cluster.node1.asserted_follower_election_timeout();
+    let _call = cluster.node2.asserted_follower_election_timeout();
+    let call = cluster.node1.asserted_candidate_election_timeout();
+
     let reply = cluster
-        .node0
+        .node2
         .asserted_handle_request_vote_call_success(&call);
 
     let call = cluster
@@ -86,10 +89,10 @@ fn election() {
         .asserted_handle_request_vote_reply_majority_vote_granted(&reply);
     let reply_from_node2 = cluster
         .node2
-        .asserted_handle_append_entries_call_success_new_leader(&call);
+        .asserted_handle_append_entries_call_success(&call);
     let reply_from_node0 = cluster
         .node0
-        .asserted_handle_append_entries_call_success(&call);
+        .asserted_handle_append_entries_call_success_new_leader(&call);
 
     cluster
         .node1
@@ -156,11 +159,10 @@ fn truncate_log() {
     let _call = cluster.node2.asserted_follower_election_timeout();
     let call = cluster.node2.asserted_candidate_election_timeout(); // Increase term.
 
-    // The log index of node0 is greater than node2 => failed.
-    cluster
-        .node0
-        .asserted_handle_request_vote_call_failed(&call);
-    assert_eq!(cluster.node0.role(), Role::Follower);
+    // As  node0 is the leader, it ignores RequestVoteRPC even it if has a higher term.
+    cluster.node0.handle_message(call.clone());
+    assert_eq!(cluster.node0.role(), Role::Leader);
+    assert_no_action!(cluster.node0);
 
     // The log index of node1 is equal to node2 => granted.
     let _ = cluster.node1.asserted_follower_election_timeout();
@@ -422,6 +424,7 @@ impl TestNode {
 
     fn asserted_handle_append_entries_call_success(&mut self, msg: &Message) -> Message {
         assert!(matches!(msg, Message::AppendEntriesCall { .. }));
+        let old_role = self.role();
 
         let Message::AppendEntriesCall {
             entries,
@@ -463,6 +466,9 @@ impl TestNode {
         }
         assert_action!(self, send_message(msg.from(), &reply));
         assert_action!(self, set_election_timeout());
+        if old_role.is_leader() {
+            assert_action!(self, save_current_term());
+        }
         assert_no_action!(self);
 
         reply
@@ -683,18 +689,6 @@ impl TestNode {
         assert_no_action!(self);
 
         reply
-    }
-
-    fn asserted_handle_request_vote_call_failed(&mut self, msg: &Message) {
-        assert!(matches!(msg, Message::RequestVoteCall { .. }));
-
-        self.handle_message(msg.clone());
-        assert_action!(self, save_current_term());
-        assert_eq!(self.current_term(), msg.term());
-        assert_action!(self, Action::SaveVotedFor);
-        assert_eq!(self.voted_for(), None);
-        assert_action!(self, set_election_timeout());
-        assert_no_action!(self);
     }
 
     fn asserted_handle_request_vote_reply_majority_vote_granted(
