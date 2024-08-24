@@ -372,21 +372,37 @@ impl TestNode {
         if !initial_voters.is_empty() {
             assert!(node.create_cluster(initial_voters).is_pending());
 
-            assert_eq!(node.role(), Role::Candidate);
             assert_action!(node, set_election_timeout());
             assert_action!(node, save_current_term());
             assert_action!(node, save_voted_for());
-            assert_action!(
-                node,
-                append_log_entries(&LogEntries::from_iter(
-                    prev(t(0), i(0)),
-                    [cluster_config_entry(joint(initial_voters, &[]))].into_iter()
-                ))
-            );
-            assert!(matches!(
-                node.actions_mut().next(),
-                Some(Action::BroadcastMessage(Message::RequestVoteCall { .. }))
-            ));
+
+            if initial_voters == [id] {
+                assert_eq!(node.role(), Role::Leader);
+                assert_action!(
+                    node,
+                    append_log_entries(&LogEntries::from_iter(
+                        prev(t(0), i(0)),
+                        [
+                            cluster_config_entry(joint(initial_voters, &[])),
+                            term_entry(t(1))
+                        ]
+                        .into_iter()
+                    ))
+                );
+            } else {
+                assert_eq!(node.role(), Role::Candidate);
+                assert_action!(
+                    node,
+                    append_log_entries(&LogEntries::from_iter(
+                        prev(t(0), i(0)),
+                        [cluster_config_entry(joint(initial_voters, &[]))].into_iter()
+                    ))
+                );
+                assert!(matches!(
+                    node.actions_mut().next(),
+                    Some(Action::BroadcastMessage(Message::RequestVoteCall { .. }))
+                ));
+            }
             assert_no_action!(node);
         }
         Self {

@@ -276,12 +276,21 @@ impl Node {
     }
 
     fn transition_to_candidate(&mut self) {
-        if self.log.latest_config().non_voters.contains(&self.id) {
+        if !self.log.latest_config().is_voter(self.id) {
+            // Non voter or removed node cannot become a candidate.
             return;
         }
 
         self.set_current_term(self.current_term.next());
         self.set_voted_for(Some(self.id));
+
+        let solo_voter =
+            self.config().unique_voters().count() == 1 && self.config().voters.contains(&self.id);
+        if solo_voter {
+            self.transition_to_leader();
+            return;
+        }
+
         self.role = RoleState::Candidate {
             granted_votes: std::iter::once(self.id).collect(),
         };
@@ -712,24 +721,31 @@ impl Node {
 
     fn handle_request_vote_call(&mut self, header: MessageHeader, last_position: LogPosition) {
         if header.term < self.current_term {
+            // Needs to reply to update the sender's term.
             let reply =
                 Message::request_vote_reply(self.current_term, self.id, header.seqno, false);
             self.actions.set(Action::SendMessage(header.from, reply));
             return;
         }
-        if self.log.entries().last_position().index > last_position.index {
+
+        if self.log.last_position().index > last_position.index {
             return;
         }
 
         if self.voted_for.is_none() {
             self.set_voted_for(Some(header.from));
         }
+
         if self.voted_for != Some(header.from) {
+            // This node is either a candidate, a leader, or has already voted for another node.
             return;
         }
+        debug_assert!(self.role().is_follower());
 
+        // This follower votes for the candidate.
         let reply = Message::request_vote_reply(self.current_term, self.id, header.seqno, true);
         self.actions.set(Action::SendMessage(header.from, reply));
+        self.actions.set(Action::SetElectionTimeout);
     }
 
     fn handle_request_vote_reply(&mut self, header: MessageHeader, vote_granted: bool) {

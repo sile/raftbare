@@ -96,6 +96,10 @@ impl ClusterConfig {
         self.voters.union(&self.new_voters).copied()
     }
 
+    pub(crate) fn is_voter(&self, id: NodeId) -> bool {
+        self.voters.contains(&id) || self.new_voters.contains(&id)
+    }
+
     /// Converts this configuration to a joint consensus by adding and removing voters.
     ///
     /// # Examples
