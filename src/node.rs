@@ -111,8 +111,10 @@ impl Node {
     /// # raftbare::Log::new(raftbare::ClusterConfig::new(), raftbare::LogEntries::new(raftbare::LogPosition::ZERO));
     ///
     /// // Restarts a node.
+    /// let snapshot_index = log.snapshot_position().index;
     /// let node = Node::restart(NodeId::new(0), current_term, voted_for, log);
     /// assert!(node.role().is_follower());
+    /// assert_eq!(node.commit_index(), snapshot_index);
     ///
     /// // Unlike `Node::start()`, the restarted node has actions to execute.
     /// assert!(!node.actions().is_empty());
@@ -123,6 +125,7 @@ impl Node {
         node.current_term = current_term;
         node.voted_for = voted_for;
         node.log = log;
+        node.commit_index = node.log.snapshot_position().index;
         node.actions.set(Action::SetElectionTimeout);
 
         node
@@ -642,7 +645,7 @@ impl Node {
 
         if self.log.entries().contains(entries.last_position()) {
             // Already up-to-date.
-            return true;
+            return self.log().last_position() == entries.last_position();
         }
         if !self.log.entries().contains(entries.prev_position()) {
             // Cannot append.
@@ -786,7 +789,7 @@ impl Node {
         entries: LogEntries,
     ) {
         if header.term < self.current_term {
-            // Stale request.
+            // Needs to reply to update the sender's term.
             self.reply_append_entries(header);
             return;
         }
@@ -799,10 +802,13 @@ impl Node {
             self.set_voted_for(Some(header.from));
         }
 
-        if self.append_log_entries_from_leader(&entries) {
-            let next_commit_index = leader_commit
-                .min(self.log.entries().last_position().index)
-                .min(entries.last_position().index); // TODO: Add note comment (entries could be truncated by action implementor)
+        if self.voted_for != Some(header.from) {
+            return;
+        }
+
+        let no_divergence = self.append_log_entries_from_leader(&entries);
+        if no_divergence {
+            let next_commit_index = leader_commit.min(self.log.last_position().index);
             if self.commit_index < next_commit_index {
                 self.commit_index = next_commit_index;
             }
