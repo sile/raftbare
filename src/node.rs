@@ -666,7 +666,7 @@ impl Node {
                     self.log.entries_mut().truncate(new_len as usize);
                 } else {
                     // The local snapshot does not match the leader's log.
-                    // This situation should not occur under normal circumstances.
+                    // Such a situation should never occur if the Raft properties are satisfied.
                     // Although this is very unusual, we will reset the log and request the leader's snapshot.
                     self.log = Log::new(ClusterConfig::new(), LogEntries::new(LogPosition::ZERO));
                 }
