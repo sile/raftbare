@@ -657,13 +657,19 @@ impl Node {
                 // Remove the divergence entries.
                 // Note that `Action::AppendLogEntries` is not triggered until
                 // the root of the divergence point is identified.
-                let n = entries
+                let new_len = entries
                     .prev_position()
                     .index
                     .get()
-                    .checked_sub(self.log.snapshot_position().index.get() + 1)
-                    .unwrap_or(0);
-                self.log.entries_mut().truncate(n as usize);
+                    .checked_sub(self.log.snapshot_position().index.get() + 1);
+                if let Some(new_len) = new_len {
+                    self.log.entries_mut().truncate(new_len as usize);
+                } else {
+                    // The local snapshot does not match the leader's log.
+                    // This situation should not occur under normal circumstances.
+                    // Although this is very unusual, we will reset the log and request the leader's snapshot.
+                    self.log = Log::new(ClusterConfig::new(), LogEntries::new(LogPosition::ZERO));
+                }
             }
             return false;
         }
