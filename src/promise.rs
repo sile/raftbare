@@ -27,10 +27,10 @@ impl CommitPromise {
         let Self::Pending(position) = *self else {
             return *self;
         };
-        if position.index <= node.commit_index() {
-            *self = Self::Accepted(position);
-        } else if !node.log().entries().contains(position) {
+        if !node.log().entries().contains(position) {
             *self = Self::Rejected(position);
+        } else if position.index <= node.commit_index() {
+            *self = Self::Accepted(position);
         }
         *self
     }

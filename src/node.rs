@@ -262,12 +262,12 @@ impl Node {
 
         let quorum = Quorum::new(self.config());
         let followers = BTreeMap::new();
-        let solo =
+        let solo_voter =
             self.config().unique_voters().count() == 1 && self.config().voters.contains(&self.id);
         self.role = RoleState::Leader {
             followers,
             quorum,
-            solo,
+            solo_voter,
         };
         self.rebuild_followers();
         self.rebuild_quorum();
@@ -393,14 +393,9 @@ impl Node {
         let old_last_position = self.log.last_position();
         self.append_proposed_log_entry(&entry);
 
-        let RoleState::Leader {
-            followers, solo, ..
-        } = &mut self.role
-        else {
+        let RoleState::Leader { followers, .. } = &self.role else {
             unreachable!();
         };
-        let solo = *solo;
-
         if !followers.is_empty() {
             let seqno = self.next_seqno();
             let call = Message::append_entries_call(
@@ -412,15 +407,9 @@ impl Node {
             );
             self.actions.set(Action::BroadcastMessage(call));
         }
-        if solo {
-            self.update_commit_index_if_possible();
-        }
         self.actions.set(Action::SetElectionTimeout);
 
-        let index = self.log.entries().last_position().index;
-        let term = self.current_term;
-        let position = LogPosition { term, index };
-        CommitPromise::new(position)
+        CommitPromise::new(self.log.last_position())
     }
 
     fn rebuild_followers(&mut self) {
@@ -532,13 +521,13 @@ impl Node {
     /// ```
     pub fn propose_config(&mut self, new_config: ClusterConfig) -> CommitPromise {
         if !self.role().is_leader() {
-            return CommitPromise::Rejected(self.log().last_position().next());
+            return CommitPromise::Rejected(LogPosition::INVALID);
         }
         if self.log.latest_config().voters != new_config.voters {
-            return CommitPromise::Rejected(self.log().last_position().next());
+            return CommitPromise::Rejected(LogPosition::INVALID);
         }
         if self.log.latest_config().is_joint_consensus() {
-            return CommitPromise::Rejected(self.log().last_position().next());
+            return CommitPromise::Rejected(LogPosition::INVALID);
         }
 
         self.propose(LogEntry::ClusterConfig(new_config))
@@ -598,6 +587,16 @@ impl Node {
         if matches!(entry, LogEntry::ClusterConfig(_)) {
             self.rebuild_followers();
             self.rebuild_quorum();
+        }
+
+        if matches!(
+            self.role,
+            RoleState::Leader {
+                solo_voter: true,
+                ..
+            }
+        ) {
+            self.update_commit_index_if_possible();
         }
     }
 
@@ -964,7 +963,7 @@ enum RoleState {
     Leader {
         followers: BTreeMap<NodeId, Follower>,
         quorum: Quorum,
-        solo: bool,
+        solo_voter: bool,
     },
 }
 
