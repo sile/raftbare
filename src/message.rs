@@ -203,10 +203,4 @@ impl MessageSeqNo {
     pub const fn get(self) -> u64 {
         self.0
     }
-
-    pub(crate) fn fetch_and_increment(&mut self) -> Self {
-        let v = *self;
-        self.0 += 1;
-        v
-    }
 }

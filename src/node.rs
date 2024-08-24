@@ -282,11 +282,12 @@ impl Node {
             granted_votes: std::iter::once(self.id).collect(),
         };
 
+        let seqno = self.next_seqno();
         self.actions
             .set(Action::BroadcastMessage(Message::request_vote_call(
                 self.current_term,
                 self.id,
-                self.seqno.fetch_and_increment(),
+                seqno,
                 self.log.entries().last_position(),
             )));
         self.actions.set(Action::SetElectionTimeout);
@@ -393,27 +394,25 @@ impl Node {
         self.append_proposed_log_entry(&entry);
 
         let RoleState::Leader {
-            quorum,
-            followers,
-            solo,
+            followers, solo, ..
         } = &mut self.role
         else {
             unreachable!();
         };
+        let solo = *solo;
 
         if !followers.is_empty() {
-            let old_seqno = self.seqno.fetch_and_increment();
+            let seqno = self.next_seqno();
             let call = Message::append_entries_call(
                 self.current_term,
                 self.id,
                 self.commit_index,
-                self.seqno,
+                seqno,
                 LogEntries::from_iter(old_last_position, std::iter::once(entry)),
             );
             self.actions.set(Action::BroadcastMessage(call));
-            quorum.update_seqno(self.log.latest_config(), self.id, old_seqno, self.seqno);
         }
-        if *solo {
+        if solo {
             self.update_commit_index_if_possible();
         }
         self.actions.set(Action::SetElectionTimeout);
@@ -558,20 +557,19 @@ impl Node {
     /// This method returns [`HeartbeatPromise::Rejected`] if the following preconditions are not met:
     /// - `self.role().is_leader()` is [`true`].
     pub fn heartbeat(&mut self) -> HeartbeatPromise {
-        let RoleState::Leader { quorum, .. } = &mut self.role else {
+        if !matches!(self.role, RoleState::Leader { .. }) {
             return HeartbeatPromise::Rejected;
-        };
+        }
 
         // TODO: handle single node case
-        let old_seqno = self.seqno.fetch_and_increment();
+        let seqno = self.next_seqno();
         let call = Message::append_entries_call(
             self.current_term,
             self.id,
             self.commit_index,
-            self.seqno,
+            seqno,
             LogEntries::new(self.log.entries().last_position()),
         );
-        quorum.update_seqno(self.log.latest_config(), self.id, old_seqno, self.seqno);
         self.actions.set(Action::BroadcastMessage(call));
 
         HeartbeatPromise::new(self.current_term, self.seqno)
@@ -925,20 +923,15 @@ impl Node {
                 // TODO: handle this case (decrement index and retry to find out ...)
                 return;
             };
-            let old_seqno = self.seqno.fetch_and_increment();
+            let seqno = self.next_seqno();
             let call = Message::append_entries_call(
                 self.current_term,
                 self.id,
                 self.commit_index,
-                self.seqno,
+                seqno,
                 delta,
             );
             self.actions.set(Action::SendMessage(header.from, call));
-
-            let RoleState::Leader { quorum, .. } = &mut self.role else {
-                return;
-            };
-            quorum.update_seqno(self.log.latest_config(), self.id, old_seqno, self.seqno);
         }
     }
 
@@ -948,6 +941,17 @@ impl Node {
         } else {
             None
         }
+    }
+
+    fn next_seqno(&mut self) -> MessageSeqNo {
+        let old_seqno = self.seqno;
+        self.seqno = MessageSeqNo::new(old_seqno.get() + 1);
+
+        if let RoleState::Leader { quorum, .. } = &mut self.role {
+            quorum.update_seqno(self.log.latest_config(), self.id, old_seqno, self.seqno);
+        }
+
+        self.seqno
     }
 }
 
