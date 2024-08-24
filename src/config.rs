@@ -91,6 +91,10 @@ impl ClusterConfig {
         }
     }
 
+    pub(crate) fn unique_voters(&self) -> impl '_ + Iterator<Item = NodeId> {
+        self.voters.union(&self.new_voters).copied()
+    }
+
     /// Converts this configuration to a joint consensus by adding and removing voters.
     ///
     /// # Examples

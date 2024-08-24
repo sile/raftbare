@@ -260,14 +260,17 @@ impl Node {
     fn transition_to_leader(&mut self) {
         debug_assert_eq!(self.voted_for, Some(self.id));
 
-        let config = self.log.latest_config();
-        let quorum = Quorum::new(config);
-        let followers = config
-            .unique_nodes()
-            .filter(|id| *id != self.id)
-            .map(|id| (id, Follower::new()))
-            .collect();
-        self.role = RoleState::Leader { followers, quorum };
+        let quorum = Quorum::new(self.config());
+        let followers = BTreeMap::new();
+        let solo =
+            self.config().unique_voters().count() == 1 && self.config().voters.contains(&self.id);
+        self.role = RoleState::Leader {
+            followers,
+            quorum,
+            solo,
+        };
+        self.rebuild_followers();
+        self.rebuild_quorum();
 
         self.propose(LogEntry::Term(self.current_term));
     }
@@ -279,18 +282,19 @@ impl Node {
             granted_votes: std::iter::once(self.id).collect(),
         };
 
-        let seqno = self.seqno.fetch_and_increment();
         self.actions
             .set(Action::BroadcastMessage(Message::request_vote_call(
                 self.current_term,
                 self.id,
-                seqno,
+                self.seqno.fetch_and_increment(),
                 self.log.entries().last_position(),
             )));
         self.actions.set(Action::SetElectionTimeout);
     }
 
     fn transition_to_follower(&mut self, term: Term) {
+        debug_assert!(self.current_term < term);
+
         self.set_current_term(term);
         self.set_voted_for(None);
         self.role = RoleState::Follower;
@@ -383,12 +387,17 @@ impl Node {
     }
 
     fn propose(&mut self, entry: LogEntry) -> CommitPromise {
-        debug_assert!(matches!(self.role, RoleState::Leader { .. }));
+        debug_assert!(self.role().is_leader());
 
-        let prev_entry = self.log.entries().last_position();
+        let old_last_position = self.log.last_position();
         self.append_proposed_log_entry(&entry);
 
-        let RoleState::Leader { quorum, followers } = &mut self.role else {
+        let RoleState::Leader {
+            quorum,
+            followers,
+            solo,
+        } = &mut self.role
+        else {
             unreachable!();
         };
 
@@ -399,15 +408,15 @@ impl Node {
                 self.id,
                 self.commit_index,
                 self.seqno,
-                LogEntries::from_iter(prev_entry, std::iter::once(entry)),
+                LogEntries::from_iter(old_last_position, std::iter::once(entry)),
             );
             self.actions.set(Action::BroadcastMessage(call));
             quorum.update_seqno(self.log.latest_config(), self.id, old_seqno, self.seqno);
         }
+        if *solo {
+            self.update_commit_index_if_possible();
+        }
         self.actions.set(Action::SetElectionTimeout);
-
-        // [NOTE] The following call is necessary for a self-node-only cluster.
-        self.update_commit_index_if_possible();
 
         let index = self.log.entries().last_position().index;
         let term = self.current_term;
@@ -435,7 +444,10 @@ impl Node {
     }
 
     fn rebuild_quorum(&mut self) {
-        let RoleState::Leader { quorum, followers } = &mut self.role else {
+        let RoleState::Leader {
+            quorum, followers, ..
+        } = &mut self.role
+        else {
             unreachable!();
         };
 
@@ -845,7 +857,10 @@ impl Node {
     }
 
     fn handle_append_entries_reply(&mut self, header: MessageHeader, last_position: LogPosition) {
-        let RoleState::Leader { followers, quorum } = &mut self.role else {
+        let RoleState::Leader {
+            followers, quorum, ..
+        } = &mut self.role
+        else {
             return;
         };
 
@@ -945,6 +960,7 @@ enum RoleState {
     Leader {
         followers: BTreeMap<NodeId, Follower>,
         quorum: Quorum,
+        solo: bool,
     },
 }
 
