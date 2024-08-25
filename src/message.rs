@@ -142,8 +142,12 @@ impl Message {
 
     pub(crate) fn merge(&mut self, other: Self) {
         debug_assert_eq!(self.from(), other.from());
+
+        if other.seqno() <= self.seqno() {
+            return;
+        }
+
         debug_assert!(self.term() <= other.term());
-        debug_assert!(self.seqno() < other.seqno());
 
         let Self::AppendEntriesCall {
             header: header0,

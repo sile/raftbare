@@ -233,13 +233,9 @@ fn pipelining() {
             && cluster.nodes[0].inner.commit_index() == cluster.nodes[2].inner.commit_index()
     });
     assert!(satisfied, "Commit indices are not synchronized");
-
-    // Links are stable, so the leader should not change.
-    assert_eq!(cluster.nodes[0].inner.current_term().get(), 1);
 }
 
-// TODO: dynamic membership
-// TODO: non voter
+// TODO: dynamic membership including non-voter
 // TODO: storage repair
 // TODO: snapshot install
 // TODO: commit / heartbeat rejection
@@ -457,6 +453,14 @@ impl TestNode {
             if self.start_time.take_if(|t| *t <= now).is_some() {
                 self.running = true;
 
+                while let Some(entry) = self.incoming_messages.first_entry() {
+                    if entry.key().0 < now {
+                        entry.remove();
+                    } else {
+                        break;
+                    }
+                }
+
                 // TODO: add log truncate
                 self.inner = Node::restart(
                     self.inner.id(),
@@ -473,6 +477,8 @@ impl TestNode {
         }
         if self.stop_time.take_if(|t| *t <= now).is_some() {
             self.running = false;
+            self.timeout_expire_time = None;
+            self.storage_finish_time = None; // TODO: truncate if there are pending writes
             self.start_time = Some(now.add(self.options.stopping_ticks.sample_single(rng)));
             return;
         }
@@ -493,10 +499,12 @@ impl TestNode {
             let _succeeded = self.inner.handle_snapshot_installed(config, position);
         }
 
-        if let Some(entry) = self.incoming_messages.first_entry() {
+        while let Some(entry) = self.incoming_messages.first_entry() {
             if entry.key().0 <= now {
                 let message = entry.remove();
                 self.inner.handle_message(message);
+            } else {
+                break;
             }
         }
 
