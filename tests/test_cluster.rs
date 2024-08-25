@@ -1,9 +1,77 @@
-use raftbare::{Node, NodeId};
+use std::collections::BTreeMap;
+
+use raftbare::{ClusterConfig, LogPosition, Message, Node, NodeId, Role};
+use rand::{distributions::uniform::SampleRange, prelude::RngCore, rngs::StdRng, Rng, SeedableRng};
+
+#[test]
+fn propose_commands() {
+    let seed = rand::thread_rng().gen();
+    let rng = StdRng::seed_from_u64(seed);
+    dbg!(seed);
+
+    let node_ids = [NodeId::new(0), NodeId::new(1), NodeId::new(2)];
+
+    // Create a cluster.
+    let mut cluster = TestCluster::new(&node_ids, rng);
+    assert!(cluster
+        .random_node_mut()
+        .create_cluster(&node_ids)
+        .is_pending());
+
+    let deadline = cluster.clock.add(10000);
+    cluster.run_until(deadline, |cluster| cluster.leader_node().is_some());
+    assert!(cluster.clock < deadline); // Not timed out
+}
 
 #[derive(Debug)]
 pub struct TestCluster {
     pub nodes: Vec<TestNode>,
-    pub now: TestClock,
+    pub clock: Clock,
+    pub rng: StdRng,
+}
+
+impl TestCluster {
+    pub fn new(node_ids: &[NodeId], rng: StdRng) -> Self {
+        Self {
+            nodes: node_ids.iter().map(|&id| TestNode::new(id)).collect(),
+            clock: Clock::new(),
+            rng,
+        }
+    }
+
+    pub fn leader_node(&self) -> Option<&Node> {
+        self.nodes
+            .iter()
+            .find(|node| node.inner.role().is_leader())
+            .map(|node| &node.inner)
+    }
+
+    pub fn random_node_mut(&mut self) -> &mut Node {
+        let index = self.rng.gen_range(0..self.nodes.len());
+        &mut self.nodes[index].inner
+    }
+
+    pub fn run_until<F>(&mut self, deadline: Clock, condition: F)
+    where
+        F: Fn(&TestCluster) -> bool,
+    {
+        while self.clock < deadline && !condition(self) {
+            self.run_tick();
+            // TODO: link
+        }
+    }
+
+    pub fn run_tick(&mut self) {
+        self.clock.tick();
+        for node in &mut self.nodes {
+            node.run_tick(&mut self.rng, self.clock);
+
+            // TODO:
+            // pub broadcast_message: Option<Message>,
+            // pub send_messages: BTreeMap<NodeId, Message>,
+            // pub install_snapshots: BTreeSet<NodeId>,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -16,7 +84,7 @@ impl Default for TestLinkOptions {
     fn default() -> Self {
         Self {
             latency_ticks: MinMax::new(5, 20),
-            drop_rate: 0.0,
+            drop_rate: 0.05,
         }
     }
 }
@@ -31,6 +99,7 @@ pub struct TestNodeOptions {
     pub log_entries_lost: MinMax,
     pub max_entries_per_rpc: usize,
     pub voter: bool,
+    // TODO: snapshot_install_interval_ticks
 }
 
 impl Default for TestNodeOptions {
@@ -65,36 +134,108 @@ impl MinMax {
     }
 }
 
+impl SampleRange<usize> for MinMax {
+    fn sample_single<R: RngCore + ?Sized>(self, rng: &mut R) -> usize {
+        rng.gen_range(self.min..=self.max)
+    }
+
+    fn is_empty(&self) -> bool {
+        self.min > self.max
+    }
+}
+
 #[derive(Debug)]
 pub struct TestNode {
     pub inner: Node,
     pub options: TestNodeOptions,
-    pub running: bool,
-    pub timeout_expire_time: Option<TestClock>,
-    pub storage_finish_time: Option<TestClock>,
+    //pub running: bool,
+    pub timeout_expire_time: Option<Clock>,
+    pub storage_finish_time: Option<Clock>,
+    pub snapshot_finish_time: Option<(Clock, ClusterConfig, LogPosition)>,
+    pub incoming_messages: BTreeMap<Clock, Message>,
 }
 
 impl TestNode {
-    pub fn new(id: NodeId, running: bool, options: TestNodeOptions) -> TestNode {
+    pub fn new(id: NodeId) -> TestNode {
         TestNode {
             inner: Node::start(id),
-            options,
-            running,
+            options: TestNodeOptions::default(),
+            //running: true,
             timeout_expire_time: None,
             storage_finish_time: None,
+            snapshot_finish_time: None,
+            incoming_messages: BTreeMap::new(),
         }
+    }
+
+    pub fn run_tick(&mut self, rng: &mut StdRng, now: Clock) {
+        self.storage_finish_time.take_if(|t| *t <= now);
+        if self.storage_finish_time.is_some() {
+            // Storage operations are synchronous, so we can't do anything else until they finish.
+            return;
+        }
+
+        if self.timeout_expire_time.take_if(|t| *t <= now).is_some() {
+            self.inner.handle_election_timeout();
+        }
+
+        if let Some((_, config, position)) =
+            self.snapshot_finish_time.take_if(|(t, _, _)| *t <= now)
+        {
+            let _succeeded = self.inner.handle_snapshot_installed(config, position);
+        }
+
+        if let Some(entry) = self.incoming_messages.first_entry() {
+            if *entry.key() <= now {
+                let message = entry.remove();
+                self.inner.handle_message(message);
+            }
+        }
+
+        if std::mem::take(&mut self.inner.actions_mut().set_election_timeout) {
+            self.reset_election_timeout(rng, now);
+        }
+        if std::mem::take(&mut self.inner.actions_mut().save_current_term) {
+            self.extend_storage_finish_time(rng, now, 1);
+        }
+        if std::mem::take(&mut self.inner.actions_mut().save_voted_for) {
+            self.extend_storage_finish_time(rng, now, 1);
+        }
+        if let Some(entries) = self.inner.actions_mut().append_log_entries.take() {
+            self.extend_storage_finish_time(rng, now, entries.len());
+        }
+    }
+
+    fn reset_election_timeout(&mut self, rng: &mut StdRng, now: Clock) {
+        let timeout = match self.inner.role() {
+            Role::Leader => self.options.election_timeout_ticks.min,
+            Role::Candidate => self.options.election_timeout_ticks.sample_single(rng),
+            Role::Follower => self.options.election_timeout_ticks.max,
+        };
+        self.timeout_expire_time = Some(now.add(timeout));
+    }
+
+    fn extend_storage_finish_time(&mut self, rng: &mut StdRng, now: Clock, n: usize) {
+        let remaining_latency = self.storage_finish_time.map_or(0, |t| t.0 - now.0);
+        let additional_latency = self.options.storage_latency_ticks.sample_single(rng) * n;
+        let latency = remaining_latency + additional_latency;
+        self.storage_finish_time = Some(now.add(latency));
     }
 }
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub struct TestClock(usize);
+pub struct Clock(usize);
 
-impl TestClock {
-    pub fn new() -> TestClock {
-        TestClock(0)
+impl Clock {
+    pub fn new() -> Clock {
+        Clock(0)
     }
 
     pub fn tick(&mut self) {
         self.0 += 1;
+    }
+
+    pub fn add(&self, ticks: usize) -> Clock {
+        Clock(self.0 + ticks)
     }
 }
