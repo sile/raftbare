@@ -67,9 +67,6 @@ while promise.poll(&mut node).is_pending() {
 let promise = node.propose_command();
 
 // Execute actions as before.
-
-# fn is_election_timeout_expired() -> bool { true }
-# fn try_receive_message() -> Option<raftbare::Message> { None }
 ```
 
 Coverage
