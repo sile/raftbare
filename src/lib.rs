@@ -12,7 +12,7 @@
 //!
 //! Except for a few optimizations, `raftbare` is a very straightforward (yet efficient) implementation of the Raft algorithm.
 //! This crate focuses on the core part of the algorithm.
-//! Offering various convenience features (which are not described in the Raft paper) is left to the crate user.
+//! So, offering various convenience features (which are not described in the Raft paper) is left to the crate user.
 //!
 //! The following example outlines a basic usage flow of this crate:
 //! ```
