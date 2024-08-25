@@ -97,7 +97,7 @@ fn unstable_network() {
     assert_eq!(promises.len(), 100);
 
     for mut promise in promises {
-        for _ in 0..1000 {
+        for _ in 0..10000 {
             let Some(leader) = cluster.leader_node_mut() else {
                 panic!("No leader");
             };
@@ -117,9 +117,65 @@ fn unstable_network() {
     assert!(satisfied, "Commit indices are not synchronized");
 }
 
+#[test]
+fn node_restart() {
+    let seed = rand::thread_rng().gen();
+    let rng = StdRng::seed_from_u64(seed);
+    dbg!(seed);
+
+    let node_ids = [NodeId::new(0), NodeId::new(1), NodeId::new(2)];
+
+    // Create a cluster.
+    let mut cluster = TestCluster::new(&node_ids, rng);
+
+    cluster.nodes[0].options.running_ticks = MinMax::new(800, 5000);
+    cluster.nodes[0].options.stopping_ticks = MinMax::new(800, 5000);
+
+    assert!(cluster
+        .random_node_mut()
+        .create_cluster(&node_ids)
+        .is_pending());
+
+    let deadline = cluster.clock.add(10000);
+    let satisfied = cluster.run_until(deadline, |cluster| cluster.leader_node().is_some());
+    assert!(satisfied, "Create cluster timeout");
+
+    // Propose commands.
+    let mut promises = Vec::new();
+    for _ in 0..100 {
+        let Some(leader) = cluster.leader_node_mut() else {
+            panic!("No leader");
+        };
+        promises.push(leader.propose_command());
+
+        let ticks = MinMax::new(1, 10).sample_single(&mut cluster.rng);
+        cluster.run(cluster.clock.add(ticks));
+    }
+    assert_eq!(promises.len(), 100);
+
+    for mut promise in promises {
+        for _ in 0..1000 {
+            let Some(leader) = cluster.leader_node_mut() else {
+                panic!("No leader");
+            };
+            if promise.poll(leader).is_accepted() {
+                break;
+            }
+            cluster.run(cluster.clock.add(10));
+        }
+        assert!(promise.is_accepted());
+    }
+
+    let deadline = cluster.clock.add(50000);
+    let satisfied = cluster.run_until(deadline, |cluster| {
+        cluster.nodes[0].inner.commit_index() == cluster.nodes[1].inner.commit_index()
+            && cluster.nodes[0].inner.commit_index() == cluster.nodes[2].inner.commit_index()
+    });
+    assert!(satisfied, "Commit indices are not synchronized");
+}
+
 // TODO: dynamic membership
 // TODO: non voter
-// TDOO: restart nodes
 // TODO: storage repair
 // TODO: snapshot install
 
@@ -307,11 +363,13 @@ impl SampleRange<usize> for MinMax {
 pub struct TestNode {
     pub inner: Node,
     pub options: TestNodeOptions,
-    //pub running: bool,
+    pub running: bool,
     pub timeout_expire_time: Option<Clock>,
     pub storage_finish_time: Option<Clock>,
     pub snapshot_finish_time: Option<(Clock, ClusterConfig, LogPosition)>,
     pub incoming_messages: BTreeMap<(Clock, u64), Message>,
+    pub stop_time: Option<Clock>,
+    pub start_time: Option<Clock>,
 }
 
 impl TestNode {
@@ -319,15 +377,41 @@ impl TestNode {
         TestNode {
             inner: Node::start(id),
             options: TestNodeOptions::default(),
-            //running: true,
+            running: true,
             timeout_expire_time: None,
             storage_finish_time: None,
             snapshot_finish_time: None,
             incoming_messages: BTreeMap::new(),
+            stop_time: None,
+            start_time: None,
         }
     }
 
     pub fn run_tick(&mut self, rng: &mut StdRng, now: Clock) {
+        if !self.running {
+            if self.start_time.take_if(|t| *t <= now).is_some() {
+                self.running = true;
+
+                // TODO: add log truncate
+                self.inner = Node::restart(
+                    self.inner.id(),
+                    self.inner.current_term(),
+                    self.inner.voted_for(),
+                    self.inner.log().clone(),
+                );
+            } else {
+                return;
+            }
+        }
+        if self.stop_time.is_none() {
+            self.stop_time = Some(now.add(self.options.running_ticks.sample_single(rng)));
+        }
+        if self.stop_time.take_if(|t| *t <= now).is_some() {
+            self.running = false;
+            self.start_time = Some(now.add(self.options.stopping_ticks.sample_single(rng)));
+            return;
+        }
+
         self.storage_finish_time.take_if(|t| *t <= now);
         if self.storage_finish_time.is_some() {
             // Storage operations are synchronous, so we can't do anything else until they finish.
@@ -395,6 +479,6 @@ impl Clock {
     }
 
     pub fn add(&self, ticks: usize) -> Clock {
-        Clock(self.0 + ticks)
+        Clock(self.0.saturating_add(ticks))
     }
 }
