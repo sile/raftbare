@@ -20,7 +20,7 @@ fn propose_commands() {
 
     let deadline = cluster.clock.add(10000);
     cluster.run_until(deadline, |cluster| cluster.leader_node().is_some());
-    assert!(cluster.clock < deadline); // Not timed out
+    assert!(cluster.clock < deadline, "Create cluster timeout");
 }
 
 #[derive(Debug)]
@@ -28,6 +28,8 @@ pub struct TestCluster {
     pub nodes: Vec<TestNode>,
     pub clock: Clock,
     pub rng: StdRng,
+    pub default_link_options: TestLinkOptions,
+    seqno: u64,
 }
 
 impl TestCluster {
@@ -36,6 +38,8 @@ impl TestCluster {
             nodes: node_ids.iter().map(|&id| TestNode::new(id)).collect(),
             clock: Clock::new(),
             rng,
+            default_link_options: TestLinkOptions::default(),
+            seqno: 0,
         }
     }
 
@@ -57,27 +61,70 @@ impl TestCluster {
     {
         while self.clock < deadline && !condition(self) {
             self.run_tick();
-            // TODO: link
         }
     }
 
     pub fn run_tick(&mut self) {
         self.clock.tick();
+        let mut messages = Vec::new();
+
+        // Run nodes.
         for node in &mut self.nodes {
             node.run_tick(&mut self.rng, self.clock);
 
-            // TODO:
-            // pub broadcast_message: Option<Message>,
-            // pub send_messages: BTreeMap<NodeId, Message>,
-            // pub install_snapshots: BTreeSet<NodeId>,
+            let src = node.inner.id();
+            let mut actions = std::mem::take(node.inner.actions_mut());
+            if let Some(msg) = actions.broadcast_message.take() {
+                for dst in node.inner.peers() {
+                    messages.push((src, dst, msg.clone()));
+                }
+            }
+            for (dst, msg) in actions.send_messages {
+                messages.push((src, dst, msg));
+            }
+            for _id in actions.install_snapshots {
+                todo!();
+            }
         }
+
+        // Deliver messages.
+        for (src, dst, msg) in messages {
+            self.send_message(src, dst, msg);
+        }
+    }
+
+    fn send_message(&mut self, _src: NodeId, dst: NodeId, msg: Message) {
+        let options = &self.default_link_options;
+
+        if self.rng.gen_bool(options.drop_rate) {
+            return;
+        }
+
+        let latency = options.latency_ticks.sample_single(&mut self.rng) * message_size(&msg);
+        for node in &mut self.nodes {
+            if node.inner.id() == dst {
+                node.incoming_messages
+                    .insert((self.clock.add(latency), self.seqno), msg);
+                self.seqno += 1;
+                return;
+            }
+        }
+    }
+}
+
+fn message_size(msg: &Message) -> usize {
+    match msg {
+        Message::AppendEntriesCall { entries, .. } => entries.len(),
+        Message::AppendEntriesReply { .. } => 1,
+        Message::RequestVoteCall { .. } => 1,
+        Message::RequestVoteReply { .. } => 1,
     }
 }
 
 #[derive(Debug, Clone)]
 pub struct TestLinkOptions {
     pub latency_ticks: MinMax,
-    pub drop_rate: f32,
+    pub drop_rate: f64,
 }
 
 impl Default for TestLinkOptions {
@@ -152,7 +199,7 @@ pub struct TestNode {
     pub timeout_expire_time: Option<Clock>,
     pub storage_finish_time: Option<Clock>,
     pub snapshot_finish_time: Option<(Clock, ClusterConfig, LogPosition)>,
-    pub incoming_messages: BTreeMap<Clock, Message>,
+    pub incoming_messages: BTreeMap<(Clock, u64), Message>,
 }
 
 impl TestNode {
@@ -186,7 +233,7 @@ impl TestNode {
         }
 
         if let Some(entry) = self.incoming_messages.first_entry() {
-            if *entry.key() <= now {
+            if entry.key().0 <= now {
                 let message = entry.remove();
                 self.inner.handle_message(message);
             }
