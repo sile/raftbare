@@ -54,6 +54,9 @@ fn propose_commands() {
             && cluster.nodes[0].inner.commit_index() == cluster.nodes[2].inner.commit_index()
     });
     assert!(satisfied, "Commit indices are not synchronized");
+
+    // Links are stable, so the leader should not change.
+    assert_eq!(cluster.nodes[0].inner.current_term().get(), 1);
 }
 
 // TODO: unstable network

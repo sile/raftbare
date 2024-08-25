@@ -23,3 +23,13 @@ Differences with the paper
 
 - `Node::start()` after the local storage is cleared (but still in the cluster members)
 - Join the same node to multiple clusters
+
+## Coverage
+
+```console
+$ rustup component add llvm-tools-preview
+$ cargo install cargo-llvm-cov
+
+$ cargo llvm-cov
+$ cargo llvm-cov --open
+```
