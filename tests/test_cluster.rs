@@ -19,9 +19,50 @@ fn propose_commands() {
         .is_pending());
 
     let deadline = cluster.clock.add(10000);
-    cluster.run_until(deadline, |cluster| cluster.leader_node().is_some());
-    assert!(cluster.clock < deadline, "Create cluster timeout");
+    let satisfied = cluster.run_until(deadline, |cluster| cluster.leader_node().is_some());
+    assert!(satisfied, "Create cluster timeout");
+
+    // Propose commands.
+    let mut promises = Vec::new();
+    for _ in 0..100 {
+        let Some(leader) = cluster.leader_node_mut() else {
+            panic!("No leader");
+        };
+        promises.push(leader.propose_command());
+
+        let ticks = MinMax::new(1, 10).sample_single(&mut cluster.rng);
+        cluster.run(cluster.clock.add(ticks));
+    }
+    assert_eq!(promises.len(), 100);
+
+    for mut promise in promises {
+        for _ in 0..1000 {
+            let Some(leader) = cluster.leader_node_mut() else {
+                panic!("No leader");
+            };
+            if promise.poll(leader).is_accepted() {
+                break;
+            }
+            cluster.run(cluster.clock.add(10));
+        }
+        assert!(promise.is_accepted());
+    }
+
+    let deadline = cluster.clock.add(1000);
+    let satisfied = cluster.run_until(deadline, |cluster| {
+        cluster.nodes[0].inner.commit_index() == cluster.nodes[1].inner.commit_index()
+            && cluster.nodes[0].inner.commit_index() == cluster.nodes[2].inner.commit_index()
+    });
+    assert!(satisfied, "Commit indices are not synchronized");
 }
+
+// TODO: unstable network
+// TODO: dynamic membership
+// TODO: non voter
+// TDOO: restart nodes
+// TODO: storage repair
+// TODO: snapshot install
+// TODO: coverage
 
 #[derive(Debug)]
 pub struct TestCluster {
@@ -50,18 +91,30 @@ impl TestCluster {
             .map(|node| &node.inner)
     }
 
+    pub fn leader_node_mut(&mut self) -> Option<&mut Node> {
+        self.nodes
+            .iter_mut()
+            .find(|node| node.inner.role().is_leader())
+            .map(|node| &mut node.inner)
+    }
+
     pub fn random_node_mut(&mut self) -> &mut Node {
         let index = self.rng.gen_range(0..self.nodes.len());
         &mut self.nodes[index].inner
     }
 
-    pub fn run_until<F>(&mut self, deadline: Clock, condition: F)
+    pub fn run(&mut self, deadline: Clock) {
+        self.run_until(deadline, |_| false);
+    }
+
+    pub fn run_until<F>(&mut self, deadline: Clock, condition: F) -> bool
     where
         F: Fn(&TestCluster) -> bool,
     {
         while self.clock < deadline && !condition(self) {
             self.run_tick();
         }
+        self.clock < deadline
     }
 
     pub fn run_tick(&mut self) {
