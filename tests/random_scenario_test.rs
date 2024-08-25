@@ -59,13 +59,69 @@ fn propose_commands() {
     assert_eq!(cluster.nodes[0].inner.current_term().get(), 1);
 }
 
-// TODO: unstable network
+#[test]
+fn unstable_network() {
+    let seed = rand::thread_rng().gen();
+    let rng = StdRng::seed_from_u64(seed);
+    dbg!(seed);
+
+    let node_ids = [NodeId::new(0), NodeId::new(1), NodeId::new(2)];
+
+    // Create a cluster.
+    let mut cluster = TestCluster::new(&node_ids, rng);
+
+    // [NOTE] This test is almost the same as `propose_commands()`, but the network is very unstable.
+    cluster.default_link_options.drop_rate = 0.3;
+    cluster.default_link_options.latency_ticks = MinMax::new(1, 1000);
+
+    assert!(cluster
+        .random_node_mut()
+        .create_cluster(&node_ids)
+        .is_pending());
+
+    let deadline = cluster.clock.add(100000);
+    let satisfied = cluster.run_until(deadline, |cluster| cluster.leader_node().is_some());
+    assert!(satisfied, "Create cluster timeout");
+
+    // Propose commands.
+    let mut promises = Vec::new();
+    for _ in 0..100 {
+        let Some(leader) = cluster.leader_node_mut() else {
+            panic!("No leader");
+        };
+        promises.push(leader.propose_command());
+
+        let ticks = MinMax::new(1, 10).sample_single(&mut cluster.rng);
+        cluster.run(cluster.clock.add(ticks));
+    }
+    assert_eq!(promises.len(), 100);
+
+    for mut promise in promises {
+        for _ in 0..1000 {
+            let Some(leader) = cluster.leader_node_mut() else {
+                panic!("No leader");
+            };
+            if promise.poll(leader).is_accepted() {
+                break;
+            }
+            cluster.run(cluster.clock.add(10));
+        }
+        assert!(promise.is_accepted());
+    }
+
+    let deadline = cluster.clock.add(100000);
+    let satisfied = cluster.run_until(deadline, |cluster| {
+        cluster.nodes[0].inner.commit_index() == cluster.nodes[1].inner.commit_index()
+            && cluster.nodes[0].inner.commit_index() == cluster.nodes[2].inner.commit_index()
+    });
+    assert!(satisfied, "Commit indices are not synchronized");
+}
+
 // TODO: dynamic membership
 // TODO: non voter
 // TDOO: restart nodes
 // TODO: storage repair
 // TODO: snapshot install
-// TODO: coverage
 
 #[derive(Debug)]
 pub struct TestCluster {
@@ -187,7 +243,7 @@ impl Default for TestLinkOptions {
     fn default() -> Self {
         Self {
             latency_ticks: MinMax::new(5, 20),
-            drop_rate: 0.05,
+            drop_rate: 0.01,
         }
     }
 }
