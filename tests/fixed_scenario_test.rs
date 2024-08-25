@@ -7,6 +7,7 @@ use std::ops::{Deref, DerefMut};
 macro_rules! assert_no_action {
     ($node:expr) => {
         assert_eq!($node.actions_mut().next(), None);
+        assert!($node.actions().is_empty());
     };
 }
 
@@ -153,6 +154,10 @@ fn truncate_log() {
     // Propose a command, but not broadcast the message.
     assert_eq!(cluster.node0.role(), Role::Leader);
     let mut commit_promise = cluster.node0.propose_command();
+    assert_eq!(
+        commit_promise.log_position(),
+        cluster.node0.log().last_position(),
+    );
     while let Some(_) = cluster.node0.actions_mut().next() {}
 
     // Make node2 the leader.

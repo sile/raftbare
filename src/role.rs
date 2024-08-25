@@ -30,3 +30,15 @@ impl Role {
         matches!(self, Self::Candidate)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn role_is() {
+        assert!(Role::Leader.is_leader());
+        assert!(Role::Follower.is_follower());
+        assert!(Role::Candidate.is_candidate());
+    }
+}

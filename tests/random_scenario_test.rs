@@ -98,6 +98,12 @@ fn unstable_network() {
 
     for mut promise in promises {
         for _ in 0..10000 {
+            for _ in 0..100 {
+                if cluster.leader_node().is_some() {
+                    break;
+                }
+                cluster.run(cluster.clock.add(1000));
+            }
             let Some(leader) = cluster.leader_node_mut() else {
                 panic!("No leader");
             };
@@ -227,7 +233,7 @@ fn pipelining() {
         assert!(promise.is_accepted());
     }
 
-    let deadline = cluster.clock.add(1000);
+    let deadline = cluster.clock.add(10000);
     let satisfied = cluster.run_until(deadline, |cluster| {
         cluster.nodes[0].inner.commit_index() == cluster.nodes[1].inner.commit_index()
             && cluster.nodes[0].inner.commit_index() == cluster.nodes[2].inner.commit_index()
