@@ -1,4 +1,64 @@
-//! TODO
+//! `raftbare` is a minimal but feature-complete, I/O-free implementation of the [Raft] distributed consensus algorithm.
+//!
+//! [Raft]: https://raft.github.io/
+//!
+//! [`Node`] is the main struct that represents a Raft node.
+//! It offers methods for creating a cluster, proposing commands, updating cluster configurations,
+//! handling incoming messages, snapshotting, and more.
+//!
+//! [`Node`] itself does not execute I/O operations.
+//! Instead, it generates [`Action`]s that represent pending I/O operations.
+//! How to execute these actions is up to the crate user.
+//!
+//! Except for a few optimizations, `raftbare` is a very straightforward (yet efficient) implementation of the Raft algorithm.
+//! This crate focuses on the core part of the algorithm.
+//! Offering various convenience features (which are not described in the Raft paper) is left to the crate user.
+//!
+//! The following example outlines a basic usage flow of this crate:
+//! ```
+//! use raftbare::{Action, Node, NodeId};
+//!
+//! // Start a node.
+//! let mut node = Node::start(NodeId::new(0));
+//!
+//! // Create a three nodes cluster.
+//! let mut promise = node.create_cluster(&[NodeId::new(0), NodeId::new(1), NodeId::new(2)]);
+//!
+//! // Execute actions requested by the node until the cluster creation is complete.
+//! while promise.poll(&mut node).is_pending() {
+//!     for action in node.actions_mut() {
+//!         // How to execute actions is up to the crate user.
+//!         match action {
+//!            Action::SetElectionTimeout => { /* ... */ },
+//!            Action::SaveCurrentTerm => { /* ... */ },
+//!            Action::SaveVotedFor => { /* ... */ },
+//!            Action::AppendLogEntries(_) => { /* ... */ },
+//!            Action::BroadcastMessage(_) => { /* ... */ },
+//!            Action::SendMessage(_, _) => { /* ... */ },
+//!            Action::InstallSnapshot(_) => { /* ... */ },
+//!         }
+//!     }
+//!
+//!     // If the election timeout is expired, handle it.
+//!     if is_election_timeout_expired() {
+//!         node.handle_election_timeout();
+//!     }
+//!
+//!     // If a message is received, handle it.
+//!     while let Some(message) = try_receive_message() {
+//!         node.handle_message(message);
+//!     }
+//!     # break;
+//! }
+//!
+//! // Propose a user-defined command.
+//! let promise = node.propose_command();
+//!
+//! // Execute actions as before.
+//!
+//! # fn is_election_timeout_expired() -> bool { true }
+//! # fn try_receive_message() -> Option<raftbare::Message> { None }
+//! ```
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
 
