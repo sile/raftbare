@@ -60,7 +60,6 @@ while promise.poll(&mut node).is_pending() {
     while let Some(message) = try_receive_message() {
         node.handle_message(message);
     }
-    # break;
 }
 
 // Propose a user-defined command.
