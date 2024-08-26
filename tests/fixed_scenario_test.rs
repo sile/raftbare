@@ -7,6 +7,7 @@ use std::ops::{Deref, DerefMut};
 macro_rules! assert_no_action {
     ($node:expr) => {
         assert_eq!($node.actions_mut().next(), None);
+        assert!($node.actions().is_empty());
     };
 }
 
@@ -153,6 +154,10 @@ fn truncate_log() {
     // Propose a command, but not broadcast the message.
     assert_eq!(cluster.node0.role(), Role::Leader);
     let mut commit_promise = cluster.node0.propose_command();
+    assert_eq!(
+        commit_promise.log_position(),
+        cluster.node0.log().last_position(),
+    );
     while let Some(_) = cluster.node0.actions_mut().next() {}
 
     // Make node2 the leader.
@@ -201,7 +206,7 @@ fn snapshot() {
         assert_eq!(node.log().entries().prev_position().index, LogIndex::new(0));
         let snapshot_config = node.log().latest_config().clone();
         let snapshot_position = node.log().entries().last_position();
-        assert!(node.handle_snapshot_installed(snapshot_config, snapshot_position));
+        assert!(node.handle_snapshot_installed(snapshot_position, snapshot_config));
         assert_ne!(node.log().entries().prev_position().index, LogIndex::new(0));
     }
 
@@ -224,7 +229,7 @@ fn snapshot() {
     let (snapshot_config, snapshot_position) = cluster
         .node0
         .asserted_handle_append_entries_reply_failure_need_snapshot(&reply);
-    assert!(node3.handle_snapshot_installed(snapshot_config, snapshot_position));
+    assert!(node3.handle_snapshot_installed(snapshot_position, snapshot_config));
 
     // Append after snapshot.
     let (_, call) = cluster.node0.asserted_heartbeat();
