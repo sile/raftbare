@@ -1,7 +1,9 @@
-use std::collections::BTreeMap;
-
 use raftbare::{ClusterConfig, LogIndex, LogPosition, Message, Node, NodeId, Role};
-use rand::{distributions::uniform::SampleRange, prelude::RngCore, rngs::StdRng, Rng, SeedableRng};
+use rand::{
+    distributions::uniform::SampleRange, prelude::RngCore, rngs::StdRng, seq::SliceRandom, Rng,
+    SeedableRng,
+};
+use std::collections::BTreeMap;
 
 #[test]
 fn propose_commands() {
@@ -391,8 +393,110 @@ fn storage_repair_with_snapshot() {
     assert!(satisfied, "Commit indices are not synchronized");
 }
 
-// TODO: commit / heartbeat rejection
+#[test]
+fn dynamic_membership() {
+    let seed = rand::thread_rng().gen();
+    let rng = StdRng::seed_from_u64(seed);
+    dbg!(seed);
+
+    let node_ids = [NodeId::new(0), NodeId::new(1), NodeId::new(2)];
+
+    // Create a cluster.
+    let mut cluster = TestCluster::new(&node_ids, rng);
+
+    cluster.default_link_options.drop_rate = 0.3;
+    cluster.default_link_options.latency_ticks = MinMax::new(1, 1000);
+
+    assert!(cluster
+        .random_node_mut()
+        .create_cluster(&node_ids)
+        .is_pending());
+
+    let deadline = cluster.clock.add(100000);
+    let satisfied = cluster.run_until(deadline, |cluster| cluster.leader_node().is_some());
+    assert!(satisfied, "Create cluster timeout");
+
+    for i in 0..10 {
+        // Change the cluster configuration.
+        cluster.run_while_leader_absent(cluster.clock.add(1000_000));
+        if cluster.rng.gen_bool(0.7) {
+            // Add.
+            let node_id = NodeId::new(3 + i);
+            let voter = cluster.rng.gen_bool(0.5);
+            let mut node = TestNode::new(node_id);
+            node.voter = voter;
+            cluster.nodes.push(node);
+
+            let Some(leader) = cluster.leader_node_mut() else {
+                unreachable!();
+            };
+            let new_config = if voter {
+                leader.config().to_joint_consensus(&[node_id], &[])
+            } else {
+                let mut new_config = leader.config().clone();
+                new_config.non_voters.insert(node_id);
+                new_config
+            };
+            let promise = leader.propose_config(new_config);
+            assert!(promise.is_pending());
+        } else if cluster.nodes.iter().filter(|n| n.voter).count() > 2 {
+            // Remove.
+            let node_ids = cluster
+                .nodes
+                .iter()
+                .map(|n| n.inner.id())
+                .collect::<Vec<_>>();
+            let node_id = node_ids
+                .choose(&mut cluster.rng)
+                .copied()
+                .expect("unreachable");
+
+            let Some(leader) = cluster.leader_node_mut() else {
+                unreachable!();
+            };
+            let new_config = if leader.config().non_voters.contains(&node_id) {
+                let mut new_config = leader.config().clone();
+                new_config.non_voters.remove(&node_id);
+                new_config
+            } else {
+                leader.config().to_joint_consensus(&[], &[node_id])
+            };
+            let promise = leader.propose_config(new_config);
+            assert!(promise.is_pending());
+        }
+
+        // Propose commands.
+        let mut promises = Vec::new();
+        for _ in 0..10 {
+            cluster.run_while_leader_absent(cluster.clock.add(1000_000));
+            let Some(leader) = cluster.leader_node_mut() else {
+                panic!("No leader");
+            };
+            promises.push(leader.propose_command());
+
+            let ticks = MinMax::new(1, 10).sample_single(&mut cluster.rng);
+            cluster.run(cluster.clock.add(ticks));
+        }
+        assert_eq!(promises.len(), 10);
+
+        for mut promise in promises {
+            for _ in 0..10000 {
+                cluster.run_while_leader_absent(cluster.clock.add(1000_000));
+                let Some(leader) = cluster.leader_node_mut() else {
+                    panic!("No leader");
+                };
+                if promise.poll(leader).is_accepted() {
+                    break;
+                }
+                cluster.run(cluster.clock.add(10));
+            }
+            assert!(promise.is_accepted());
+        }
+    }
+}
+
 // TODO: dynamic membership including non-voter
+// TODO: truncate isolated leader's local log
 
 #[derive(Debug)]
 pub struct TestCluster {
@@ -641,6 +745,7 @@ pub struct TestNode {
     pub incoming_messages: BTreeMap<(Clock, u64), Message>,
     pub stop_time: Option<Clock>,
     pub start_time: Option<Clock>,
+    pub voter: bool,
 }
 
 impl TestNode {
@@ -655,10 +760,15 @@ impl TestNode {
             incoming_messages: BTreeMap::new(),
             stop_time: None,
             start_time: None,
+            voter: true,
         }
     }
 
     pub fn run_tick(&mut self, rng: &mut StdRng, now: Clock) {
+        if !self.voter {
+            assert!(self.inner.role().is_follower());
+        }
+
         if !self.running {
             if self.start_time.take_if(|t| *t <= now).is_some() {
                 self.running = true;
