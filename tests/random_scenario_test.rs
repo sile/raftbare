@@ -86,7 +86,7 @@ fn unstable_network() {
     // Propose commands.
     let mut promises = Vec::new();
     for _ in 0..100 {
-        cluster.run_while_leader_absent(cluster.clock.add(10000));
+        cluster.run_while_leader_absent(cluster.clock.add(100_000));
         let Some(leader) = cluster.leader_node_mut() else {
             panic!("No leader");
         };
@@ -99,7 +99,7 @@ fn unstable_network() {
 
     for mut promise in promises {
         for _ in 0..10000 {
-            cluster.run_while_leader_absent(cluster.clock.add(10000));
+            cluster.run_while_leader_absent(cluster.clock.add(100_000));
             let Some(leader) = cluster.leader_node_mut() else {
                 panic!("No leader");
             };
