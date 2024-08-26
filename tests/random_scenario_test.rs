@@ -211,7 +211,8 @@ fn pipelining() {
         };
         promises.push(leader.propose_command());
         if do_hearbeat {
-            leader.heartbeat();
+            let promise = leader.heartbeat();
+            assert!(promise.is_pending());
         }
 
         if !pipeline_command {
@@ -479,24 +480,115 @@ fn dynamic_membership() {
         }
         assert_eq!(promises.len(), 10);
 
+        let mut success_count = 0;
         for mut promise in promises {
             for _ in 0..10000 {
                 cluster.run_while_leader_absent(cluster.clock.add(1000_000));
                 let Some(leader) = cluster.leader_node_mut() else {
                     panic!("No leader");
                 };
-                if promise.poll(leader).is_accepted() {
+                if !promise.poll(leader).is_pending() {
                     break;
                 }
                 cluster.run(cluster.clock.add(10));
             }
-            assert!(promise.is_accepted());
+            assert!(!promise.is_pending());
+            if promise.is_accepted() {
+                success_count += 1;
+            }
         }
+        assert!(success_count > 5);
     }
 }
 
-// TODO: dynamic membership including non-voter
-// TODO: truncate isolated leader's local log
+#[test]
+fn truncate_divergence_log() {
+    let seed = rand::thread_rng().gen();
+    let rng = StdRng::seed_from_u64(seed);
+    dbg!(seed);
+
+    let node_ids = [NodeId::new(0), NodeId::new(1), NodeId::new(2)];
+
+    // Create a cluster.
+    let mut cluster = TestCluster::new(&node_ids, rng);
+    assert!(cluster
+        .random_node_mut()
+        .create_cluster(&node_ids)
+        .is_pending());
+
+    let deadline = cluster.clock.add(10000);
+    let satisfied = cluster.run_until(deadline, |cluster| cluster.leader_node().is_some());
+    assert!(satisfied, "Create cluster timeout");
+
+    // Propose 20 commands as usual.
+    let mut promises = Vec::new();
+    for _ in 0..20 {
+        let Some(leader) = cluster.leader_node_mut() else {
+            panic!("No leader");
+        };
+        promises.push(leader.propose_command());
+
+        let ticks = MinMax::new(1, 10).sample_single(&mut cluster.rng);
+        cluster.run(cluster.clock.add(ticks));
+    }
+
+    // Propose next 20 commands without calling `cluster.run()`
+    for _ in 0..20 {
+        let Some(leader) = cluster.leader_node_mut() else {
+            panic!("No leader");
+        };
+        promises.push(leader.propose_command());
+    }
+
+    // Isolate the leader from the cluster.
+    let leader_node_index = cluster
+        .nodes
+        .iter()
+        .position(|n| n.inner.role().is_leader())
+        .expect("unreachable");
+    let old_leader = cluster.nodes.remove(leader_node_index);
+
+    // Elect a new leader.
+    cluster.run_while_leader_absent(cluster.clock.add(1000_000));
+
+    // Propose remaining commands.
+    for _ in 0..60 {
+        let Some(leader) = cluster.leader_node_mut() else {
+            panic!("No leader");
+        };
+        promises.push(leader.propose_command());
+    }
+    assert_eq!(promises.len(), 100);
+
+    // Rejoin the old leader.
+    cluster.nodes.push(old_leader);
+
+    let mut success_count = 0;
+    for mut promise in promises {
+        for _ in 0..1000 {
+            let Some(leader) = cluster.leader_node_mut() else {
+                panic!("No leader");
+            };
+            if !promise.poll(leader).is_pending() {
+                break;
+            }
+            cluster.run(cluster.clock.add(10));
+        }
+        assert!(!promise.is_pending());
+        if promise.is_accepted() {
+            success_count += 1;
+        }
+    }
+    assert!(60 <= success_count);
+    assert!(success_count <= 80);
+
+    let deadline = cluster.clock.add(1000);
+    let satisfied = cluster.run_until(deadline, |cluster| {
+        cluster.nodes[0].inner.commit_index() == cluster.nodes[1].inner.commit_index()
+            && cluster.nodes[0].inner.commit_index() == cluster.nodes[2].inner.commit_index()
+    });
+    assert!(satisfied, "Commit indices are not synchronized");
+}
 
 #[derive(Debug)]
 pub struct TestCluster {
