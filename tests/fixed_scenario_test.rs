@@ -206,7 +206,7 @@ fn snapshot() {
         assert_eq!(node.log().entries().prev_position().index, LogIndex::new(0));
         let snapshot_config = node.log().latest_config().clone();
         let snapshot_position = node.log().entries().last_position();
-        assert!(node.handle_snapshot_installed(snapshot_config, snapshot_position));
+        assert!(node.handle_snapshot_installed(snapshot_position, snapshot_config));
         assert_ne!(node.log().entries().prev_position().index, LogIndex::new(0));
     }
 
@@ -229,7 +229,7 @@ fn snapshot() {
     let (snapshot_config, snapshot_position) = cluster
         .node0
         .asserted_handle_append_entries_reply_failure_need_snapshot(&reply);
-    assert!(node3.handle_snapshot_installed(snapshot_config, snapshot_position));
+    assert!(node3.handle_snapshot_installed(snapshot_position, snapshot_config));
 
     // Append after snapshot.
     let (_, call) = cluster.node0.asserted_heartbeat();

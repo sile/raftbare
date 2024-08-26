@@ -78,6 +78,17 @@ impl Log {
             .unwrap_or(&self.snapshot_config)
     }
 
+    pub(crate) fn get_config(&self, index: LogIndex) -> Option<&ClusterConfig> {
+        self.entries().contains_index(index).then(|| {
+            self.entries
+                .configs
+                .range(..=index)
+                .map(|x| x.1)
+                .next_back()
+                .unwrap_or(&self.snapshot_config)
+        })
+    }
+
     pub(crate) fn latest_config_index(&self) -> LogIndex {
         self.entries
             .configs
@@ -322,10 +333,6 @@ impl LogEntries {
         } else {
             Some(LogEntry::Command)
         }
-    }
-
-    pub(crate) fn get_config(&self, index: LogIndex) -> Option<&ClusterConfig> {
-        self.configs.range(..=index).map(|x| x.1).next_back()
     }
 
     /// Appends an entry to the back of this entries.
