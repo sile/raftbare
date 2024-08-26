@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use raftbare::{ClusterConfig, LogPosition, Message, Node, NodeId, Role};
+use raftbare::{ClusterConfig, LogIndex, LogPosition, Message, Node, NodeId, Role};
 use rand::{distributions::uniform::SampleRange, prelude::RngCore, rngs::StdRng, Rng, SeedableRng};
 
 #[test]
@@ -86,6 +86,7 @@ fn unstable_network() {
     // Propose commands.
     let mut promises = Vec::new();
     for _ in 0..100 {
+        cluster.run_while_leader_absent(cluster.clock.add(10000));
         let Some(leader) = cluster.leader_node_mut() else {
             panic!("No leader");
         };
@@ -98,12 +99,7 @@ fn unstable_network() {
 
     for mut promise in promises {
         for _ in 0..10000 {
-            for _ in 0..100 {
-                if cluster.leader_node().is_some() {
-                    break;
-                }
-                cluster.run(cluster.clock.add(1000));
-            }
+            cluster.run_while_leader_absent(cluster.clock.add(10000));
             let Some(leader) = cluster.leader_node_mut() else {
                 panic!("No leader");
             };
@@ -149,6 +145,7 @@ fn node_restart() {
     // Propose commands.
     let mut promises = Vec::new();
     for _ in 0..100 {
+        cluster.run_while_leader_absent(cluster.clock.add(10000));
         let Some(leader) = cluster.leader_node_mut() else {
             panic!("No leader");
         };
@@ -161,6 +158,7 @@ fn node_restart() {
 
     for mut promise in promises {
         for _ in 0..1000 {
+            cluster.run_while_leader_absent(cluster.clock.add(10000));
             let Some(leader) = cluster.leader_node_mut() else {
                 panic!("No leader");
             };
@@ -205,6 +203,7 @@ fn pipelining() {
         let pipeline_command = cluster.rng.gen_bool(0.8);
         let do_hearbeat = cluster.rng.gen_bool(0.5);
 
+        cluster.run_while_leader_absent(cluster.clock.add(10000));
         let Some(leader) = cluster.leader_node_mut() else {
             panic!("No leader");
         };
@@ -222,6 +221,7 @@ fn pipelining() {
 
     for mut promise in promises {
         for _ in 0..1000 {
+            cluster.run_while_leader_absent(cluster.clock.add(10000));
             let Some(leader) = cluster.leader_node_mut() else {
                 panic!("No leader");
             };
@@ -241,10 +241,158 @@ fn pipelining() {
     assert!(satisfied, "Commit indices are not synchronized");
 }
 
-// TODO: dynamic membership including non-voter
-// TODO: storage repair
-// TODO: snapshot install
+#[test]
+fn storage_repair_without_snapshot() {
+    let seed = rand::thread_rng().gen();
+    let rng = StdRng::seed_from_u64(seed);
+    dbg!(seed);
+
+    let node_ids = [NodeId::new(0), NodeId::new(1), NodeId::new(2)];
+
+    // Create a cluster.
+    let mut cluster = TestCluster::new(&node_ids, rng);
+    assert!(cluster
+        .random_node_mut()
+        .create_cluster(&node_ids)
+        .is_pending());
+
+    let deadline = cluster.clock.add(10000);
+    let satisfied = cluster.run_until(deadline, |cluster| cluster.leader_node().is_some());
+    assert!(satisfied, "Create cluster timeout");
+
+    // Propose commands.
+    let mut promises = Vec::new();
+    for i in 0..100 {
+        if i == 50 {
+            for node in cluster.nodes.iter_mut() {
+                if !node.inner.role().is_leader() {
+                    // Reset the node.
+                    node.inner = Node::start(node.inner.id());
+                }
+            }
+        }
+
+        cluster.run_while_leader_absent(cluster.clock.add(10000));
+        let Some(leader) = cluster.leader_node_mut() else {
+            panic!("No leader");
+        };
+        promises.push(leader.propose_command());
+
+        let ticks = MinMax::new(1, 10).sample_single(&mut cluster.rng);
+        cluster.run(cluster.clock.add(ticks));
+    }
+    assert_eq!(promises.len(), 100);
+
+    for mut promise in promises {
+        for _ in 0..1000 {
+            let Some(leader) = cluster.leader_node_mut() else {
+                panic!("No leader");
+            };
+            if promise.poll(leader).is_accepted() {
+                break;
+            }
+            cluster.run(cluster.clock.add(10));
+        }
+        assert!(promise.is_accepted());
+    }
+
+    let deadline = cluster.clock.add(1_000_000);
+    let satisfied = cluster.run_until(deadline, |cluster| {
+        cluster.nodes[0].inner.commit_index() == cluster.nodes[1].inner.commit_index()
+            && cluster.nodes[0].inner.commit_index() == cluster.nodes[2].inner.commit_index()
+    });
+    assert!(satisfied, "Commit indices are not synchronized");
+}
+
+#[test]
+fn storage_repair_with_snapshot() {
+    let seed = rand::thread_rng().gen();
+    let rng = StdRng::seed_from_u64(seed);
+    dbg!(seed);
+
+    let node_ids = [NodeId::new(0), NodeId::new(1), NodeId::new(2)];
+
+    // Create a cluster.
+    let mut cluster = TestCluster::new(&node_ids, rng);
+    assert!(cluster
+        .random_node_mut()
+        .create_cluster(&node_ids)
+        .is_pending());
+
+    let deadline = cluster.clock.add(10000);
+    let satisfied = cluster.run_until(deadline, |cluster| cluster.leader_node().is_some());
+    assert!(satisfied, "Create cluster timeout");
+
+    // Propose commands.
+    let mut promises = Vec::new();
+    let mut snapshot_index = LogIndex::ZERO;
+    for i in 0..100 {
+        if i == 25 {
+            // Take snapshot
+            cluster.run_until(cluster.clock.add(10000), |cluster| {
+                cluster
+                    .nodes
+                    .iter()
+                    .all(|node| node.inner.commit_index().get() > 0)
+            });
+            for node in cluster.nodes.iter_mut() {
+                let (position, config) = node.inner.commit_position_and_config();
+                assert!(node
+                    .inner
+                    .handle_snapshot_installed(position, config.clone()));
+                if node.inner.role().is_leader() {
+                    snapshot_index = position.index;
+                }
+            }
+        }
+        if i == 50 {
+            for node in cluster.nodes.iter_mut() {
+                if !node.inner.role().is_leader() {
+                    // Reset the node.
+                    node.inner = Node::start(node.inner.id());
+                }
+            }
+        }
+
+        cluster.run_while_leader_absent(cluster.clock.add(10000));
+        let Some(leader) = cluster.leader_node_mut() else {
+            panic!("No leader");
+        };
+        promises.push(leader.propose_command());
+
+        let ticks = MinMax::new(1, 10).sample_single(&mut cluster.rng);
+        cluster.run(cluster.clock.add(ticks));
+    }
+    assert_eq!(promises.len(), 100);
+
+    for mut promise in promises {
+        for _ in 0..1000 {
+            let Some(leader) = cluster.leader_node_mut() else {
+                panic!("No leader");
+            };
+            if !promise.poll(leader).is_pending() {
+                break;
+            }
+            cluster.run(cluster.clock.add(10));
+        }
+
+        if promise.log_position().index < snapshot_index {
+            assert!(promise.is_rejected());
+        } else {
+            assert!(promise.is_accepted());
+        }
+    }
+
+    let deadline = cluster.clock.add(1_000_000);
+    let satisfied = cluster.run_until(deadline, |cluster| {
+        cluster.nodes[0].inner.commit_index() == cluster.nodes[1].inner.commit_index()
+            && cluster.nodes[0].inner.commit_index() == cluster.nodes[2].inner.commit_index()
+    });
+    assert!(satisfied, "Commit indices are not synchronized");
+}
+
 // TODO: commit / heartbeat rejection
+// TODO: dynamic membership including non-voter
 
 #[derive(Debug)]
 pub struct TestCluster {
@@ -285,6 +433,10 @@ impl TestCluster {
         &mut self.nodes[index].inner
     }
 
+    pub fn run_while_leader_absent(&mut self, deadline: Clock) {
+        self.run_until(deadline, |cluster| cluster.leader_node().is_some());
+    }
+
     pub fn run(&mut self, deadline: Clock) {
         self.run_until(deadline, |_| false);
     }
@@ -302,6 +454,7 @@ impl TestCluster {
     pub fn run_tick(&mut self) {
         self.clock.tick();
         let mut messages = Vec::new();
+        let mut snapshots = Vec::new();
 
         // Run nodes.
         for node in &mut self.nodes {
@@ -317,14 +470,39 @@ impl TestCluster {
             for (dst, msg) in actions.send_messages {
                 messages.push((src, dst, msg));
             }
-            for _id in actions.install_snapshots {
-                todo!();
+            for dst in actions.install_snapshots {
+                snapshots.push((
+                    src,
+                    dst,
+                    node.inner.log().snapshot_position(),
+                    node.inner.log().snapshot_config().clone(),
+                ));
+                // for node in &mut self.nodes {
+                //     if node.inner.id() == id {
+                //         continue;
+                //     }
+                //     if node.snapshot_finish_time.is_some() {
+                //         break;
+                //     }
+
+                //     // node.snapshot_finish_time =
+                //     // node.inner.handle_snapshot_installed(
+                //     //     node.inner.commit_position(),
+                //     //     node.inner.config().clone(),
+                //     // );
+                //     break;
+                // }
             }
         }
 
         // Deliver messages.
         for (src, dst, msg) in messages {
             self.send_message(src, dst, msg);
+        }
+
+        // Deliver snapshots.
+        for (src, dst, position, config) in snapshots {
+            self.send_snashot(src, dst, position, config);
         }
     }
 
@@ -341,6 +519,33 @@ impl TestCluster {
                 node.incoming_messages
                     .insert((self.clock.add(latency), self.seqno), msg);
                 self.seqno += 1;
+                return;
+            }
+        }
+    }
+
+    fn send_snashot(
+        &mut self,
+        _src: NodeId,
+        dst: NodeId,
+        position: LogPosition,
+        config: ClusterConfig,
+    ) {
+        for node in &mut self.nodes {
+            if node.inner.id() == dst {
+                if node.snapshot_finish_time.is_some() {
+                    return;
+                }
+
+                node.snapshot_finish_time = Some((
+                    self.clock.add(
+                        node.options
+                            .install_snapshot_ticks
+                            .sample_single(&mut self.rng),
+                    ),
+                    position,
+                    config,
+                ));
                 return;
             }
         }
@@ -381,7 +586,6 @@ pub struct TestNodeOptions {
     pub log_entries_lost: MinMax,
     pub max_entries_per_rpc: usize,
     pub voter: bool,
-    // TODO: snapshot_install_interval_ticks
 }
 
 impl Default for TestNodeOptions {
@@ -433,7 +637,7 @@ pub struct TestNode {
     pub running: bool,
     pub timeout_expire_time: Option<Clock>,
     pub storage_finish_time: Option<Clock>,
-    pub snapshot_finish_time: Option<(Clock, ClusterConfig, LogPosition)>,
+    pub snapshot_finish_time: Option<(Clock, LogPosition, ClusterConfig)>,
     pub incoming_messages: BTreeMap<(Clock, u64), Message>,
     pub stop_time: Option<Clock>,
     pub start_time: Option<Clock>,
@@ -467,7 +671,6 @@ impl TestNode {
                     }
                 }
 
-                // TODO: add log truncate
                 self.inner = Node::restart(
                     self.inner.id(),
                     self.inner.current_term(),
@@ -484,7 +687,7 @@ impl TestNode {
         if self.stop_time.take_if(|t| *t <= now).is_some() {
             self.running = false;
             self.timeout_expire_time = None;
-            self.storage_finish_time = None; // TODO: truncate if there are pending writes
+            self.storage_finish_time = None;
             self.start_time = Some(now.add(self.options.stopping_ticks.sample_single(rng)));
             return;
         }
@@ -499,10 +702,10 @@ impl TestNode {
             self.inner.handle_election_timeout();
         }
 
-        if let Some((_, config, position)) =
+        if let Some((_, position, config)) =
             self.snapshot_finish_time.take_if(|(t, _, _)| *t <= now)
         {
-            let _succeeded = self.inner.handle_snapshot_installed(config, position);
+            let _succeeded = self.inner.handle_snapshot_installed(position, config);
         }
 
         while let Some(entry) = self.incoming_messages.first_entry() {
