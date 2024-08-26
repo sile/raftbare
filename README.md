@@ -77,7 +77,7 @@ $ rustup component add llvm-tools-preview
 $ cargo install cargo-llvm-cov
 
 $ git describe --tags
-0.1.0-11-g5ac288c
+0.1.1
 
 $ cargo llvm-cov
 Filename                      Regions    Missed Regions     Cover   Functions  Missed Functions  Executed       Lines      Missed Lines     Cover    Branches   Missed Branches     Cover
