@@ -23,15 +23,25 @@ impl CommitPromise {
     /// Polls the promise to update its state.
     ///
     /// For convinience, the updated promise is returned.
+    ///
+    /// Note that `node` can be a different node than the one that the promise was created for.
     pub fn poll(&mut self, node: &Node) -> Self {
         let Self::Pending(position) = *self else {
             return *self;
         };
-        if !node.log().entries().contains(position) {
-            *self = Self::Rejected(position);
-        } else if position.index <= node.commit_index() {
-            *self = Self::Accepted(position);
+
+        if position.index <= node.commit_index() {
+            if node.log().entries().contains(position) {
+                *self = Self::Accepted(position);
+            } else {
+                *self = Self::Rejected(position);
+            }
+        } else if let Some(term) = node.log().entries().get_term(node.commit_index()) {
+            if position.term < term {
+                *self = Self::Rejected(position);
+            }
         }
+
         *self
     }
 
