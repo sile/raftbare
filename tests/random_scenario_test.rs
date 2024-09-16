@@ -339,7 +339,11 @@ fn storage_repair_with_snapshot() {
                     .all(|node| node.inner.commit_index().get() > 0)
             });
             for node in cluster.nodes.iter_mut() {
-                let (position, config) = node.inner.commit_position_and_config();
+                let (position, config) = node
+                    .inner
+                    .log()
+                    .get_position_and_config(node.inner.commit_index())
+                    .expect("unreachable");
                 assert!(node
                     .inner
                     .handle_snapshot_installed(position, config.clone()));

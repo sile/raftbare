@@ -230,16 +230,6 @@ impl Node {
         self.commit_index
     }
 
-    /// Returns the commit position and a refecence to the cluster configuration at that position.
-    ///
-    /// This method is useful when taking snapshots.
-    pub fn commit_position_and_config(&self) -> (LogPosition, &ClusterConfig) {
-        let index = self.commit_index;
-        let term = self.log.entries().get_term(index).expect("unreachable");
-        let config = self.log.get_config(index).expect("unreachable");
-        (LogPosition { index, term }, config)
-    }
-
     /// Returns the current cluster configuration of this node.
     ///
     /// This is shorthand for `self.log().latest_config()`.
