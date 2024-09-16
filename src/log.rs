@@ -78,10 +78,20 @@ impl Log {
             .unwrap_or(&self.snapshot_config)
     }
 
-    /// Returns a reference to the most recent cluster configuration up to the given index.
+    /// Returns the log position and a reference to the most recent cluster configuration at the given index.
     ///
     /// If the index is out of range, this method returns `None`.
-    pub fn get_config(&self, index: LogIndex) -> Option<&ClusterConfig> {
+    pub fn get_position_and_config(
+        &self,
+        index: LogIndex,
+    ) -> Option<(LogPosition, &ClusterConfig)> {
+        self.entries().get_term(index).and_then(|term| {
+            self.get_config(index)
+                .map(|config| (LogPosition { term, index }, config))
+        })
+    }
+
+    pub(crate) fn get_config(&self, index: LogIndex) -> Option<&ClusterConfig> {
         self.entries().contains_index(index).then(|| {
             self.entries
                 .configs
