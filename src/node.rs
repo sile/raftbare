@@ -1047,9 +1047,12 @@ impl Node {
             );
         }
 
-        if !self.role().is_leader() {
-            // The snapshot installation may have invalidated the pending action.
-            self.actions.append_log_entries = None;
+        if let Some(entries) = self.actions.append_log_entries.take() {
+            if last_included_position.index < entries.prev_position().index {
+                self.actions.append_log_entries = Some(entries);
+            } else {
+                self.actions.append_log_entries = entries.since(last_included_position);
+            }
         }
 
         true
