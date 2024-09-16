@@ -81,6 +81,8 @@ impl Log {
     /// Returns the log position and a reference to the most recent cluster configuration at the given index.
     ///
     /// If the index is out of range, this method returns `None`.
+    ///
+    /// This method is useful when taking snapshots.
     pub fn get_position_and_config(
         &self,
         index: LogIndex,
