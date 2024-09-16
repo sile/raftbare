@@ -509,6 +509,46 @@ impl LogIndex {
     }
 }
 
+impl From<u64> for LogIndex {
+    fn from(value: u64) -> Self {
+        Self::new(value)
+    }
+}
+
+impl From<LogIndex> for u64 {
+    fn from(value: LogIndex) -> Self {
+        value.get()
+    }
+}
+
+impl std::ops::Add for LogIndex {
+    type Output = Self;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        Self::new(self.0 + rhs.0)
+    }
+}
+
+impl std::ops::AddAssign for LogIndex {
+    fn add_assign(&mut self, rhs: Self) {
+        self.0 += rhs.0;
+    }
+}
+
+impl std::ops::Sub for LogIndex {
+    type Output = Self;
+
+    fn sub(self, rhs: Self) -> Self::Output {
+        Self::new(self.0 - rhs.0)
+    }
+}
+
+impl std::ops::SubAssign for LogIndex {
+    fn sub_assign(&mut self, rhs: Self) {
+        self.0 -= rhs.0;
+    }
+}
+
 /// Log position ([`Term`] and [`LogIndex`]).
 ///
 /// A [`LogPosition`] uniquely identifies a [`LogEntry`] stored within a cluster.
