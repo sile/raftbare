@@ -473,6 +473,20 @@ impl LogEntries {
         }
         unreachable!();
     }
+
+    pub(crate) fn handle_snapshot_installed(&mut self, last_included_position: LogPosition) {
+        if last_included_position.index < self.prev_position().index {
+            return;
+        }
+
+        if self.prev_position().index < last_included_position.index {
+            *self = Self::new(last_included_position);
+        } else {
+            *self = self
+                .since(last_included_position)
+                .expect("Node::handle_snapshot_installed() guarantees that this never happens");
+        }
+    }
 }
 
 impl std::iter::Extend<LogEntry> for LogEntries {
