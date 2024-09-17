@@ -176,6 +176,13 @@ impl Message {
             *entries0 = entries1;
         }
     }
+
+    pub(crate) fn handle_snapshot_installed(&mut self, last_included_position: LogPosition) {
+        let Self::AppendEntriesCall { entries, .. } = self else {
+            return;
+        };
+        entries.handle_snapshot_installed(last_included_position);
+    }
 }
 
 /// Common header for all messages.
