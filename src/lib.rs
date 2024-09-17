@@ -101,3 +101,43 @@ impl Term {
         Self(self.0 + 1)
     }
 }
+
+impl From<u64> for Term {
+    fn from(value: u64) -> Self {
+        Self::new(value)
+    }
+}
+
+impl From<Term> for u64 {
+    fn from(value: Term) -> Self {
+        value.get()
+    }
+}
+
+impl std::ops::Add for Term {
+    type Output = Self;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        Self::new(self.0 + rhs.0)
+    }
+}
+
+impl std::ops::AddAssign for Term {
+    fn add_assign(&mut self, rhs: Self) {
+        self.0 += rhs.0;
+    }
+}
+
+impl std::ops::Sub for Term {
+    type Output = Self;
+
+    fn sub(self, rhs: Self) -> Self::Output {
+        Self::new(self.0 - rhs.0)
+    }
+}
+
+impl std::ops::SubAssign for Term {
+    fn sub_assign(&mut self, rhs: Self) {
+        self.0 -= rhs.0;
+    }
+}

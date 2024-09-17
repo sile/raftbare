@@ -30,6 +30,46 @@ impl NodeId {
     }
 }
 
+impl From<u64> for NodeId {
+    fn from(value: u64) -> Self {
+        Self::new(value)
+    }
+}
+
+impl From<NodeId> for u64 {
+    fn from(value: NodeId) -> Self {
+        value.get()
+    }
+}
+
+impl std::ops::Add for NodeId {
+    type Output = Self;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        Self::new(self.0 + rhs.0)
+    }
+}
+
+impl std::ops::AddAssign for NodeId {
+    fn add_assign(&mut self, rhs: Self) {
+        self.0 += rhs.0;
+    }
+}
+
+impl std::ops::Sub for NodeId {
+    type Output = Self;
+
+    fn sub(self, rhs: Self) -> Self::Output {
+        Self::new(self.0 - rhs.0)
+    }
+}
+
+impl std::ops::SubAssign for NodeId {
+    fn sub_assign(&mut self, rhs: Self) {
+        self.0 -= rhs.0;
+    }
+}
+
 /// Raft node.
 #[derive(Debug, Clone)]
 pub struct Node {
