@@ -476,7 +476,10 @@ impl LogEntries {
 
     pub(crate) fn handle_snapshot_installed(&mut self, last_included_position: LogPosition) {
         if last_included_position.index < self.prev_position().index {
-        } else if self.prev_position().index < last_included_position.index {
+            return;
+        }
+
+        if self.prev_position().index < last_included_position.index {
             *self = Self::new(last_included_position);
         } else {
             *self = self
