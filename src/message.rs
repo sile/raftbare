@@ -178,10 +178,35 @@ impl Message {
     }
 
     pub(crate) fn handle_snapshot_installed(&mut self, last_included_position: LogPosition) {
-        let Self::AppendEntriesCall { entries, .. } = self else {
-            return;
-        };
-        entries.handle_snapshot_installed(last_included_position);
+        match self {
+            Message::RequestVoteCall {
+                header,
+                last_position,
+            } => {
+                header.term = header.term.max(last_included_position.term);
+                if last_position.index < last_included_position.index {
+                    *last_position = last_included_position;
+                }
+            }
+            Message::RequestVoteReply { header, .. } => {
+                header.term = header.term.max(last_included_position.term);
+            }
+            Message::AppendEntriesCall {
+                header, entries, ..
+            } => {
+                header.term = header.term.max(last_included_position.term);
+                entries.handle_snapshot_installed(last_included_position);
+            }
+            Message::AppendEntriesReply {
+                header,
+                last_position,
+            } => {
+                header.term = header.term.max(last_included_position.term);
+                if last_position.index < last_included_position.index {
+                    *last_position = last_included_position;
+                }
+            }
+        }
     }
 }
 
