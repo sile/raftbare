@@ -1080,7 +1080,6 @@ impl Node {
         if let Some(entries) = &mut self.actions.append_log_entries {
             entries.handle_snapshot_installed(last_included_position);
         }
-
         if let Some(msg) = &mut self.actions.broadcast_message {
             msg.handle_snapshot_installed(last_included_position);
         }
