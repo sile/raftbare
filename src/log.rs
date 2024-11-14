@@ -566,6 +566,7 @@ impl std::ops::SubAssign for LogIndex {
 /// Log position ([`Term`] and [`LogIndex`]).
 ///
 /// A [`LogPosition`] uniquely identifies a [`LogEntry`] stored within a cluster.
+// TODO: derive Ord
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct LogPosition {
     /// Term of the log entry.

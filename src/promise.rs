@@ -1,6 +1,7 @@
 use crate::{LogPosition, MessageSeqNo, Node, Term};
 
 /// Promise of a commit that results in either rejection or acceptance.
+// TODO: struct CommitPromise(LogPosition);
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum CommitPromise {
     /// The promise is pending.
@@ -71,6 +72,7 @@ impl CommitPromise {
 }
 
 /// Promise of a heartbeat that results in either rejection or acceptance.
+// TODO: consider to remove this enum
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum HeartbeatPromise {
     /// The promise is pending.
