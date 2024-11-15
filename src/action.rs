@@ -41,6 +41,8 @@ pub enum Action {
     ///
     /// To guarantee properties by the Raft algorithm, the entries must be appended before responding to users or sending messages to other nodes.
     /// (However, because writing all log entries to persistent storage synchronously could be too costly, in reality, the entries are often written asynchronously.)
+    //
+    // TODO: Consider moving this variant after BroadcastMessage
     AppendLogEntries(LogEntries),
 
     /// Broadcast a message to all other nodes ([`Node::peers()`](crate::Node::peers)).
