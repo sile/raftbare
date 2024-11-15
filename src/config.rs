@@ -148,7 +148,7 @@ pub struct UniqueNodes<'a> {
     non_voters: Peekable<Iter<'a, NodeId>>,
 }
 
-impl<'a> Iterator for UniqueNodes<'a> {
+impl Iterator for UniqueNodes<'_> {
     type Item = NodeId;
 
     fn next(&mut self) -> Option<Self::Item> {
