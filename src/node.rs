@@ -757,7 +757,7 @@ impl Node {
         if self.current_term < msg.term() {
             if matches!(msg, Message::RequestVoteCall { .. })
                 && !matches!(self.role, RoleState::Candidate { .. })
-                && self.voted_for.map_or(false, |id| id != msg.from())
+                && self.voted_for.is_some_and(|id| id != msg.from())
             {
                 // This message might have been sent from a removed node and should be ignored
                 // to prevent disruption of the cluster.
