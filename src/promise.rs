@@ -14,6 +14,7 @@ pub enum CommitPromise {
 
     /// The promise is accepted.
     Accepted(LogPosition),
+    // TODO: Add Unknown variant (for snapshot)
 }
 
 impl CommitPromise {
