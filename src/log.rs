@@ -589,6 +589,11 @@ impl LogPosition {
     pub(crate) const fn next(self) -> Self {
         Self::new(self.term, self.index.next())
     }
+
+    /// Returns `true` if this position is equal to [`LogPosition::INVALID`].
+    pub const fn is_invalid(self) -> bool {
+        matches!(self, Self::INVALID)
+    }
 }
 
 impl PartialOrd for LogPosition {
