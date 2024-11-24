@@ -44,8 +44,8 @@ while node.get_commit_status(commit_position).is_in_progress() {
            Action::SetElectionTimeout => { /* ... */ },
            Action::SaveCurrentTerm => { /* ... */ },
            Action::SaveVotedFor => { /* ... */ },
-           Action::AppendLogEntries(_) => { /* ... */ },
            Action::BroadcastMessage(_) => { /* ... */ },
+           Action::AppendLogEntries(_) => { /* ... */ },
            Action::SendMessage(_, _) => { /* ... */ },
            Action::InstallSnapshot(_) => { /* ... */ },
         }
