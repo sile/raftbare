@@ -566,7 +566,7 @@ impl std::ops::SubAssign for LogIndex {
 /// Log position ([`Term`] and [`LogIndex`]).
 ///
 /// A [`LogPosition`] uniquely identifies a [`LogEntry`] stored within a cluster.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct LogPosition {
     /// Term of the log entry.
     pub term: Term,
@@ -593,18 +593,6 @@ impl LogPosition {
     /// Returns `true` if this position is equal to [`LogPosition::INVALID`].
     pub const fn is_invalid(self) -> bool {
         matches!(self, Self::INVALID)
-    }
-}
-
-impl PartialOrd for LogPosition {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-impl Ord for LogPosition {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        (self.term, self.index).cmp(&(other.term, other.index))
     }
 }
 
