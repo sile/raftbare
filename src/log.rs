@@ -566,7 +566,6 @@ impl std::ops::SubAssign for LogIndex {
 /// Log position ([`Term`] and [`LogIndex`]).
 ///
 /// A [`LogPosition`] uniquely identifies a [`LogEntry`] stored within a cluster.
-// TODO: derive Ord
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct LogPosition {
     /// Term of the log entry.
@@ -589,6 +588,18 @@ impl LogPosition {
 
     pub(crate) const fn next(self) -> Self {
         Self::new(self.term, self.index.next())
+    }
+}
+
+impl PartialOrd for LogPosition {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for LogPosition {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        (self.term, self.index).cmp(&(other.term, other.index))
     }
 }
 
@@ -772,6 +783,15 @@ mod tests {
                 .prev_position,
             pos(1, 4)
         );
+    }
+
+    #[test]
+    fn log_position_cmp() {
+        assert_eq!(pos(5, 5).cmp(&pos(5, 5)), std::cmp::Ordering::Equal);
+        assert_eq!(pos(7, 3).cmp(&pos(5, 5)), std::cmp::Ordering::Greater);
+        assert_eq!(pos(3, 7).cmp(&pos(5, 5)), std::cmp::Ordering::Less);
+        assert_eq!(pos(5, 7).cmp(&pos(5, 5)), std::cmp::Ordering::Greater);
+        assert_eq!(pos(5, 3).cmp(&pos(5, 5)), std::cmp::Ordering::Less);
     }
 
     fn two_entries(prev_position: LogPosition, entry0: LogEntry, entry1: LogEntry) -> LogEntries {
