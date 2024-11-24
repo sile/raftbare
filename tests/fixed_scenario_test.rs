@@ -1,6 +1,6 @@
 use raftbare::{
-    Action, Actions, ClusterConfig, CommitPromise, HeartbeatPromise, LogEntries, LogEntry,
-    LogIndex, LogPosition, Message, MessageHeader, MessageSeqNo, Node, NodeId, Role, Term,
+    Action, Actions, ClusterConfig, CommitPromise, LogEntries, LogEntry, LogIndex, LogPosition,
+    Message, MessageHeader, MessageSeqNo, Node, NodeId, Role, Term,
 };
 use std::ops::{Deref, DerefMut};
 
@@ -103,12 +103,11 @@ fn election() {
         .asserted_handle_append_entries_reply_success(&reply_from_node2, false, false);
 
     // Manual heartbeat.
-    let (mut heartbeat, call) = cluster.node1.asserted_heartbeat();
+    let call = cluster.node1.asserted_heartbeat();
     let reply = cluster
         .node0
         .asserted_handle_append_entries_call_success(&call);
     cluster.node1.handle_message(reply);
-    assert!(heartbeat.poll(&cluster.node1).is_accepted());
     assert_no_action!(cluster.node1);
 
     // Periodic heartbeat.
@@ -189,7 +188,7 @@ fn truncate_log() {
         .node2
         .asserted_handle_append_entries_reply_success(&reply, true, false);
 
-    let (_, call) = cluster.node2.asserted_heartbeat();
+    let call = cluster.node2.asserted_heartbeat();
     let _reply = cluster
         .node0
         .asserted_handle_append_entries_call_success(&call);
@@ -238,7 +237,7 @@ fn snapshot() {
     assert!(node3.handle_snapshot_installed(snapshot_position, snapshot_config));
 
     // Append after snapshot.
-    let (_, call) = cluster.node0.asserted_heartbeat();
+    let call = cluster.node0.asserted_heartbeat();
     let reply = node3.asserted_handle_append_entries_call_failure(&call);
 
     let call = cluster
@@ -766,13 +765,13 @@ impl TestNode {
         reply
     }
 
-    fn asserted_heartbeat(&mut self) -> (HeartbeatPromise, Message) {
-        let heartbeat = self.heartbeat();
+    fn asserted_heartbeat(&mut self) -> Message {
+        assert!(self.heartbeat());
         let call = append_entries_call(self, LogEntries::new(self.log().entries().last_position()));
         assert_action!(self, set_election_timeout());
         assert_action!(self, broadcast_message(&call));
         assert_no_action!(self);
-        (heartbeat, call)
+        call
     }
 }
 
