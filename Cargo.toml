@@ -9,8 +9,6 @@ homepage = "https://github.com/sile/raftbare"
 repository = "https://github.com/sile/raftbare"
 readme = "README.md"
 
-# TODO: serde feature
-
 [dependencies]
 
 [dev-dependencies]
