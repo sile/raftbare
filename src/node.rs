@@ -4,7 +4,7 @@ use crate::{
     log::{LogEntries, LogEntry, LogIndex, LogPosition},
     message::{Message, MessageSeqNo},
     quorum::Quorum,
-    CommitPromise, HeartbeatPromise, Log, MessageHeader, Role, Term,
+    CommitPromise, Log, MessageHeader, Role, Term,
 };
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -504,11 +504,9 @@ impl Node {
             LogIndex::ZERO,
             self.log.last_position().index,
         );
-        quorum.update_seqno(config, self.id, MessageSeqNo::ZERO, self.seqno);
 
         for (&id, follower) in followers {
             quorum.update_match_index(config, id, LogIndex::ZERO, follower.match_index);
-            quorum.update_seqno(config, id, MessageSeqNo::ZERO, follower.max_seqno);
         }
     }
 
@@ -607,29 +605,22 @@ impl Node {
         self.propose(LogEntry::ClusterConfig(new_config))
     }
 
-    /// Sends a heartbeat to all followers.
+    /// Sends a heartbeat (i.e, an empty `AppendEntriesCall` message) to all followers.
     ///
-    /// This method returns a [`HeartbeatPromise`] that will be accepted when a majority of voters
-    /// respond with success. If the term changes, the promise will be rejected.
+    /// This method returns `false` if this node is not the leader.
     ///
-    /// Typically, this method is used to confirm that the current node is still the leader
-    /// before processing a query request about the state machine managed by the user.
-    ///
-    /// # Preconditions
-    ///
-    /// This method returns [`HeartbeatPromise::Rejected`] if the following preconditions are not met:
-    /// - `self.role().is_leader()` is [`true`].
-    pub fn heartbeat(&mut self) -> HeartbeatPromise {
-        if !matches!(self.role, RoleState::Leader { .. }) {
-            return HeartbeatPromise::Rejected;
-        }
-
-        let seqno = self.next_seqno();
-
+    /// This method can be used to perform consistent queries through the following steps:
+    /// 1. Invoke `heartbeat()`.
+    /// 2. Record the sequence number from the heartbeat message.
+    /// 3. Wait until this node receives the majority of response messages that are equal to or newer than the sequence number, to confirm that this node is still the leader of the cluster.
+    /// 4. Execute the consistent query.
+    pub fn heartbeat(&mut self) -> bool {
         let RoleState::Leader { followers, .. } = &self.role else {
-            unreachable!();
+            return false;
         };
+
         if !followers.is_empty() {
+            let seqno = self.next_seqno();
             let call = Message::append_entries_call(
                 self.current_term,
                 self.id,
@@ -641,7 +632,7 @@ impl Node {
         }
         self.actions.set(Action::SetElectionTimeout);
 
-        HeartbeatPromise::new(self.current_term, seqno)
+        true
     }
 
     fn append_proposed_log_entry(&mut self, entry: &LogEntry) {
@@ -919,12 +910,6 @@ impl Node {
             return;
         }
 
-        quorum.update_seqno(
-            self.log.latest_config(),
-            header.from,
-            follower.max_seqno,
-            header.seqno,
-        );
         follower.max_seqno = header.seqno;
 
         if !self.log.entries().contains(follower_last_position) {
@@ -1104,22 +1089,8 @@ impl Node {
         self.log.get_config(last_included_position.index) == Some(last_included_config)
     }
 
-    pub(crate) fn quorum(&self) -> Option<&Quorum> {
-        if let RoleState::Leader { quorum, .. } = &self.role {
-            Some(quorum)
-        } else {
-            None
-        }
-    }
-
     fn next_seqno(&mut self) -> MessageSeqNo {
-        let old_seqno = self.seqno;
-        self.seqno = MessageSeqNo::new(old_seqno.get() + 1);
-
-        if let RoleState::Leader { quorum, .. } = &mut self.role {
-            quorum.update_seqno(self.log.latest_config(), self.id, old_seqno, self.seqno);
-        }
-
+        self.seqno = MessageSeqNo::new(self.seqno.get() + 1);
         self.seqno
     }
 }

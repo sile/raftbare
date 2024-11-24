@@ -211,8 +211,7 @@ fn pipelining() {
         };
         promises.push(leader.propose_command());
         if do_hearbeat {
-            let promise = leader.heartbeat();
-            assert!(promise.is_pending());
+            assert!(leader.heartbeat());
         }
 
         if !pipeline_command {
