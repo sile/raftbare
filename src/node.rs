@@ -173,14 +173,14 @@ impl Node {
 
     /// Creates a new cluster.
     ///
-    /// This method returns a [`CommitPromise`] that will be accepted
-    /// when the initial cluster configuration is successfully committed.
+    /// This method returns a [`LogPosition`] associated with a log entry.
+    /// The log entry will be accepted when the initial cluster configuration is successfully committed.
     ///
     /// To proceed the cluster creation, the user needs to handle the queued actions after calling this method.
     ///
     /// # Preconditions
     ///
-    /// This method returns `CommitPromise::Rejected(LogPosition::NEVER)` if the following preconditions are not met:
+    /// This method returns [`LogPosition::INVALID`] if the following preconditions are not met:
     /// - This node (`self`) is a newly started node.
     /// - `initial_voters` contains at least one node.
     ///
@@ -360,10 +360,12 @@ impl Node {
 
     /// Proposes a user-defined command ([`LogEntry::Command`]).
     ///
-    /// This method returns a [`CommitPromise`] that will be resolved when the command is committed or rejected.
+    /// This method returns a [`LogPosition`] that associated with the log entry for the proposed command.
+    /// To determine whether the command has been committed, you can use the [`Node::get_commit_status()`] method.
+    /// To known where the command is commited or not, you can use [`Node::get_commit_status()`] method.
     /// Committed commands can be applied to the state machine managed by the user.
     ///
-    /// The [`CommitPromise`] is useful for determining when to send the command result back to the client
+    /// [`Node::get_commit_status()`] is useful for determining when to send the command result back to the client
     /// that triggered the command (if such a client exists).
     /// To detect all committed commands that need to be applied to the state machine,
     /// it is recommended to use [`Node::commit_index()`] since it considers commands proposed by other nodes.
@@ -375,7 +377,7 @@ impl Node {
     ///
     /// # Preconditions
     ///
-    /// This method returns `CommitPromise::Rejected(LogPosition::NEVER)` if the following preconditions are not met:
+    /// This method returns [`LogPosition::INVALID`] if the following preconditions are not met:
     /// - `self.role().is_leader()` is [`true`].
     ///
     /// # Pipelining
@@ -391,8 +393,8 @@ impl Node {
     /// let mut node = /* ... ; */
     /// # Node::start(NodeId::new(0));
     ///
-    /// let mut commit_promise = node.propose_command();
-    /// if commit_promise.is_rejected() {
+    /// let commit_position = node.propose_command();
+    /// if commit_position.is_invalid() {
     ///     // `node` is not the leader.
     ///     if let Some(maybe_leader) = node.voted_for() {
     ///         // Retry with the possible leader or reply to the client that the command is rejected.
@@ -404,20 +406,20 @@ impl Node {
     /// // Need to map the log index to the actual command data for
     /// // exeucting `Action::AppendLogEntries(_)` queued by the node.
     /// assert!(node.actions().append_log_entries.is_some());
-    /// let index = commit_promise.log_position().index;
+    /// let index = commit_position.index;
     /// # let _ = index;
     /// // ... executing actions ...
     ///
-    /// while commit_promise.poll(&mut node).is_pending() {
+    /// while node.get_commit_status(commit_position).is_in_progress() {
     ///     // ... executing actions ...
     /// }
     ///
-    /// if commit_promise.is_rejected() {
+    /// if node.get_commit_status(commit_position).is_rejected() {
     ///    // Retry with another node or reply to the client that the command is rejected.
     ///    // ...
     ///    return;
     /// }
-    /// assert!(commit_promise.is_accepted());
+    /// assert!(node.get_commit_status(commit_position).is_committed());
     ///
     /// // Apply all committed commands to the state machine.
     /// let last_applied_index = /* ...; */
@@ -430,7 +432,7 @@ impl Node {
     ///     // Apply the command to the state machine.
     ///     // ...
     ///
-    ///     if index == commit_promise.log_position().index {
+    ///     if index == commit_position.index {
     ///         // Reply to the client that the command is committed.
     ///         // ...
     ///     }
@@ -568,7 +570,7 @@ impl Node {
     ///
     /// # Preconditions
     ///
-    /// This method returns `CommitPromise::Rejected(LogPosition::NEVER)` if the following preconditions are not met:
+    /// This method returns [`LogPosition::INVALID`] if the following preconditions are not met:
     /// - `self.role().is_leader()` is [`true`].
     /// - `new_config.voters` is equal to `self.config().voters`.
     /// - A node is either a voter or a non-voter in the new configuration (not both).
