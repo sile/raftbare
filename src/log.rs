@@ -625,22 +625,22 @@ pub enum LogEntry {
     Command,
 }
 
-/// State of a log entry.
+/// Status of a log entry.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum LogEntryState {
+pub enum LogEntryStatus {
     /// The log entry is currently being committed.
     InProgress,
 
-    /// The log entry was successfully committed.
+    /// The log entry has been successfully committed.
     Committed,
 
-    /// The log entry was rejected.
+    /// The log entry has been rejected.
     Rejected,
 
-    /// The log entry was removed due to snapshotting.
+    /// The log entry does not exist, typically due to removal by snapshotting.
     ///
-    /// It is unclear whether the entry was committed or rejected.
-    Removed,
+    /// It is unknown whether the entry was ever committed or rejected.
+    Unknown,
 }
 
 #[cfg(test)]

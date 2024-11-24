@@ -73,7 +73,7 @@ mod role;
 
 pub use action::{Action, Actions};
 pub use config::ClusterConfig;
-pub use log::{Log, LogEntries, LogEntry, LogEntryState, LogIndex, LogPosition};
+pub use log::{Log, LogEntries, LogEntry, LogEntryStatus, LogIndex, LogPosition};
 pub use message::{Message, MessageHeader, MessageSeqNo};
 pub use node::{Node, NodeId};
 pub use promise::CommitPromise;
