@@ -625,9 +625,9 @@ pub enum LogEntry {
     Command,
 }
 
-/// Status of a log entry.
+/// Commit status of a log entry.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum LogEntryStatus {
+pub enum CommitStatus {
     /// The log entry is currently being committed.
     InProgress,
 
@@ -643,7 +643,7 @@ pub enum LogEntryStatus {
     Unknown,
 }
 
-impl LogEntryStatus {
+impl CommitStatus {
     /// Returns `true` if the status is `InProgress`.
     pub const fn is_in_progress(self) -> bool {
         matches!(self, Self::InProgress)

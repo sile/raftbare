@@ -52,7 +52,7 @@
 //! }
 //!
 //! // Propose a user-defined command.
-//! let promise = node.propose_command();
+//! let commit_position = node.propose_command();
 //!
 //! // Execute actions as before.
 //!
@@ -72,7 +72,7 @@ mod role;
 
 pub use action::{Action, Actions};
 pub use config::ClusterConfig;
-pub use log::{Log, LogEntries, LogEntry, LogEntryStatus, LogIndex, LogPosition};
+pub use log::{CommitStatus, Log, LogEntries, LogEntry, LogIndex, LogPosition};
 pub use message::{Message, MessageHeader, MessageSeqNo};
 pub use node::{Node, NodeId};
 pub use role::Role;

@@ -1,4 +1,4 @@
-use raftbare::{ClusterConfig, LogEntryStatus, LogIndex, LogPosition, Message, Node, NodeId, Role};
+use raftbare::{ClusterConfig, CommitStatus, LogIndex, LogPosition, Message, Node, NodeId, Role};
 use rand::{
     distributions::uniform::SampleRange, prelude::RngCore, rngs::StdRng, seq::SliceRandom, Rng,
     SeedableRng,
@@ -41,7 +41,7 @@ fn propose_commands() {
             let Some(leader) = cluster.leader_node_mut() else {
                 panic!("No leader");
             };
-            if leader.get_log_entry_status(position).is_committed() {
+            if leader.get_commit_status(position).is_committed() {
                 committed = true;
                 break;
             }
@@ -104,7 +104,7 @@ fn unstable_network() {
             let Some(leader) = cluster.leader_node_mut() else {
                 panic!("No leader");
             };
-            if leader.get_log_entry_status(position).is_committed() {
+            if leader.get_commit_status(position).is_committed() {
                 committed = true;
                 break;
             }
@@ -163,7 +163,7 @@ fn node_restart() {
             let Some(leader) = cluster.leader_node_mut() else {
                 panic!("No leader");
             };
-            if leader.get_log_entry_status(position).is_committed() {
+            if leader.get_commit_status(position).is_committed() {
                 committed = true;
                 break;
             }
@@ -226,7 +226,7 @@ fn pipelining() {
             let Some(leader) = cluster.leader_node_mut() else {
                 panic!("No leader");
             };
-            if leader.get_log_entry_status(position).is_committed() {
+            if leader.get_commit_status(position).is_committed() {
                 committed = true;
                 break;
             }
@@ -289,7 +289,7 @@ fn storage_repair_without_snapshot() {
             let Some(leader) = cluster.leader_node_mut() else {
                 panic!("No leader");
             };
-            if leader.get_log_entry_status(position).is_committed() {
+            if leader.get_commit_status(position).is_committed() {
                 committed = true;
                 break;
             }
@@ -370,13 +370,13 @@ fn storage_repair_with_snapshot() {
     assert_eq!(positions.len(), 100);
 
     for position in positions {
-        let mut status = LogEntryStatus::InProgress;
+        let mut status = CommitStatus::InProgress;
         for _ in 0..1000 {
             let Some(leader) = cluster.leader_node_mut() else {
                 panic!("No leader");
             };
 
-            status = leader.get_log_entry_status(position);
+            status = leader.get_commit_status(position);
             if !status.is_in_progress() {
                 break;
             }
@@ -489,8 +489,8 @@ fn dynamic_membership() {
                 let Some(leader) = cluster.leader_node_mut() else {
                     panic!("No leader");
                 };
-                if !leader.get_log_entry_status(position).is_in_progress() {
-                    if leader.get_log_entry_status(position).is_committed() {
+                if !leader.get_commit_status(position).is_in_progress() {
+                    if leader.get_commit_status(position).is_committed() {
                         success_count += 1;
                     }
                     break;
@@ -568,8 +568,8 @@ fn truncate_divergence_log() {
             let Some(leader) = cluster.leader_node_mut() else {
                 panic!("No leader");
             };
-            if !leader.get_log_entry_status(position).is_in_progress() {
-                if leader.get_log_entry_status(position).is_committed() {
+            if !leader.get_commit_status(position).is_in_progress() {
+                if leader.get_commit_status(position).is_committed() {
                     success_count += 1;
                 }
                 break;

@@ -181,7 +181,7 @@ fn truncate_log() {
         .asserted_handle_append_entries_call_success(&call);
     assert!(cluster
         .node0
-        .get_log_entry_status(commit_position)
+        .get_commit_status(commit_position)
         .is_in_progress());
 
     cluster
@@ -194,7 +194,7 @@ fn truncate_log() {
         .asserted_handle_append_entries_call_success(&call);
     assert!(cluster
         .node0
-        .get_log_entry_status(commit_position)
+        .get_commit_status(commit_position)
         .is_rejected());
 
     assert_no_action!(cluster.node0);

@@ -4,7 +4,7 @@ use crate::{
     log::{LogEntries, LogEntry, LogIndex, LogPosition},
     message::{Message, MessageSeqNo},
     quorum::Quorum,
-    Log, LogEntryStatus, MessageHeader, Role, Term,
+    CommitStatus, Log, MessageHeader, Role, Term,
 };
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -605,22 +605,22 @@ impl Node {
         self.propose(LogEntry::ClusterConfig(new_config))
     }
 
-    /// Returns the status of a log entry associated with the given position.
-    pub fn get_log_entry_status(&self, position: LogPosition) -> LogEntryStatus {
+    /// Returns the commit status of a log entry associated with the given position.
+    pub fn get_commit_status(&self, position: LogPosition) -> CommitStatus {
         if position.index < self.log().entries().prev_position().index {
-            return LogEntryStatus::Unknown;
+            return CommitStatus::Unknown;
         } else if position.index <= self.commit_index() {
             if self.log().entries().contains(position) {
-                return LogEntryStatus::Committed;
+                return CommitStatus::Committed;
             } else {
-                return LogEntryStatus::Rejected;
+                return CommitStatus::Rejected;
             }
         } else if let Some(term) = self.log().entries().get_term(self.commit_index()) {
             if position.term < term {
-                return LogEntryStatus::Rejected;
+                return CommitStatus::Rejected;
             }
         }
-        LogEntryStatus::InProgress
+        CommitStatus::InProgress
     }
 
     /// Sends a heartbeat (i.e, an empty `AppendEntriesCall` message) to all followers.
