@@ -1,4 +1,4 @@
-use raftbare::{ClusterConfig, LogIndex, LogPosition, Message, Node, NodeId, Role};
+use raftbare::{ClusterConfig, LogEntryStatus, LogIndex, LogPosition, Message, Node, NodeId, Role};
 use rand::{
     distributions::uniform::SampleRange, prelude::RngCore, rngs::StdRng, seq::SliceRandom, Rng,
     SeedableRng,
@@ -15,39 +15,39 @@ fn propose_commands() {
 
     // Create a cluster.
     let mut cluster = TestCluster::new(&node_ids, rng);
-    assert!(cluster
-        .random_node_mut()
-        .create_cluster(&node_ids)
-        .is_pending());
+    let position = cluster.random_node_mut().create_cluster(&node_ids);
+    assert_ne!(position, LogPosition::INVALID);
 
     let deadline = cluster.clock.add(10000);
     let satisfied = cluster.run_until(deadline, |cluster| cluster.leader_node().is_some());
     assert!(satisfied, "Create cluster timeout");
 
     // Propose commands.
-    let mut promises = Vec::new();
+    let mut positions = Vec::new();
     for _ in 0..100 {
         let Some(leader) = cluster.leader_node_mut() else {
             panic!("No leader");
         };
-        promises.push(leader.propose_command());
+        positions.push(leader.propose_command());
 
         let ticks = MinMax::new(1, 10).sample_single(&mut cluster.rng);
         cluster.run(cluster.clock.add(ticks));
     }
-    assert_eq!(promises.len(), 100);
+    assert_eq!(positions.len(), 100);
 
-    for mut promise in promises {
+    for position in positions {
+        let mut committed = false;
         for _ in 0..1000 {
             let Some(leader) = cluster.leader_node_mut() else {
                 panic!("No leader");
             };
-            if promise.poll(leader).is_accepted() {
+            if leader.get_log_entry_status(position).is_committed() {
+                committed = true;
                 break;
             }
             cluster.run(cluster.clock.add(10));
         }
-        assert!(promise.is_accepted());
+        assert!(committed);
     }
 
     let deadline = cluster.clock.add(1000);
@@ -76,41 +76,41 @@ fn unstable_network() {
     cluster.default_link_options.drop_rate = 0.3;
     cluster.default_link_options.latency_ticks = MinMax::new(1, 1000);
 
-    assert!(cluster
-        .random_node_mut()
-        .create_cluster(&node_ids)
-        .is_pending());
+    let position = cluster.random_node_mut().create_cluster(&node_ids);
+    assert_ne!(position, LogPosition::INVALID);
 
     let deadline = cluster.clock.add(100000);
     let satisfied = cluster.run_until(deadline, |cluster| cluster.leader_node().is_some());
     assert!(satisfied, "Create cluster timeout");
 
     // Propose commands.
-    let mut promises = Vec::new();
+    let mut positions = Vec::new();
     for _ in 0..100 {
         cluster.run_while_leader_absent(cluster.clock.add(100_000));
         let Some(leader) = cluster.leader_node_mut() else {
             panic!("No leader");
         };
-        promises.push(leader.propose_command());
+        positions.push(leader.propose_command());
 
         let ticks = MinMax::new(1, 10).sample_single(&mut cluster.rng);
         cluster.run(cluster.clock.add(ticks));
     }
-    assert_eq!(promises.len(), 100);
+    assert_eq!(positions.len(), 100);
 
-    for mut promise in promises {
+    for position in positions {
+        let mut committed = false;
         for _ in 0..10000 {
             cluster.run_while_leader_absent(cluster.clock.add(100_000));
             let Some(leader) = cluster.leader_node_mut() else {
                 panic!("No leader");
             };
-            if promise.poll(leader).is_accepted() {
+            if leader.get_log_entry_status(position).is_committed() {
+                committed = true;
                 break;
             }
             cluster.run(cluster.clock.add(10));
         }
-        assert!(promise.is_accepted());
+        assert!(committed);
     }
 
     let deadline = cluster.clock.add(100000);
@@ -135,41 +135,41 @@ fn node_restart() {
     cluster.nodes[0].options.running_ticks = MinMax::new(800, 5000);
     cluster.nodes[0].options.stopping_ticks = MinMax::new(800, 5000);
 
-    assert!(cluster
-        .random_node_mut()
-        .create_cluster(&node_ids)
-        .is_pending());
+    let position = cluster.random_node_mut().create_cluster(&node_ids);
+    assert_ne!(position, LogPosition::INVALID);
 
     let deadline = cluster.clock.add(10000);
     let satisfied = cluster.run_until(deadline, |cluster| cluster.leader_node().is_some());
     assert!(satisfied, "Create cluster timeout");
 
     // Propose commands.
-    let mut promises = Vec::new();
+    let mut positions = Vec::new();
     for _ in 0..100 {
         cluster.run_while_leader_absent(cluster.clock.add(10000));
         let Some(leader) = cluster.leader_node_mut() else {
             panic!("No leader");
         };
-        promises.push(leader.propose_command());
+        positions.push(leader.propose_command());
 
         let ticks = MinMax::new(1, 10).sample_single(&mut cluster.rng);
         cluster.run(cluster.clock.add(ticks));
     }
-    assert_eq!(promises.len(), 100);
+    assert_eq!(positions.len(), 100);
 
-    for mut promise in promises {
+    for position in positions {
+        let mut committed = false;
         for _ in 0..1000 {
             cluster.run_while_leader_absent(cluster.clock.add(10000));
             let Some(leader) = cluster.leader_node_mut() else {
                 panic!("No leader");
             };
-            if promise.poll(leader).is_accepted() {
+            if leader.get_log_entry_status(position).is_committed() {
+                committed = true;
                 break;
             }
             cluster.run(cluster.clock.add(10));
         }
-        assert!(promise.is_accepted());
+        assert!(committed);
     }
 
     let deadline = cluster.clock.add(50000);
@@ -190,17 +190,15 @@ fn pipelining() {
 
     // Create a cluster.
     let mut cluster = TestCluster::new(&node_ids, rng);
-    assert!(cluster
-        .random_node_mut()
-        .create_cluster(&node_ids)
-        .is_pending());
+    let position = cluster.random_node_mut().create_cluster(&node_ids);
+    assert_ne!(position, LogPosition::INVALID);
 
     let deadline = cluster.clock.add(10000);
     let satisfied = cluster.run_until(deadline, |cluster| cluster.leader_node().is_some());
     assert!(satisfied, "Create cluster timeout");
 
     // Propose commands and trigger heartbeats.
-    let mut promises = Vec::new();
+    let mut positions = Vec::new();
     for _ in 0..100 {
         let pipeline_command = cluster.rng.gen_bool(0.8);
         let do_hearbeat = cluster.rng.gen_bool(0.5);
@@ -209,7 +207,7 @@ fn pipelining() {
         let Some(leader) = cluster.leader_node_mut() else {
             panic!("No leader");
         };
-        promises.push(leader.propose_command());
+        positions.push(leader.propose_command());
         if do_hearbeat {
             assert!(leader.heartbeat());
         }
@@ -219,20 +217,22 @@ fn pipelining() {
             cluster.run(cluster.clock.add(ticks));
         }
     }
-    assert_eq!(promises.len(), 100);
+    assert_eq!(positions.len(), 100);
 
-    for mut promise in promises {
+    for position in positions {
+        let mut committed = false;
         for _ in 0..1000 {
             cluster.run_while_leader_absent(cluster.clock.add(10000));
             let Some(leader) = cluster.leader_node_mut() else {
                 panic!("No leader");
             };
-            if promise.poll(leader).is_accepted() {
+            if leader.get_log_entry_status(position).is_committed() {
+                committed = true;
                 break;
             }
             cluster.run(cluster.clock.add(10));
         }
-        assert!(promise.is_accepted());
+        assert!(committed);
     }
 
     let deadline = cluster.clock.add(10000);
@@ -253,17 +253,15 @@ fn storage_repair_without_snapshot() {
 
     // Create a cluster.
     let mut cluster = TestCluster::new(&node_ids, rng);
-    assert!(cluster
-        .random_node_mut()
-        .create_cluster(&node_ids)
-        .is_pending());
+    let position = cluster.random_node_mut().create_cluster(&node_ids);
+    assert_ne!(position, LogPosition::INVALID);
 
     let deadline = cluster.clock.add(10000);
     let satisfied = cluster.run_until(deadline, |cluster| cluster.leader_node().is_some());
     assert!(satisfied, "Create cluster timeout");
 
     // Propose commands.
-    let mut promises = Vec::new();
+    let mut positions = Vec::new();
     for i in 0..100 {
         if i == 50 {
             for node in cluster.nodes.iter_mut() {
@@ -278,24 +276,26 @@ fn storage_repair_without_snapshot() {
         let Some(leader) = cluster.leader_node_mut() else {
             panic!("No leader");
         };
-        promises.push(leader.propose_command());
+        positions.push(leader.propose_command());
 
         let ticks = MinMax::new(1, 10).sample_single(&mut cluster.rng);
         cluster.run(cluster.clock.add(ticks));
     }
-    assert_eq!(promises.len(), 100);
+    assert_eq!(positions.len(), 100);
 
-    for mut promise in promises {
+    for position in positions {
+        let mut committed = false;
         for _ in 0..1000 {
             let Some(leader) = cluster.leader_node_mut() else {
                 panic!("No leader");
             };
-            if promise.poll(leader).is_accepted() {
+            if leader.get_log_entry_status(position).is_committed() {
+                committed = true;
                 break;
             }
             cluster.run(cluster.clock.add(10));
         }
-        assert!(promise.is_accepted());
+        assert!(committed);
     }
 
     let deadline = cluster.clock.add(1_000_000);
@@ -316,17 +316,15 @@ fn storage_repair_with_snapshot() {
 
     // Create a cluster.
     let mut cluster = TestCluster::new(&node_ids, rng);
-    assert!(cluster
-        .random_node_mut()
-        .create_cluster(&node_ids)
-        .is_pending());
+    let position = cluster.random_node_mut().create_cluster(&node_ids);
+    assert_ne!(position, LogPosition::INVALID);
 
     let deadline = cluster.clock.add(10000);
     let satisfied = cluster.run_until(deadline, |cluster| cluster.leader_node().is_some());
     assert!(satisfied, "Create cluster timeout");
 
     // Propose commands.
-    let mut promises = Vec::new();
+    let mut positions = Vec::new();
     let mut snapshot_index = LogIndex::ZERO;
     for i in 0..100 {
         if i == 25 {
@@ -364,28 +362,31 @@ fn storage_repair_with_snapshot() {
         let Some(leader) = cluster.leader_node_mut() else {
             panic!("No leader");
         };
-        promises.push(leader.propose_command());
+        positions.push(leader.propose_command());
 
         let ticks = MinMax::new(1, 10).sample_single(&mut cluster.rng);
         cluster.run(cluster.clock.add(ticks));
     }
-    assert_eq!(promises.len(), 100);
+    assert_eq!(positions.len(), 100);
 
-    for mut promise in promises {
+    for position in positions {
+        let mut status = LogEntryStatus::InProgress;
         for _ in 0..1000 {
             let Some(leader) = cluster.leader_node_mut() else {
                 panic!("No leader");
             };
-            if !promise.poll(leader).is_pending() {
+
+            status = leader.get_log_entry_status(position);
+            if !status.is_in_progress() {
                 break;
             }
             cluster.run(cluster.clock.add(10));
         }
 
-        if promise.log_position().index < snapshot_index {
-            assert!(promise.is_rejected());
+        if position.index < snapshot_index {
+            assert!(status.is_unknown());
         } else {
-            assert!(promise.is_accepted());
+            assert!(status.is_committed());
         }
     }
 
@@ -411,10 +412,8 @@ fn dynamic_membership() {
     cluster.default_link_options.drop_rate = 0.3;
     cluster.default_link_options.latency_ticks = MinMax::new(1, 1000);
 
-    assert!(cluster
-        .random_node_mut()
-        .create_cluster(&node_ids)
-        .is_pending());
+    let position = cluster.random_node_mut().create_cluster(&node_ids);
+    assert_ne!(position, LogPosition::INVALID);
 
     let deadline = cluster.clock.add(100000);
     let satisfied = cluster.run_until(deadline, |cluster| cluster.leader_node().is_some());
@@ -441,8 +440,8 @@ fn dynamic_membership() {
                 new_config.non_voters.insert(node_id);
                 new_config
             };
-            let promise = leader.propose_config(new_config);
-            assert!(promise.is_pending());
+            let position = leader.propose_config(new_config);
+            assert_ne!(position, LogPosition::INVALID);
         } else if cluster.nodes.iter().filter(|n| n.voter).count() > 2 {
             // Remove.
             let node_ids = cluster
@@ -465,39 +464,38 @@ fn dynamic_membership() {
             } else {
                 leader.config().to_joint_consensus(&[], &[node_id])
             };
-            let promise = leader.propose_config(new_config);
-            assert!(promise.is_pending());
+            let position = leader.propose_config(new_config);
+            assert_ne!(position, LogPosition::INVALID);
         }
 
         // Propose commands.
-        let mut promises = Vec::new();
+        let mut positions = Vec::new();
         for _ in 0..10 {
             cluster.run_while_leader_absent(cluster.clock.add(1000_000));
             let Some(leader) = cluster.leader_node_mut() else {
                 panic!("No leader");
             };
-            promises.push(leader.propose_command());
+            positions.push(leader.propose_command());
 
             let ticks = MinMax::new(1, 10).sample_single(&mut cluster.rng);
             cluster.run(cluster.clock.add(ticks));
         }
-        assert_eq!(promises.len(), 10);
+        assert_eq!(positions.len(), 10);
 
         let mut success_count = 0;
-        for mut promise in promises {
+        for position in positions {
             for _ in 0..10000 {
                 cluster.run_while_leader_absent(cluster.clock.add(1000_000));
                 let Some(leader) = cluster.leader_node_mut() else {
                     panic!("No leader");
                 };
-                if !promise.poll(leader).is_pending() {
+                if !leader.get_log_entry_status(position).is_in_progress() {
+                    if leader.get_log_entry_status(position).is_committed() {
+                        success_count += 1;
+                    }
                     break;
                 }
                 cluster.run(cluster.clock.add(10));
-            }
-            assert!(!promise.is_pending());
-            if promise.is_accepted() {
-                success_count += 1;
             }
         }
         assert!(success_count > 5);
@@ -514,22 +512,20 @@ fn truncate_divergence_log() {
 
     // Create a cluster.
     let mut cluster = TestCluster::new(&node_ids, rng);
-    assert!(cluster
-        .random_node_mut()
-        .create_cluster(&node_ids)
-        .is_pending());
+    let position = cluster.random_node_mut().create_cluster(&node_ids);
+    assert_ne!(position, LogPosition::INVALID);
 
     let deadline = cluster.clock.add(10000);
     let satisfied = cluster.run_until(deadline, |cluster| cluster.leader_node().is_some());
     assert!(satisfied, "Create cluster timeout");
 
     // Propose 20 commands as usual.
-    let mut promises = Vec::new();
+    let mut positions = Vec::new();
     for _ in 0..20 {
         let Some(leader) = cluster.leader_node_mut() else {
             panic!("No leader");
         };
-        promises.push(leader.propose_command());
+        positions.push(leader.propose_command());
 
         let ticks = MinMax::new(1, 10).sample_single(&mut cluster.rng);
         cluster.run(cluster.clock.add(ticks));
@@ -540,7 +536,7 @@ fn truncate_divergence_log() {
         let Some(leader) = cluster.leader_node_mut() else {
             panic!("No leader");
         };
-        promises.push(leader.propose_command());
+        positions.push(leader.propose_command());
     }
 
     // Isolate the leader from the cluster.
@@ -559,27 +555,26 @@ fn truncate_divergence_log() {
         let Some(leader) = cluster.leader_node_mut() else {
             panic!("No leader");
         };
-        promises.push(leader.propose_command());
+        positions.push(leader.propose_command());
     }
-    assert_eq!(promises.len(), 100);
+    assert_eq!(positions.len(), 100);
 
     // Rejoin the old leader.
     cluster.nodes.push(old_leader);
 
     let mut success_count = 0;
-    for mut promise in promises {
+    for position in positions {
         for _ in 0..1000 {
             let Some(leader) = cluster.leader_node_mut() else {
                 panic!("No leader");
             };
-            if !promise.poll(leader).is_pending() {
+            if !leader.get_log_entry_status(position).is_in_progress() {
+                if leader.get_log_entry_status(position).is_committed() {
+                    success_count += 1;
+                }
                 break;
             }
             cluster.run(cluster.clock.add(10));
-        }
-        assert!(!promise.is_pending());
-        if promise.is_accepted() {
-            success_count += 1;
         }
     }
     assert!(60 <= success_count);

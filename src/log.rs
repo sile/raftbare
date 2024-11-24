@@ -643,6 +643,28 @@ pub enum LogEntryStatus {
     Unknown,
 }
 
+impl LogEntryStatus {
+    /// Returns `true` if the status is `InProgress`.
+    pub const fn is_in_progress(self) -> bool {
+        matches!(self, Self::InProgress)
+    }
+
+    /// Returns `true` if the status is `Committed`.
+    pub const fn is_committed(self) -> bool {
+        matches!(self, Self::Committed)
+    }
+
+    /// Returns `true` if the status is `Rejected`.
+    pub const fn is_rejected(self) -> bool {
+        matches!(self, Self::Rejected)
+    }
+
+    /// Returns `true` if the status is `Unknown`.
+    pub const fn is_unknown(self) -> bool {
+        matches!(self, Self::Unknown)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

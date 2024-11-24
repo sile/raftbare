@@ -67,7 +67,6 @@ mod config;
 mod log;
 mod message;
 mod node;
-mod promise;
 mod quorum;
 mod role;
 
@@ -76,7 +75,6 @@ pub use config::ClusterConfig;
 pub use log::{Log, LogEntries, LogEntry, LogEntryStatus, LogIndex, LogPosition};
 pub use message::{Message, MessageHeader, MessageSeqNo};
 pub use node::{Node, NodeId};
-pub use promise::CommitPromise;
 pub use role::Role;
 
 /// Term.

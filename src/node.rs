@@ -4,7 +4,7 @@ use crate::{
     log::{LogEntries, LogEntry, LogIndex, LogPosition},
     message::{Message, MessageSeqNo},
     quorum::Quorum,
-    CommitPromise, Log, LogEntryStatus, MessageHeader, Role, Term,
+    Log, LogEntryStatus, MessageHeader, Role, Term,
 };
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -192,15 +192,15 @@ impl Node {
     /// Raft algorithm assumes that each node in a cluster belongs to only one cluster at a time.
     /// Therefore, including nodes that are already part of another cluster in the `initial_voters`
     /// will result in undefined behavior.
-    pub fn create_cluster(&mut self, initial_voters: &[NodeId]) -> CommitPromise {
+    pub fn create_cluster(&mut self, initial_voters: &[NodeId]) -> LogPosition {
         if self.log.last_position() != LogPosition::ZERO {
-            return CommitPromise::Rejected(LogPosition::INVALID);
+            return LogPosition::INVALID;
         }
         if !self.config().voters.is_empty() {
-            return CommitPromise::Rejected(LogPosition::INVALID);
+            return LogPosition::INVALID;
         }
         if initial_voters.is_empty() {
-            return CommitPromise::Rejected(LogPosition::INVALID);
+            return LogPosition::INVALID;
         }
 
         let mut config = ClusterConfig::new();
@@ -215,7 +215,7 @@ impl Node {
 
         self.transition_to_candidate();
 
-        CommitPromise::Pending(self.log.last_position())
+        self.log.last_position()
     }
 
     fn new(id: NodeId) -> Self {
@@ -436,14 +436,14 @@ impl Node {
     ///     }
     /// }
     /// ```
-    pub fn propose_command(&mut self) -> CommitPromise {
+    pub fn propose_command(&mut self) -> LogPosition {
         if !matches!(self.role, RoleState::Leader { .. }) {
-            return CommitPromise::Rejected(LogPosition::INVALID);
+            return LogPosition::INVALID;
         }
         self.propose(LogEntry::Command)
     }
 
-    fn propose(&mut self, entry: LogEntry) -> CommitPromise {
+    fn propose(&mut self, entry: LogEntry) -> LogPosition {
         debug_assert!(self.role().is_leader());
 
         let old_last_position = self.log.last_position();
@@ -465,7 +465,7 @@ impl Node {
         }
         self.actions.set(Action::SetElectionTimeout);
 
-        CommitPromise::new(self.log.last_position())
+        self.log.last_position()
     }
 
     fn rebuild_followers(&mut self) {
@@ -586,20 +586,20 @@ impl Node {
     /// let new_config = node.config().to_joint_consensus(&[NodeId::new(4)], &[NodeId::new(2)]);
     /// node.propose_config(new_config);
     /// ```
-    pub fn propose_config(&mut self, new_config: ClusterConfig) -> CommitPromise {
+    pub fn propose_config(&mut self, new_config: ClusterConfig) -> LogPosition {
         if !self.role().is_leader() {
-            return CommitPromise::Rejected(LogPosition::INVALID);
+            return LogPosition::INVALID;
         }
         if self.log.latest_config().voters != new_config.voters {
-            return CommitPromise::Rejected(LogPosition::INVALID);
+            return LogPosition::INVALID;
         }
         if !new_config.voters.is_disjoint(&new_config.non_voters)
             || !new_config.new_voters.is_disjoint(&new_config.non_voters)
         {
-            return CommitPromise::Rejected(LogPosition::INVALID);
+            return LogPosition::INVALID;
         }
         if self.log.latest_config().is_joint_consensus() {
-            return CommitPromise::Rejected(LogPosition::INVALID);
+            return LogPosition::INVALID;
         }
 
         self.propose(LogEntry::ClusterConfig(new_config))
