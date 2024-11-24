@@ -625,6 +625,24 @@ pub enum LogEntry {
     Command,
 }
 
+/// State of a log entry.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum LogEntryState {
+    /// The log entry is currently being committed.
+    InProgress,
+
+    /// The log entry was successfully committed.
+    Committed,
+
+    /// The log entry was rejected.
+    Rejected,
+
+    /// The log entry was removed due to snapshotting.
+    ///
+    /// It is unclear whether the entry was committed or rejected.
+    Removed,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
