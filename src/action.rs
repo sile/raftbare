@@ -34,17 +34,6 @@ pub enum Action {
     /// To guarantee properties by the Raft algorithm, the value must be saved before responding to users or sending messages to other nodes.
     SaveVotedFor,
 
-    /// Append log entries to the node-local log on persistent storage.
-    ///
-    /// Note that previously written log suffix entries may be overwritten by these new entries.
-    /// In other words, the [`LogEntries::last_position().index`](crate::LogEntries::last_position) can be any value within the range from the start index to the end index of the local log.
-    ///
-    /// To guarantee properties by the Raft algorithm, the entries must be appended before responding to users or sending messages to other nodes.
-    /// (However, because writing all log entries to persistent storage synchronously could be too costly, in reality, the entries are often written asynchronously.)
-    //
-    // TODO: Consider moving this variant after BroadcastMessage
-    AppendLogEntries(LogEntries),
-
     /// Broadcast a message to all other nodes ([`Node::peers()`](crate::Node::peers)).
     ///
     /// On the receiving side, the message is handled by [`Node::handle_message()`](crate::Node::handle_message).
@@ -52,6 +41,15 @@ pub enum Action {
     /// Unlike storage-related actions, this action can be executed asynchronously and can be discarded if the communication link is busy.
     /// Additionally, the reordering of messages to the same destination node is acceptable.
     BroadcastMessage(Message),
+
+    /// Append log entries to the node-local log on persistent storage.
+    ///
+    /// Note that previously written log suffix entries may be overwritten by these new entries.
+    /// In other words, the [`LogEntries::last_position().index`](crate::LogEntries::last_position) can be any value within the range from the start index to the end index of the local log.
+    ///
+    /// To guarantee properties by the Raft algorithm, the entries must be appended before responding to users or other nodes.
+    /// (However, because writing all log entries to persistent storage synchronously could be too costly, in reality, the entries are often written asynchronously.)
+    AppendLogEntries(LogEntries),
 
     /// Send a message to a specific node.
     ///
@@ -79,8 +77,6 @@ pub enum Action {
 /// Instead, they can use the [`Iterator`] interface of [`Actions`].
 /// When [`Actions::next()`] is called, the most prioritized action is returned.
 ///
-/// However, advanced users can directly access the fields to implement optimizations, such as sending AppendEntriesRPC messages before appending the entries to the local log to reduce latency, while being aware of the associated risks.
-///
 /// Note that any unconsumed actions are merged, so users can achieve pipelining simply by calling multiple [`Node`](crate::Node) methods (such as [`Node::propose_command()`](crate::Node::propose_command)), and then execute the final actions.
 #[derive(Debug, Default, Clone)]
 pub struct Actions {
@@ -93,11 +89,11 @@ pub struct Actions {
     /// If [`true`], [`Action::SaveVotedFor`] needs to be executed.
     pub save_voted_for: bool,
 
-    /// If [`Some`], [`Action::AppendLogEntries`] needs to be executed.
-    pub append_log_entries: Option<LogEntries>,
-
     /// If [`Some`], [`Action::BroadcastMessage`] needs to be executed.
     pub broadcast_message: Option<Message>,
+
+    /// If [`Some`], [`Action::AppendLogEntries`] needs to be executed.
+    pub append_log_entries: Option<LogEntries>,
 
     /// If there is an entry for a node, [`Action::SendMessage`] for the node needs to be executed.
     pub send_messages: BTreeMap<NodeId, Message>,
@@ -167,11 +163,11 @@ impl Iterator for Actions {
             self.save_voted_for = false;
             return Some(Action::SaveVotedFor);
         }
-        if let Some(log_entries) = self.append_log_entries.take() {
-            return Some(Action::AppendLogEntries(log_entries));
-        }
         if let Some(broadcast_message) = self.broadcast_message.take() {
             return Some(Action::BroadcastMessage(broadcast_message));
+        }
+        if let Some(log_entries) = self.append_log_entries.take() {
+            return Some(Action::AppendLogEntries(log_entries));
         }
         if let Some((node_id, message)) = self.send_messages.pop_first() {
             return Some(Action::SendMessage(node_id, message));
@@ -212,24 +208,6 @@ mod tests {
         assert_eq!(actions.next(), Some(Action::SaveVotedFor));
         assert_eq!(actions.next(), None);
 
-        // AppendLogEntries
-        actions.set(Action::AppendLogEntries(LogEntries::from_iter(
-            pos(2, 3),
-            std::iter::once(LogEntry::Command),
-        )));
-        actions.set(Action::AppendLogEntries(LogEntries::from_iter(
-            pos(2, 4),
-            std::iter::once(LogEntry::Command),
-        )));
-        assert_eq!(
-            actions.next(),
-            Some(Action::AppendLogEntries(LogEntries::from_iter(
-                pos(2, 3),
-                [LogEntry::Command, LogEntry::Command].into_iter()
-            )))
-        );
-        assert_eq!(actions.next(), None);
-
         // BroadcastMessage
         actions.set(Action::BroadcastMessage(Message::request_vote_call(
             Term::new(2),
@@ -248,6 +226,24 @@ mod tests {
             actions.next(),
             Some(Action::BroadcastMessage(Message::AppendEntriesCall { .. }))
         ));
+        assert_eq!(actions.next(), None);
+
+        // AppendLogEntries
+        actions.set(Action::AppendLogEntries(LogEntries::from_iter(
+            pos(2, 3),
+            std::iter::once(LogEntry::Command),
+        )));
+        actions.set(Action::AppendLogEntries(LogEntries::from_iter(
+            pos(2, 4),
+            std::iter::once(LogEntry::Command),
+        )));
+        assert_eq!(
+            actions.next(),
+            Some(Action::AppendLogEntries(LogEntries::from_iter(
+                pos(2, 3),
+                [LogEntry::Command, LogEntry::Command].into_iter()
+            )))
+        );
         assert_eq!(actions.next(), None);
 
         // SendMessage
