@@ -1,6 +1,6 @@
 use raftbare::{
-    Action, Actions, ClusterConfig, CommitPromise, LogEntries, LogEntry, LogIndex, LogPosition,
-    Message, MessageHeader, MessageSeqNo, Node, NodeId, Role, Term,
+    Action, Actions, ClusterConfig, LogEntries, LogEntry, LogIndex, LogPosition, Message,
+    MessageHeader, MessageSeqNo, Node, NodeId, Role, Term,
 };
 use std::ops::{Deref, DerefMut};
 
@@ -152,11 +152,8 @@ fn truncate_log() {
 
     // Propose a command, but not broadcast the message.
     assert_eq!(cluster.node0.role(), Role::Leader);
-    let mut commit_promise = cluster.node0.propose_command();
-    assert_eq!(
-        commit_promise.log_position(),
-        cluster.node0.log().last_position(),
-    );
+    let commit_position = cluster.node0.propose_command();
+    assert_eq!(commit_position, cluster.node0.log().last_position(),);
     while let Some(_) = cluster.node0.actions_mut().next() {}
 
     // Make node2 the leader.
@@ -182,7 +179,10 @@ fn truncate_log() {
     let reply = cluster
         .node0
         .asserted_handle_append_entries_call_success(&call);
-    assert!(commit_promise.poll(&cluster.node0).is_pending());
+    assert!(cluster
+        .node0
+        .get_commit_status(commit_position)
+        .is_in_progress());
 
     cluster
         .node2
@@ -192,7 +192,10 @@ fn truncate_log() {
     let _reply = cluster
         .node0
         .asserted_handle_append_entries_call_success(&call);
-    assert!(commit_promise.poll(&cluster.node0).is_rejected());
+    assert!(cluster
+        .node0
+        .get_commit_status(commit_position)
+        .is_rejected());
 
     assert_no_action!(cluster.node0);
     assert_no_action!(cluster.node1);
@@ -307,13 +310,13 @@ impl ThreeNodeCluster {
     }
 
     fn propose_command(&mut self) {
-        let mut commit_promise = CommitPromise::Rejected(LogPosition::ZERO);
+        let mut commit_position = None;
         let mut call = None;
         for node in &mut [&mut self.node0, &mut self.node1, &mut self.node2] {
             if node.role() != Role::Leader {
                 continue;
             }
-            commit_promise = node.propose_command();
+            commit_position = Some(node.propose_command());
             assert_action!(
                 node.inner,
                 append_log_entry(
@@ -335,7 +338,7 @@ impl ThreeNodeCluster {
             break;
         }
 
-        let (CommitPromise::Pending(commit_position), Some(call)) = (commit_promise, call) else {
+        let (Some(commit_position), Some(call)) = (commit_position, call) else {
             panic!("No leader found.");
         };
 
@@ -386,7 +389,7 @@ impl TestNode {
         assert_no_action!(node);
 
         if !initial_voters.is_empty() {
-            assert!(node.create_cluster(initial_voters).is_pending());
+            assert_ne!(node.create_cluster(initial_voters), LogPosition::INVALID);
 
             assert_action!(node, set_election_timeout());
             assert_action!(node, save_current_term());
@@ -431,10 +434,7 @@ impl TestNode {
         let prev_entry = self.log().entries().last_position();
         let next_index = next_index(self.log().entries().last_position().index);
         let next_position = log_pos(self.current_term(), next_index);
-        assert_eq!(
-            CommitPromise::Pending(next_position),
-            self.propose_config(new_config.clone())
-        );
+        assert_eq!(next_position, self.propose_config(new_config.clone()));
         let msg = append_entries_call(
             self,
             LogEntries::from_iter(

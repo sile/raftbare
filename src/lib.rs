@@ -22,10 +22,10 @@
 //! let mut node = Node::start(NodeId::new(0));
 //!
 //! // Create a three nodes cluster.
-//! let mut promise = node.create_cluster(&[NodeId::new(0), NodeId::new(1), NodeId::new(2)]);
+//! let commit_position = node.create_cluster(&[NodeId::new(0), NodeId::new(1), NodeId::new(2)]);
 //!
 //! // Execute actions requested by the node until the cluster creation is complete.
-//! while promise.poll(&mut node).is_pending() {
+//! while node.get_commit_status(commit_position).is_in_progress() {
 //!     for action in node.actions_mut() {
 //!         // How to execute actions is up to the crate user.
 //!         match action {
@@ -52,7 +52,7 @@
 //! }
 //!
 //! // Propose a user-defined command.
-//! let promise = node.propose_command();
+//! let commit_position = node.propose_command();
 //!
 //! // Execute actions as before.
 //!
@@ -67,16 +67,14 @@ mod config;
 mod log;
 mod message;
 mod node;
-mod promise;
 mod quorum;
 mod role;
 
 pub use action::{Action, Actions};
 pub use config::ClusterConfig;
-pub use log::{Log, LogEntries, LogEntry, LogIndex, LogPosition};
+pub use log::{CommitStatus, Log, LogEntries, LogEntry, LogIndex, LogPosition};
 pub use message::{Message, MessageHeader, MessageSeqNo};
 pub use node::{Node, NodeId};
-pub use promise::CommitPromise;
 pub use role::Role;
 
 /// Term.

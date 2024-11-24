@@ -4,7 +4,7 @@ use crate::{
     log::{LogEntries, LogEntry, LogIndex, LogPosition},
     message::{Message, MessageSeqNo},
     quorum::Quorum,
-    CommitPromise, Log, MessageHeader, Role, Term,
+    CommitStatus, Log, MessageHeader, Role, Term,
 };
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -173,14 +173,14 @@ impl Node {
 
     /// Creates a new cluster.
     ///
-    /// This method returns a [`CommitPromise`] that will be accepted
-    /// when the initial cluster configuration is successfully committed.
+    /// This method returns a [`LogPosition`] associated with a log entry.
+    /// The log entry will be accepted when the initial cluster configuration is successfully committed.
     ///
     /// To proceed the cluster creation, the user needs to handle the queued actions after calling this method.
     ///
     /// # Preconditions
     ///
-    /// This method returns `CommitPromise::Rejected(LogPosition::NEVER)` if the following preconditions are not met:
+    /// This method returns [`LogPosition::INVALID`] if the following preconditions are not met:
     /// - This node (`self`) is a newly started node.
     /// - `initial_voters` contains at least one node.
     ///
@@ -192,15 +192,15 @@ impl Node {
     /// Raft algorithm assumes that each node in a cluster belongs to only one cluster at a time.
     /// Therefore, including nodes that are already part of another cluster in the `initial_voters`
     /// will result in undefined behavior.
-    pub fn create_cluster(&mut self, initial_voters: &[NodeId]) -> CommitPromise {
+    pub fn create_cluster(&mut self, initial_voters: &[NodeId]) -> LogPosition {
         if self.log.last_position() != LogPosition::ZERO {
-            return CommitPromise::Rejected(LogPosition::INVALID);
+            return LogPosition::INVALID;
         }
         if !self.config().voters.is_empty() {
-            return CommitPromise::Rejected(LogPosition::INVALID);
+            return LogPosition::INVALID;
         }
         if initial_voters.is_empty() {
-            return CommitPromise::Rejected(LogPosition::INVALID);
+            return LogPosition::INVALID;
         }
 
         let mut config = ClusterConfig::new();
@@ -215,7 +215,7 @@ impl Node {
 
         self.transition_to_candidate();
 
-        CommitPromise::Pending(self.log.last_position())
+        self.log.last_position()
     }
 
     fn new(id: NodeId) -> Self {
@@ -360,10 +360,12 @@ impl Node {
 
     /// Proposes a user-defined command ([`LogEntry::Command`]).
     ///
-    /// This method returns a [`CommitPromise`] that will be resolved when the command is committed or rejected.
+    /// This method returns a [`LogPosition`] that associated with the log entry for the proposed command.
+    /// To determine whether the command has been committed, you can use the [`Node::get_commit_status()`] method.
+    /// To known where the command is commited or not, you can use [`Node::get_commit_status()`] method.
     /// Committed commands can be applied to the state machine managed by the user.
     ///
-    /// The [`CommitPromise`] is useful for determining when to send the command result back to the client
+    /// [`Node::get_commit_status()`] is useful for determining when to send the command result back to the client
     /// that triggered the command (if such a client exists).
     /// To detect all committed commands that need to be applied to the state machine,
     /// it is recommended to use [`Node::commit_index()`] since it considers commands proposed by other nodes.
@@ -375,7 +377,7 @@ impl Node {
     ///
     /// # Preconditions
     ///
-    /// This method returns `CommitPromise::Rejected(LogPosition::NEVER)` if the following preconditions are not met:
+    /// This method returns [`LogPosition::INVALID`] if the following preconditions are not met:
     /// - `self.role().is_leader()` is [`true`].
     ///
     /// # Pipelining
@@ -391,8 +393,8 @@ impl Node {
     /// let mut node = /* ... ; */
     /// # Node::start(NodeId::new(0));
     ///
-    /// let mut commit_promise = node.propose_command();
-    /// if commit_promise.is_rejected() {
+    /// let commit_position = node.propose_command();
+    /// if commit_position.is_invalid() {
     ///     // `node` is not the leader.
     ///     if let Some(maybe_leader) = node.voted_for() {
     ///         // Retry with the possible leader or reply to the client that the command is rejected.
@@ -404,20 +406,20 @@ impl Node {
     /// // Need to map the log index to the actual command data for
     /// // exeucting `Action::AppendLogEntries(_)` queued by the node.
     /// assert!(node.actions().append_log_entries.is_some());
-    /// let index = commit_promise.log_position().index;
+    /// let index = commit_position.index;
     /// # let _ = index;
     /// // ... executing actions ...
     ///
-    /// while commit_promise.poll(&mut node).is_pending() {
+    /// while node.get_commit_status(commit_position).is_in_progress() {
     ///     // ... executing actions ...
     /// }
     ///
-    /// if commit_promise.is_rejected() {
+    /// if node.get_commit_status(commit_position).is_rejected() {
     ///    // Retry with another node or reply to the client that the command is rejected.
     ///    // ...
     ///    return;
     /// }
-    /// assert!(commit_promise.is_accepted());
+    /// assert!(node.get_commit_status(commit_position).is_committed());
     ///
     /// // Apply all committed commands to the state machine.
     /// let last_applied_index = /* ...; */
@@ -430,20 +432,20 @@ impl Node {
     ///     // Apply the command to the state machine.
     ///     // ...
     ///
-    ///     if index == commit_promise.log_position().index {
+    ///     if index == commit_position.index {
     ///         // Reply to the client that the command is committed.
     ///         // ...
     ///     }
     /// }
     /// ```
-    pub fn propose_command(&mut self) -> CommitPromise {
+    pub fn propose_command(&mut self) -> LogPosition {
         if !matches!(self.role, RoleState::Leader { .. }) {
-            return CommitPromise::Rejected(LogPosition::INVALID);
+            return LogPosition::INVALID;
         }
         self.propose(LogEntry::Command)
     }
 
-    fn propose(&mut self, entry: LogEntry) -> CommitPromise {
+    fn propose(&mut self, entry: LogEntry) -> LogPosition {
         debug_assert!(self.role().is_leader());
 
         let old_last_position = self.log.last_position();
@@ -465,7 +467,7 @@ impl Node {
         }
         self.actions.set(Action::SetElectionTimeout);
 
-        CommitPromise::new(self.log.last_position())
+        self.log.last_position()
     }
 
     fn rebuild_followers(&mut self) {
@@ -568,7 +570,7 @@ impl Node {
     ///
     /// # Preconditions
     ///
-    /// This method returns `CommitPromise::Rejected(LogPosition::NEVER)` if the following preconditions are not met:
+    /// This method returns [`LogPosition::INVALID`] if the following preconditions are not met:
     /// - `self.role().is_leader()` is [`true`].
     /// - `new_config.voters` is equal to `self.config().voters`.
     /// - A node is either a voter or a non-voter in the new configuration (not both).
@@ -586,23 +588,41 @@ impl Node {
     /// let new_config = node.config().to_joint_consensus(&[NodeId::new(4)], &[NodeId::new(2)]);
     /// node.propose_config(new_config);
     /// ```
-    pub fn propose_config(&mut self, new_config: ClusterConfig) -> CommitPromise {
+    pub fn propose_config(&mut self, new_config: ClusterConfig) -> LogPosition {
         if !self.role().is_leader() {
-            return CommitPromise::Rejected(LogPosition::INVALID);
+            return LogPosition::INVALID;
         }
         if self.log.latest_config().voters != new_config.voters {
-            return CommitPromise::Rejected(LogPosition::INVALID);
+            return LogPosition::INVALID;
         }
         if !new_config.voters.is_disjoint(&new_config.non_voters)
             || !new_config.new_voters.is_disjoint(&new_config.non_voters)
         {
-            return CommitPromise::Rejected(LogPosition::INVALID);
+            return LogPosition::INVALID;
         }
         if self.log.latest_config().is_joint_consensus() {
-            return CommitPromise::Rejected(LogPosition::INVALID);
+            return LogPosition::INVALID;
         }
 
         self.propose(LogEntry::ClusterConfig(new_config))
+    }
+
+    /// Returns the commit status of a log entry associated with the given position.
+    pub fn get_commit_status(&self, position: LogPosition) -> CommitStatus {
+        if position.index < self.log().entries().prev_position().index {
+            return CommitStatus::Unknown;
+        } else if position.index <= self.commit_index() {
+            if self.log().entries().contains(position) {
+                return CommitStatus::Committed;
+            } else {
+                return CommitStatus::Rejected;
+            }
+        } else if let Some(term) = self.log().entries().get_term(self.commit_index()) {
+            if position.term < term {
+                return CommitStatus::Rejected;
+            }
+        }
+        CommitStatus::InProgress
     }
 
     /// Sends a heartbeat (i.e, an empty `AppendEntriesCall` message) to all followers.

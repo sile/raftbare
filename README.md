@@ -34,10 +34,10 @@ use raftbare::{Action, Node, NodeId};
 let mut node = Node::start(NodeId::new(0));
 
 // Create a three nodes cluster.
-let mut promise = node.create_cluster(&[NodeId::new(0), NodeId::new(1), NodeId::new(2)]);
+let commit_position = node.create_cluster(&[NodeId::new(0), NodeId::new(1), NodeId::new(2)]);
 
 // Execute actions requested by the node until the cluster creation is complete.
-while promise.poll(&mut node).is_pending() {
+while node.get_commit_status(commit_position).is_in_progress() {
     for action in node.actions_mut() {
         // How to execute actions is up to the crate user.
         match action {
@@ -63,7 +63,7 @@ while promise.poll(&mut node).is_pending() {
 }
 
 // Propose a user-defined command.
-let promise = node.propose_command();
+let commit_position = node.propose_command();
 
 // Execute actions as before.
 ```

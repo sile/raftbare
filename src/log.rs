@@ -589,6 +589,11 @@ impl LogPosition {
     pub(crate) const fn next(self) -> Self {
         Self::new(self.term, self.index.next())
     }
+
+    /// Returns `true` if this position is equal to [`LogPosition::INVALID`].
+    pub const fn is_invalid(self) -> bool {
+        matches!(self, Self::INVALID)
+    }
 }
 
 impl PartialOrd for LogPosition {
@@ -623,6 +628,46 @@ pub enum LogEntry {
     /// It is the user's responsibility to manage the mapping from each [`LogEntry::Command`] to
     /// an actual command data.
     Command,
+}
+
+/// Commit status of a log entry.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum CommitStatus {
+    /// The log entry is currently being committed.
+    InProgress,
+
+    /// The log entry has been successfully committed.
+    Committed,
+
+    /// The log entry has been rejected.
+    Rejected,
+
+    /// The log entry does not exist, typically due to removal by snapshotting.
+    ///
+    /// It is unknown whether the entry was ever committed or rejected.
+    Unknown,
+}
+
+impl CommitStatus {
+    /// Returns `true` if the status is `InProgress`.
+    pub const fn is_in_progress(self) -> bool {
+        matches!(self, Self::InProgress)
+    }
+
+    /// Returns `true` if the status is `Committed`.
+    pub const fn is_committed(self) -> bool {
+        matches!(self, Self::Committed)
+    }
+
+    /// Returns `true` if the status is `Rejected`.
+    pub const fn is_rejected(self) -> bool {
+        matches!(self, Self::Rejected)
+    }
+
+    /// Returns `true` if the status is `Unknown`.
+    pub const fn is_unknown(self) -> bool {
+        matches!(self, Self::Unknown)
+    }
 }
 
 #[cfg(test)]
