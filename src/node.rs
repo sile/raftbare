@@ -1084,11 +1084,10 @@ impl Node {
 
         if let Some(entries) = &mut self.actions.append_log_entries {
             entries.handle_snapshot_installed(last_included_position);
+            if entries.is_empty() {
+                self.actions.append_log_entries = None;
+            }
         }
-        let _ = self
-            .actions
-            .append_log_entries
-            .take_if(|entries| entries.is_empty());
 
         if let Some(msg) = &mut self.actions.broadcast_message {
             msg.handle_snapshot_installed(last_included_position);
