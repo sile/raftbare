@@ -68,6 +68,13 @@ let commit_position = node.propose_command();
 // Execute actions as before.
 ```
 
+I/O Implementation
+-------------------
+
+[`raftpico`] is a reference implementation for the I/O layer.
+
+[`raftpico`]: https://github.com/sile/raftpico
+
 Coverage
 --------
 
