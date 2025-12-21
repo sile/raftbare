@@ -66,7 +66,7 @@ fn update_majority<T: Ord>(
     old_entry: (T, NodeId),
     new_entry: (T, NodeId),
 ) {
-    if set.first().map_or(true, |min| new_entry.0 <= min.0) {
+    if set.first().is_none_or(|min| new_entry.0 <= min.0) {
         return;
     }
 
