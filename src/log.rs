@@ -1,4 +1,4 @@
-use crate::{config::ClusterConfig, Term};
+use crate::{Term, config::ClusterConfig};
 use std::collections::BTreeMap;
 
 /// In-memory representation of a [`Node`][crate::Node] local log.

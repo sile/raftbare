@@ -1,10 +1,10 @@
 use crate::{
+    CommitStatus, Log, MessageHeader, Role, Term,
     action::{Action, Actions},
     config::ClusterConfig,
     log::{LogEntries, LogEntry, LogIndex, LogPosition},
     message::{Message, MessageSeqNo},
     quorum::Quorum,
-    CommitStatus, Log, MessageHeader, Role, Term,
 };
 use std::collections::{BTreeMap, BTreeSet};
 

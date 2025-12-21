@@ -1,8 +1,8 @@
 use crate::node::NodeId;
 use std::{
     collections::{
-        btree_set::{Iter, Union},
         BTreeSet,
+        btree_set::{Iter, Union},
     },
     iter::Peekable,
 };
