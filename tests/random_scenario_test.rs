@@ -1,8 +1,7 @@
 use raftbare::{ClusterConfig, CommitStatus, LogIndex, LogPosition, Message, Node, NodeId, Role};
-use rand::distr::Distribution;
 use rand::{
     Rng, SeedableRng,
-    distr::uniform::SampleRange,
+    distr::{Distribution, uniform::SampleRange},
     prelude::{IndexedRandom, RngCore},
     rngs::StdRng,
 };
