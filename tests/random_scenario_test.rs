@@ -797,10 +797,6 @@ impl MinMax {
     pub fn constant(value: usize) -> MinMax {
         MinMax::new(value, value)
     }
-
-    pub fn sample<R: RngCore + ?Sized>(&self, rng: &mut R) -> usize {
-        rng.random_range(self.min..=self.max)
-    }
 }
 
 impl Distribution<usize> for MinMax {
