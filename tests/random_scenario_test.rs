@@ -1,13 +1,15 @@
 use raftbare::{ClusterConfig, CommitStatus, LogIndex, LogPosition, Message, Node, NodeId, Role};
 use rand::{
-    distributions::uniform::SampleRange, prelude::RngCore, rngs::StdRng, seq::SliceRandom, Rng,
-    SeedableRng,
+    Rng, SeedableRng,
+    distr::{Distribution, uniform::SampleRange},
+    prelude::{IndexedRandom, RngCore},
+    rngs::StdRng,
 };
 use std::collections::BTreeMap;
 
 #[test]
 fn propose_commands() {
-    let seed = rand::thread_rng().gen();
+    let seed = rand::rng().random();
     let rng = StdRng::seed_from_u64(seed);
     dbg!(seed);
 
@@ -30,7 +32,7 @@ fn propose_commands() {
         };
         positions.push(leader.propose_command());
 
-        let ticks = MinMax::new(1, 10).sample_single(&mut cluster.rng);
+        let ticks = MinMax::new(1, 10).sample(&mut cluster.rng);
         cluster.run(cluster.clock.add(ticks));
     }
     assert_eq!(positions.len(), 100);
@@ -63,7 +65,7 @@ fn propose_commands() {
 
 #[test]
 fn unstable_network() {
-    let seed = rand::thread_rng().gen();
+    let seed = rand::rng().random();
     let rng = StdRng::seed_from_u64(seed);
     dbg!(seed);
 
@@ -92,7 +94,7 @@ fn unstable_network() {
         };
         positions.push(leader.propose_command());
 
-        let ticks = MinMax::new(1, 10).sample_single(&mut cluster.rng);
+        let ticks = MinMax::new(1, 10).sample(&mut cluster.rng);
         cluster.run(cluster.clock.add(ticks));
     }
     assert_eq!(positions.len(), 100);
@@ -123,7 +125,7 @@ fn unstable_network() {
 
 #[test]
 fn node_restart() {
-    let seed = rand::thread_rng().gen();
+    let seed = rand::rng().random();
     let rng = StdRng::seed_from_u64(seed);
     dbg!(seed);
 
@@ -151,7 +153,7 @@ fn node_restart() {
         };
         positions.push(leader.propose_command());
 
-        let ticks = MinMax::new(1, 10).sample_single(&mut cluster.rng);
+        let ticks = MinMax::new(1, 10).sample(&mut cluster.rng);
         cluster.run(cluster.clock.add(ticks));
     }
     assert_eq!(positions.len(), 100);
@@ -182,7 +184,7 @@ fn node_restart() {
 
 #[test]
 fn pipelining() {
-    let seed = rand::thread_rng().gen();
+    let seed = rand::rng().random();
     let rng = StdRng::seed_from_u64(seed);
     dbg!(seed);
 
@@ -200,8 +202,8 @@ fn pipelining() {
     // Propose commands and trigger heartbeats.
     let mut positions = Vec::new();
     for _ in 0..100 {
-        let pipeline_command = cluster.rng.gen_bool(0.8);
-        let do_hearbeat = cluster.rng.gen_bool(0.5);
+        let pipeline_command = cluster.rng.random_bool(0.8);
+        let do_hearbeat = cluster.rng.random_bool(0.5);
 
         cluster.run_while_leader_absent(cluster.clock.add(10000));
         let Some(leader) = cluster.leader_node_mut() else {
@@ -213,7 +215,7 @@ fn pipelining() {
         }
 
         if !pipeline_command {
-            let ticks = MinMax::new(0, 5).sample_single(&mut cluster.rng);
+            let ticks = MinMax::new(0, 5).sample(&mut cluster.rng);
             cluster.run(cluster.clock.add(ticks));
         }
     }
@@ -245,7 +247,7 @@ fn pipelining() {
 
 #[test]
 fn storage_repair_without_snapshot() {
-    let seed = rand::thread_rng().gen();
+    let seed = rand::rng().random();
     let rng = StdRng::seed_from_u64(seed);
     dbg!(seed);
 
@@ -278,7 +280,7 @@ fn storage_repair_without_snapshot() {
         };
         positions.push(leader.propose_command());
 
-        let ticks = MinMax::new(1, 10).sample_single(&mut cluster.rng);
+        let ticks = MinMax::new(1, 10).sample(&mut cluster.rng);
         cluster.run(cluster.clock.add(ticks));
     }
     assert_eq!(positions.len(), 100);
@@ -308,7 +310,7 @@ fn storage_repair_without_snapshot() {
 
 #[test]
 fn storage_repair_with_snapshot() {
-    let seed = rand::thread_rng().gen();
+    let seed = rand::rng().random();
     let rng = StdRng::seed_from_u64(seed);
     dbg!(seed);
 
@@ -341,9 +343,10 @@ fn storage_repair_with_snapshot() {
                     .log()
                     .get_position_and_config(node.inner.commit_index())
                     .expect("unreachable");
-                assert!(node
-                    .inner
-                    .handle_snapshot_installed(position, config.clone()));
+                assert!(
+                    node.inner
+                        .handle_snapshot_installed(position, config.clone())
+                );
                 if node.inner.role().is_leader() {
                     snapshot_index = position.index;
                 }
@@ -364,7 +367,7 @@ fn storage_repair_with_snapshot() {
         };
         positions.push(leader.propose_command());
 
-        let ticks = MinMax::new(1, 10).sample_single(&mut cluster.rng);
+        let ticks = MinMax::new(1, 10).sample(&mut cluster.rng);
         cluster.run(cluster.clock.add(ticks));
     }
     assert_eq!(positions.len(), 100);
@@ -400,7 +403,7 @@ fn storage_repair_with_snapshot() {
 
 #[test]
 fn dynamic_membership() {
-    let seed = rand::thread_rng().gen();
+    let seed = rand::rng().random();
     let rng = StdRng::seed_from_u64(seed);
     dbg!(seed);
 
@@ -422,10 +425,10 @@ fn dynamic_membership() {
     for i in 0..10 {
         // Change the cluster configuration.
         cluster.run_while_leader_absent(cluster.clock.add(1000_000));
-        if cluster.rng.gen_bool(0.7) {
+        if cluster.rng.random_bool(0.7) {
             // Add.
             let node_id = NodeId::new(3 + i);
-            let voter = cluster.rng.gen_bool(0.5);
+            let voter = cluster.rng.random_bool(0.5);
             let mut node = TestNode::new(node_id);
             node.voter = voter;
             cluster.nodes.push(node);
@@ -477,7 +480,7 @@ fn dynamic_membership() {
             };
             positions.push(leader.propose_command());
 
-            let ticks = MinMax::new(1, 10).sample_single(&mut cluster.rng);
+            let ticks = MinMax::new(1, 10).sample(&mut cluster.rng);
             cluster.run(cluster.clock.add(ticks));
         }
         assert_eq!(positions.len(), 10);
@@ -504,7 +507,7 @@ fn dynamic_membership() {
 
 #[test]
 fn truncate_divergence_log() {
-    let seed = rand::thread_rng().gen();
+    let seed = rand::rng().random();
     let rng = StdRng::seed_from_u64(seed);
     dbg!(seed);
 
@@ -527,7 +530,7 @@ fn truncate_divergence_log() {
         };
         positions.push(leader.propose_command());
 
-        let ticks = MinMax::new(1, 10).sample_single(&mut cluster.rng);
+        let ticks = MinMax::new(1, 10).sample(&mut cluster.rng);
         cluster.run(cluster.clock.add(ticks));
     }
 
@@ -623,7 +626,7 @@ impl TestCluster {
     }
 
     pub fn random_node_mut(&mut self) -> &mut Node {
-        let index = self.rng.gen_range(0..self.nodes.len());
+        let index = self.rng.random_range(0..self.nodes.len());
         &mut self.nodes[index].inner
     }
 
@@ -671,21 +674,6 @@ impl TestCluster {
                     node.inner.log().snapshot_position(),
                     node.inner.log().snapshot_config().clone(),
                 ));
-                // for node in &mut self.nodes {
-                //     if node.inner.id() == id {
-                //         continue;
-                //     }
-                //     if node.snapshot_finish_time.is_some() {
-                //         break;
-                //     }
-
-                //     // node.snapshot_finish_time =
-                //     // node.inner.handle_snapshot_installed(
-                //     //     node.inner.commit_position(),
-                //     //     node.inner.config().clone(),
-                //     // );
-                //     break;
-                // }
             }
         }
 
@@ -703,11 +691,11 @@ impl TestCluster {
     fn send_message(&mut self, _src: NodeId, dst: NodeId, msg: Message) {
         let options = &self.default_link_options;
 
-        if self.rng.gen_bool(options.drop_rate) {
+        if self.rng.random_bool(options.drop_rate) {
             return;
         }
 
-        let latency = options.latency_ticks.sample_single(&mut self.rng) * message_size(&msg);
+        let latency = options.latency_ticks.sample(&mut self.rng) * message_size(&msg);
         for node in &mut self.nodes {
             if node.inner.id() == dst {
                 node.incoming_messages
@@ -732,11 +720,8 @@ impl TestCluster {
                 }
 
                 node.snapshot_finish_time = Some((
-                    self.clock.add(
-                        node.options
-                            .install_snapshot_ticks
-                            .sample_single(&mut self.rng),
-                    ),
+                    self.clock
+                        .add(node.options.install_snapshot_ticks.sample(&mut self.rng)),
                     position,
                     config,
                 ));
@@ -814,9 +799,18 @@ impl MinMax {
     }
 }
 
+impl Distribution<usize> for MinMax {
+    fn sample<R: RngCore + ?Sized>(&self, rng: &mut R) -> usize {
+        rng.random_range(self.min..=self.max)
+    }
+}
+
 impl SampleRange<usize> for MinMax {
-    fn sample_single<R: RngCore + ?Sized>(self, rng: &mut R) -> usize {
-        rng.gen_range(self.min..=self.max)
+    fn sample_single<R: RngCore + ?Sized>(
+        self,
+        rng: &mut R,
+    ) -> Result<usize, rand::distr::uniform::Error> {
+        Ok(self.sample(rng))
     }
 
     fn is_empty(&self) -> bool {
@@ -882,13 +876,13 @@ impl TestNode {
             }
         }
         if self.stop_time.is_none() {
-            self.stop_time = Some(now.add(self.options.running_ticks.sample_single(rng)));
+            self.stop_time = Some(now.add(self.options.running_ticks.sample(rng)));
         }
         if self.stop_time.take_if(|t| *t <= now).is_some() {
             self.running = false;
             self.timeout_expire_time = None;
             self.storage_finish_time = None;
-            self.start_time = Some(now.add(self.options.stopping_ticks.sample_single(rng)));
+            self.start_time = Some(now.add(self.options.stopping_ticks.sample(rng)));
             return;
         }
 
@@ -934,7 +928,7 @@ impl TestNode {
     fn reset_election_timeout(&mut self, rng: &mut StdRng, now: Clock) {
         let timeout = match self.inner.role() {
             Role::Leader => self.options.election_timeout_ticks.min,
-            Role::Candidate => self.options.election_timeout_ticks.sample_single(rng),
+            Role::Candidate => self.options.election_timeout_ticks.sample(rng),
             Role::Follower => self.options.election_timeout_ticks.max,
         };
         self.timeout_expire_time = Some(now.add(timeout));
@@ -942,7 +936,7 @@ impl TestNode {
 
     fn extend_storage_finish_time(&mut self, rng: &mut StdRng, now: Clock, n: usize) {
         let remaining_latency = self.storage_finish_time.map_or(0, |t| t.0 - now.0);
-        let additional_latency = self.options.storage_latency_ticks.sample_single(rng) * n;
+        let additional_latency = self.options.storage_latency_ticks.sample(rng) * n;
         let latency = remaining_latency + additional_latency;
         self.storage_finish_time = Some(now.add(latency));
     }

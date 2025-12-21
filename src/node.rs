@@ -1,10 +1,10 @@
 use crate::{
+    CommitStatus, Log, MessageHeader, Role, Term,
     action::{Action, Actions},
     config::ClusterConfig,
     log::{LogEntries, LogEntry, LogIndex, LogPosition},
     message::{Message, MessageSeqNo},
     quorum::Quorum,
-    CommitStatus, Log, MessageHeader, Role, Term,
 };
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -617,10 +617,10 @@ impl Node {
             } else {
                 return CommitStatus::Rejected;
             }
-        } else if let Some(term) = self.log().entries().get_term(self.commit_index()) {
-            if position.term < term {
-                return CommitStatus::Rejected;
-            }
+        } else if let Some(term) = self.log().entries().get_term(self.commit_index())
+            && position.term < term
+        {
+            return CommitStatus::Rejected;
         }
         CommitStatus::InProgress
     }

@@ -1,7 +1,7 @@
 use crate::{
+    Term,
     log::{LogEntries, LogIndex, LogPosition},
     node::NodeId,
-    Term,
 };
 
 /// Message for RPC.
