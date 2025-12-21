@@ -617,11 +617,10 @@ impl Node {
             } else {
                 return CommitStatus::Rejected;
             }
-        } else if let Some(term) = self.log().entries().get_term(self.commit_index()) {
-            if position.term < term {
+        } else if let Some(term) = self.log().entries().get_term(self.commit_index())
+            && position.term < term {
                 return CommitStatus::Rejected;
             }
-        }
         CommitStatus::InProgress
     }
 
