@@ -661,6 +661,8 @@ impl CommitStatus {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::NodeId;
+    use std::collections::BTreeSet;
 
     #[test]
     fn log_entries_append() {
@@ -825,6 +827,58 @@ mod tests {
         assert_eq!(pos(3, 7).cmp(&pos(5, 5)), std::cmp::Ordering::Less);
         assert_eq!(pos(5, 7).cmp(&pos(5, 5)), std::cmp::Ordering::Greater);
         assert_eq!(pos(5, 3).cmp(&pos(5, 5)), std::cmp::Ordering::Less);
+    }
+
+    #[test]
+    fn test_strip_common_prefix_with_config_entry_no_terms() {
+        // Remote entries: only a ClusterConfig at index 1, no Term entries
+        let remote_entries = {
+            let mut entries = LogEntries::new(LogPosition::ZERO);
+            let config = ClusterConfig {
+                voters: {
+                    let mut voters = BTreeSet::new();
+                    voters.insert(NodeId::new(0));
+                    voters
+                },
+                new_voters: {
+                    let mut new_voters = BTreeSet::new();
+                    new_voters.insert(NodeId::new(0));
+                    new_voters.insert(NodeId::new(1));
+                    new_voters
+                },
+                non_voters: BTreeSet::new(),
+            };
+            entries.push(LogEntry::ClusterConfig(config));
+            entries
+        };
+
+        // Local entries: Term(1) at index 1, then Command entries
+        let local_entries = entries(
+            LogPosition::ZERO,
+            &[
+                LogEntry::Term(Term::new(1)),
+                LogEntry::Command,
+                LogEntry::Command,
+                LogEntry::ClusterConfig(ClusterConfig {
+                    voters: {
+                        let mut voters = BTreeSet::new();
+                        voters.insert(NodeId::new(0));
+                        voters
+                    },
+                    new_voters: {
+                        let mut new_voters = BTreeSet::new();
+                        new_voters.insert(NodeId::new(0));
+                        new_voters.insert(NodeId::new(1));
+                        new_voters
+                    },
+                    non_voters: BTreeSet::new(),
+                }),
+            ],
+        );
+
+        // This should not panic
+        let result = remote_entries.strip_common_prefix(&local_entries);
+        assert_eq!(result.prev_position(), LogPosition::ZERO);
     }
 
     fn two_entries(prev_position: LogPosition, entry0: LogEntry, entry1: LogEntry) -> LogEntries {
