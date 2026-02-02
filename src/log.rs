@@ -473,6 +473,23 @@ impl LogEntries {
         }
 
         // self.terms is empty
+        //
+        // [NOTE]
+        //
+        // This situation should never occur if nodes correctly follow the Raft algorithm.
+        // When `self.terms` is empty and the preconditions are met:
+        // - `local_entries.contains(self.prev_position)` ensures both logs have matching term at `self.prev_position`
+        // - No `LogEntry::Term` entries in `self` means no leader changes occurred after `self.prev_position`
+        // Thus, log divergences cannot happen under correct Raft behavior.
+        //
+        // However, if there is a bug in the implementation or invalid input from the user,
+        // the remote log could still diverge despite these conditions.
+        //
+        // Potential improvements for robustness:
+        // - Set a flag indicating 'this node entered an inconsistent state'
+        // - Stop further message handling by this node
+        // - Provide a mechanism to notify the user of the inconsistency for diagnostics or recovery actions
+
         self.clone()
     }
 
