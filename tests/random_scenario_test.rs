@@ -1,9 +1,9 @@
 use raftbare::{ClusterConfig, CommitStatus, LogIndex, LogPosition, Message, Node, NodeId, Role};
 use rand::{
-    Rng, SeedableRng,
-    distr::{Distribution, uniform::SampleRange},
+    distr::{uniform::SampleRange, Distribution},
     prelude::{IndexedRandom, RngCore},
     rngs::StdRng,
+    Rng, SeedableRng,
 };
 use std::collections::BTreeMap;
 
@@ -343,10 +343,9 @@ fn storage_repair_with_snapshot() {
                     .log()
                     .get_position_and_config(node.inner.commit_index())
                     .expect("unreachable");
-                assert!(
-                    node.inner
-                        .handle_snapshot_installed(position, config.clone())
-                );
+                assert!(node
+                    .inner
+                    .handle_snapshot_installed(position, config.clone()));
                 if node.inner.role().is_leader() {
                     snapshot_index = position.index;
                 }
@@ -905,7 +904,7 @@ impl TestNode {
         while let Some(entry) = self.incoming_messages.first_entry() {
             if entry.key().0 <= now {
                 let message = entry.remove();
-                self.inner.handle_message(message);
+                self.inner.handle_message(&message);
             } else {
                 break;
             }

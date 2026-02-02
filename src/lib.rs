@@ -46,7 +46,7 @@
 //!
 //!     // If a message is received, handle it.
 //!     while let Some(message) = try_receive_message() {
-//!         node.handle_message(message);
+//!         node.handle_message(&message);
 //!     }
 //!     # break;
 //! }
