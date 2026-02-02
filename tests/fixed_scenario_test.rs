@@ -179,10 +179,12 @@ fn truncate_log() {
     let reply = cluster
         .node0
         .asserted_handle_append_entries_call_success(&call);
-    assert!(cluster
-        .node0
-        .get_commit_status(commit_position)
-        .is_in_progress());
+    assert!(
+        cluster
+            .node0
+            .get_commit_status(commit_position)
+            .is_in_progress()
+    );
 
     cluster
         .node2
@@ -192,10 +194,12 @@ fn truncate_log() {
     let _reply = cluster
         .node0
         .asserted_handle_append_entries_call_success(&call);
-    assert!(cluster
-        .node0
-        .get_commit_status(commit_position)
-        .is_rejected());
+    assert!(
+        cluster
+            .node0
+            .get_commit_status(commit_position)
+            .is_rejected()
+    );
 
     assert_no_action!(cluster.node0);
     assert_no_action!(cluster.node1);
