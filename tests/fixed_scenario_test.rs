@@ -107,7 +107,7 @@ fn election() {
     let reply = cluster
         .node0
         .asserted_handle_append_entries_call_success(&call);
-    cluster.node1.handle_message(reply);
+    cluster.node1.handle_message(&reply);
     assert_no_action!(cluster.node1);
 
     // Periodic heartbeat.
@@ -122,7 +122,7 @@ fn election() {
     let reply = cluster
         .node2
         .asserted_handle_append_entries_call_success(&call);
-    cluster.node1.handle_message(reply);
+    cluster.node1.handle_message(&reply);
     assert_no_action!(cluster.node1);
 }
 
@@ -161,7 +161,7 @@ fn truncate_log() {
     let call = cluster.node2.asserted_candidate_election_timeout(); // Increase term.
 
     // As  node0 is the leader, it ignores RequestVoteRPC even it if has a higher term.
-    cluster.node0.handle_message(call.clone());
+    cluster.node0.handle_message(&call);
     assert_eq!(cluster.node0.role(), Role::Leader);
     assert_no_action!(cluster.node0);
 
@@ -474,7 +474,7 @@ impl TestNode {
         let prev_commit_index = self.commit_index();
         let prev_voted_for = self.voted_for();
 
-        self.handle_message(msg.clone());
+        self.handle_message(msg);
         assert_eq!(
             self.log().entries().last_position(),
             entries.last_position()
@@ -520,7 +520,7 @@ impl TestNode {
         let prev_voted_for = self.voted_for();
         let prev_term = self.current_term();
 
-        self.handle_message(msg.clone());
+        self.handle_message(msg);
         assert_ne!(
             self.log().entries().last_position(),
             entries.last_position()
@@ -557,7 +557,7 @@ impl TestNode {
         };
         assert!(since(self.log().entries(), *last_position).is_none());
 
-        self.handle_message(msg.clone());
+        self.handle_message(msg);
         assert_action!(self, Action::InstallSnapshot(header.from));
         assert_no_action!(self);
 
@@ -582,7 +582,7 @@ impl TestNode {
             unreachable!();
         };
 
-        self.handle_message(msg.clone());
+        self.handle_message(msg);
         let call = append_entries_call(
             self,
             LogEntries::from_iter(
@@ -611,7 +611,7 @@ impl TestNode {
         assert!(matches!(reply, Message::AppendEntriesReply { .. }));
 
         let old_last_position = self.log().entries().last_position();
-        self.handle_message(reply.clone());
+        self.handle_message(reply);
         self.actions = self.inner.actions().clone();
 
         let Message::AppendEntriesReply { last_position, .. } = reply else {
@@ -645,7 +645,7 @@ impl TestNode {
     fn asserted_handle_append_entries_reply_failure(&mut self, reply: &Message) -> Message {
         assert!(matches!(reply, Message::AppendEntriesReply { .. }));
 
-        self.handle_message(reply.clone());
+        self.handle_message(reply);
         let Some(call) = self.actions_mut().send_messages.remove(&reply.from()) else {
             panic!("No send message action");
         };
@@ -713,7 +713,7 @@ impl TestNode {
     fn asserted_handle_request_vote_call_success(&mut self, msg: &Message) -> Message {
         assert!(matches!(msg, Message::RequestVoteCall { .. }));
 
-        self.handle_message(msg.clone());
+        self.handle_message(msg);
 
         let reply = request_vote_reply(msg.term(), self.id(), msg.seqno(), true);
         assert_action!(self, save_current_term());
@@ -734,7 +734,7 @@ impl TestNode {
         assert!(matches!(msg, Message::RequestVoteReply { .. }));
 
         let tail = self.log().entries().last_position();
-        self.handle_message(msg.clone());
+        self.handle_message(msg);
         self.actions = self.inner.actions().clone();
         let call = append_entries_call(
             self,
@@ -755,7 +755,7 @@ impl TestNode {
         assert!(matches!(msg, Message::AppendEntriesCall { .. }));
 
         let tail = self.log().entries().last_position();
-        self.handle_message(msg.clone());
+        self.handle_message(msg);
         let reply = append_entries_reply(&msg, self);
         assert_action!(self, save_current_term());
         assert_eq!(self.current_term(), msg.term());

@@ -905,7 +905,7 @@ impl TestNode {
         while let Some(entry) = self.incoming_messages.first_entry() {
             if entry.key().0 <= now {
                 let message = entry.remove();
-                self.inner.handle_message(message);
+                self.inner.handle_message(&message);
             } else {
                 break;
             }

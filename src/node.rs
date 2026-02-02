@@ -757,14 +757,14 @@ impl Node {
     ///
     /// let msg = /* ... ; */
     /// # raftbare::Message::RequestVoteReply { header: raftbare::MessageHeader { from: raftbare::NodeId::new(1), term: raftbare::Term::new(1), seqno: raftbare::MessageSeqNo::new(3) }, vote_granted: true };
-    /// node.handle_message(msg);
+    /// node.handle_message(&msg);
     ///
     /// // Execute actions queued by the message handling.
     /// for action in node.actions_mut() {
     ///     // ...
     /// }
     /// ```
-    pub fn handle_message(&mut self, msg: Message) {
+    pub fn handle_message(&mut self, msg: &Message) {
         if self.current_term < msg.term() {
             if matches!(msg, Message::RequestVoteCall { .. })
                 && !matches!(self.role, RoleState::Candidate { .. })
@@ -782,20 +782,20 @@ impl Node {
             Message::RequestVoteCall {
                 header,
                 last_position,
-            } => self.handle_request_vote_call(header, last_position),
+            } => self.handle_request_vote_call(*header, *last_position),
             Message::RequestVoteReply {
                 header,
                 vote_granted,
-            } => self.handle_request_vote_reply(header, vote_granted),
+            } => self.handle_request_vote_reply(*header, *vote_granted),
             Message::AppendEntriesCall {
                 header,
                 commit_index,
                 entries,
-            } => self.handle_append_entries_call(header, commit_index, entries),
+            } => self.handle_append_entries_call(*header, *commit_index, entries),
             Message::AppendEntriesReply {
                 header,
                 last_position,
-            } => self.handle_append_entries_reply(header, last_position),
+            } => self.handle_append_entries_reply(*header, *last_position),
         }
     }
 
@@ -867,7 +867,7 @@ impl Node {
         &mut self,
         header: MessageHeader,
         leader_commit: LogIndex,
-        entries: LogEntries,
+        entries: &LogEntries,
     ) {
         if header.term < self.current_term {
             // Needs to reply to update the sender's term.
@@ -887,7 +887,7 @@ impl Node {
             return;
         }
 
-        let no_divergence = self.append_log_entries_from_leader(&entries);
+        let no_divergence = self.append_log_entries_from_leader(entries);
         if no_divergence {
             let next_commit_index = leader_commit.min(self.log.last_position().index);
             if self.commit_index < next_commit_index {
