@@ -471,7 +471,9 @@ impl LogEntries {
             }
             last_common_position.term = term;
         }
-        unreachable!();
+
+        // self.terms is empty
+        self.clone()
     }
 
     pub(crate) fn handle_snapshot_installed(&mut self, last_included_position: LogPosition) {
