@@ -1,4 +1,4 @@
-//! `raftbare` is a minimal but feature-complete, I/O-free implementation of the [Raft] distributed consensus algorithm.
+//! `noraft` is a minimal but feature-complete, sans I/O implementation of the [Raft] distributed consensus algorithm.
 //!
 //! [Raft]: https://raft.github.io/
 //!
@@ -10,32 +10,36 @@
 //! Instead, it generates [`Action`]s that represent pending I/O operations.
 //! How to execute these actions is up to the crate user.
 //!
-//! Except for a few optimizations, `raftbare` is a very straightforward (yet efficient) implementation of the Raft algorithm.
+//! `noraft` keeps its API surface minimal, has no dependencies, and lets users choose and integrate their own I/O layer freely.
+//!
+//! Except for a few optimizations, `noraft` is a very straightforward (yet efficient) implementation of the Raft algorithm.
 //! This crate focuses on the core part of the algorithm.
 //! So, offering various convenience features (which are not described in the Raft paper) is left to the crate user.
 //!
 //! The following example outlines a basic usage flow of this crate:
 //! ```
-//! use raftbare::{Action, Node, NodeId};
-//!
 //! // Start a node.
-//! let mut node = Node::start(NodeId::new(0));
+//! let mut node = noraft::Node::start(noraft::NodeId::new(0));
 //!
 //! // Create a three nodes cluster.
-//! let commit_position = node.create_cluster(&[NodeId::new(0), NodeId::new(1), NodeId::new(2)]);
+//! let commit_position = node.create_cluster(&[
+//!     noraft::NodeId::new(0),
+//!     noraft::NodeId::new(1),
+//!     noraft::NodeId::new(2),
+//! ]);
 //!
 //! // Execute actions requested by the node until the cluster creation is complete.
 //! while node.get_commit_status(commit_position).is_in_progress() {
 //!     for action in node.actions_mut() {
 //!         // How to execute actions is up to the crate user.
 //!         match action {
-//!            Action::SetElectionTimeout => { /* ... */ },
-//!            Action::SaveCurrentTerm => { /* ... */ },
-//!            Action::SaveVotedFor => { /* ... */ },
-//!            Action::BroadcastMessage(_) => { /* ... */ },
-//!            Action::AppendLogEntries(_) => { /* ... */ },
-//!            Action::SendMessage(_, _) => { /* ... */ },
-//!            Action::InstallSnapshot(_) => { /* ... */ },
+//!            noraft::Action::SetElectionTimeout => { /* ... */ },
+//!            noraft::Action::SaveCurrentTerm => { /* ... */ },
+//!            noraft::Action::SaveVotedFor => { /* ... */ },
+//!            noraft::Action::BroadcastMessage(_) => { /* ... */ },
+//!            noraft::Action::AppendLogEntries(_) => { /* ... */ },
+//!            noraft::Action::SendMessage(_, _) => { /* ... */ },
+//!            noraft::Action::InstallSnapshot(_) => { /* ... */ },
 //!         }
 //!     }
 //!
@@ -57,7 +61,7 @@
 //! // Execute actions as before.
 //!
 //! # fn is_election_timeout_expired() -> bool { true }
-//! # fn try_receive_message() -> Option<raftbare::Message> { None }
+//! # fn try_receive_message() -> Option<noraft::Message> { None }
 //! ```
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]

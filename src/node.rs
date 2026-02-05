@@ -127,17 +127,15 @@ impl Node {
     /// # Examples
     ///
     /// ```
-    /// use raftbare::{LogPosition, Node, NodeId};
-    ///
     /// // Starts three nodes.
-    /// let mut node0 = Node::start(NodeId::new(0));
-    /// let node1 = Node::start(NodeId::new(1));
-    /// let node2 = Node::start(NodeId::new(2));
+    /// let mut node0 = noraft::Node::start(noraft::NodeId::new(0));
+    /// let node1 = noraft::Node::start(noraft::NodeId::new(1));
+    /// let node2 = noraft::Node::start(noraft::NodeId::new(2));
     ///
     /// for node in [&node0, &node1, &node2] {
     ///     assert!(node.role().is_follower());
     ///     assert_eq!(node.config().unique_nodes().count(), 0);
-    ///     assert_eq!(node.log().last_position(), LogPosition::ZERO);
+    ///     assert_eq!(node.log().last_position(), noraft::LogPosition::ZERO);
     ///     assert!(node.actions().is_empty());
     /// }
     ///
@@ -146,7 +144,7 @@ impl Node {
     ///
     /// assert!(node0.role().is_candidate());
     /// assert_eq!(node0.config().unique_nodes().count(), 3);
-    /// assert_ne!(node0.log().last_position(), LogPosition::ZERO);
+    /// assert_ne!(node0.log().last_position(), noraft::LogPosition::ZERO);
     /// assert!(!node0.actions().is_empty());
     ///
     /// // [NOTE] To complete the cluster creation, the user needs to handle the queued actions.
@@ -178,20 +176,18 @@ impl Node {
     ///
     /// # Examples
     /// ```
-    /// use raftbare::{Node, NodeGeneration, NodeId};
-    ///
     /// // Loads the persistent state.
     /// let current_term = /* ... ; */
-    /// # raftbare::Term::new(1);
+    /// # noraft::Term::new(1);
     /// let voted_for = /* ... ; */
     /// # None;
     /// let log = /* ... ; */
-    /// # raftbare::Log::new(raftbare::ClusterConfig::new(), raftbare::LogEntries::new(raftbare::LogPosition::ZERO));
+    /// # noraft::Log::new(noraft::ClusterConfig::new(), noraft::LogEntries::new(noraft::LogPosition::ZERO));
     ///
     /// // Restarts a node.
     /// let snapshot_index = log.snapshot_position().index;
-    /// let generation = NodeGeneration::new(1);
-    /// let node = Node::restart(NodeId::new(0), generation, current_term, voted_for, log);
+    /// let generation = noraft::NodeGeneration::new(1);
+    /// let node = noraft::Node::restart(noraft::NodeId::new(0), generation, current_term, voted_for, log);
     /// assert!(node.role().is_follower());
     /// assert_eq!(node.commit_index(), snapshot_index);
     ///
@@ -436,10 +432,8 @@ impl Node {
     /// # Examples
     ///
     /// ```
-    /// use raftbare::{LogEntry, LogIndex, NodeId, Node};
-    ///
     /// let mut node = /* ... ; */
-    /// # Node::start(NodeId::new(0));
+    /// # noraft::Node::start(noraft::NodeId::new(0));
     ///
     /// let commit_position = node.propose_command();
     /// if commit_position.is_invalid() {
@@ -471,10 +465,10 @@ impl Node {
     ///
     /// // Apply all committed commands to the state machine.
     /// let last_applied_index = /* ...; */
-    /// # raftbare::LogIndex::ZERO;
+    /// # noraft::LogIndex::ZERO;
     /// for index in (last_applied_index.get() - 1)..=node.commit_index().get() {
-    ///     let index = LogIndex::new(index);
-    ///     if node.log().entries().get_entry(index) != Some(LogEntry::Command) {
+    ///     let index = noraft::LogIndex::new(index);
+    ///     if node.log().entries().get_entry(index) != Some(noraft::LogEntry::Command) {
     ///         continue;
     ///     }
     ///     // Apply the command to the state machine.
@@ -636,13 +630,12 @@ impl Node {
     /// # Examples
     ///
     /// ```
-    /// use raftbare::NodeId;
-    ///
     /// let mut node = /* ... ; */
-    /// # raftbare::Node::start(NodeId::new(1));
+    /// # noraft::Node::start(noraft::NodeId::new(1));
     ///
     /// // Propose a new configuration with adding node 4 and removing node 2.
-    /// let new_config = node.config().to_joint_consensus(&[NodeId::new(4)], &[NodeId::new(2)]);
+    /// let new_config =
+    ///     node.config().to_joint_consensus(&[noraft::NodeId::new(4)], &[noraft::NodeId::new(2)]);
     /// node.propose_config(new_config);
     /// ```
     pub fn propose_config(&mut self, new_config: ClusterConfig) -> LogPosition {
@@ -809,10 +802,10 @@ impl Node {
     ///
     /// ```
     /// let mut node = /* ... ; */
-    /// # raftbare::Node::start(raftbare::NodeId::new(1));
+    /// # noraft::Node::start(noraft::NodeId::new(1));
     ///
     /// let msg = /* ... ; */
-    /// # raftbare::Message::RequestVoteReply { from: raftbare::NodeId::new(1), term: raftbare::Term::new(1), vote_granted: true };
+    /// # noraft::Message::RequestVoteReply { from: noraft::NodeId::new(1), term: noraft::Term::new(1), vote_granted: true };
     /// node.handle_message(&msg);
     ///
     /// // Execute actions queued by the message handling.
@@ -1102,7 +1095,7 @@ impl Node {
     ///
     /// ```
     /// let mut node = /* ... ; */
-    /// # raftbare::Node::start(raftbare::NodeId::new(1));
+    /// # noraft::Node::start(noraft::NodeId::new(1));
     ///
     /// node.handle_election_timeout();
     ///
