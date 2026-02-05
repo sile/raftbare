@@ -818,22 +818,14 @@ fn cluster_config_entry(config: ClusterConfig) -> LogEntry {
     LogEntry::ClusterConfig(config)
 }
 
-fn request_vote_call(
-    term: Term,
-    from: NodeId,
-    last_position: LogPosition,
-) -> Message {
+fn request_vote_call(term: Term, from: NodeId, last_position: LogPosition) -> Message {
     Message::RequestVoteCall {
         header: MessageHeader { term, from },
         last_position,
     }
 }
 
-fn request_vote_reply(
-    term: Term,
-    from: NodeId,
-    vote_granted: bool,
-) -> Message {
+fn request_vote_reply(term: Term, from: NodeId, vote_granted: bool) -> Message {
     Message::RequestVoteReply {
         header: MessageHeader { from, term },
         vote_granted,

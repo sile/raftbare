@@ -83,22 +83,14 @@ impl Message {
         }
     }
 
-    pub(crate) fn request_vote_call(
-        term: Term,
-        from: NodeId,
-        last_position: LogPosition,
-    ) -> Self {
+    pub(crate) fn request_vote_call(term: Term, from: NodeId, last_position: LogPosition) -> Self {
         Self::RequestVoteCall {
             header: MessageHeader { term, from },
             last_position,
         }
     }
 
-    pub(crate) fn request_vote_reply(
-        term: Term,
-        from: NodeId,
-        vote_granted: bool,
-    ) -> Self {
+    pub(crate) fn request_vote_reply(term: Term, from: NodeId, vote_granted: bool) -> Self {
         Self::RequestVoteReply {
             header: MessageHeader { from, term },
             vote_granted,

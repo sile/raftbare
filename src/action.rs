@@ -247,11 +247,7 @@ mod tests {
         // SendMessage
         actions.set(Action::SendMessage(
             NodeId::new(4),
-            Message::request_vote_call(
-                Term::new(2),
-                NodeId::new(3),
-                pos(2, 8),
-            ),
+            Message::request_vote_call(Term::new(2), NodeId::new(3), pos(2, 8)),
         ));
         actions.set(Action::SendMessage(
             NodeId::new(2),
