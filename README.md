@@ -7,6 +7,8 @@ noraft
 ![License](https://img.shields.io/crates/l/noraft)
 
 
+noraft: Minimal, feature-complete Raft for Rust - no I/O, no dependencies.
+
 `noraft` is a minimal but feature-complete, sans I/O implementation of the [Raft] distributed consensus algorithm.
 
 [Raft]: https://raft.github.io/
@@ -19,7 +21,7 @@ handling incoming messages, snapshotting, and more.
 Instead, it generates [`Action`]s that represent pending I/O operations.
 How to execute these actions is up to the crate user.
 
-`noraft` keeps its API surface minimal, has no dependencies, and lets users choose and integrate their own I/O layer freely.
+`noraft` keeps its API surface minimal and lets users choose and integrate their own I/O layer freely.
 
 Except for a few optimizations, `noraft` is a very straightforward (yet efficient) implementation of the Raft algorithm.
 This crate focuses on the core part of the algorithm.
