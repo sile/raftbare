@@ -690,7 +690,7 @@ impl Node {
     ///
     /// This method can be used to perform consistent queries through the following steps:
     /// 1. Invoke `heartbeat()`.
-    /// 2. Attach a user-defined request identifier (e.g., timestamp) to the message.
+    /// 2. Attach a user-defined request identifier (e.g., timestamp) to the next message to be broadcast.
     /// 3. Wait until this node receives the majority of response messages that match the identifier,
     ///    to confirm that this node is still the leader of the cluster.
     /// 4. Execute the consistent query.
