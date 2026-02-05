@@ -1,6 +1,6 @@
 use raftbare::{
-    Action, Actions, ClusterConfig, LogEntries, LogEntry, LogIndex, LogPosition, Message,
-    Node, NodeGeneration, NodeId, Role, Term,
+    Action, Actions, ClusterConfig, LogEntries, LogEntry, LogIndex, LogPosition, Message, Node,
+    NodeGeneration, NodeId, Role, Term,
 };
 use std::ops::{Deref, DerefMut};
 

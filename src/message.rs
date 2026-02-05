@@ -189,9 +189,7 @@ impl Message {
             Message::RequestVoteReply { term, .. } => {
                 *term = (*term).max(last_included_position.term);
             }
-            Message::AppendEntriesCall {
-                term, entries, ..
-            } => {
+            Message::AppendEntriesCall { term, entries, .. } => {
                 *term = (*term).max(last_included_position.term);
                 entries.handle_snapshot_installed(last_included_position);
             }
