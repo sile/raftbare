@@ -74,34 +74,3 @@ let commit_position = node.propose_command();
 // Execute actions as before.
 ```
 
-I/O Implementation
--------------------
-
-[`raftpico`] is a reference implementation for the I/O layer.
-
-[`raftpico`]: https://github.com/sile/raftpico
-
-Coverage
---------
-
-```console
-$ rustup component add llvm-tools-preview
-$ cargo install cargo-llvm-cov
-
-$ git describe --tags
-0.2.0
-
-$ cargo llvm-cov
-Filename                      Regions    Missed Regions     Cover   Functions  Missed Functions  Executed       Lines      Missed Lines     Cover    Branches   Missed Branches     Cover
------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-action.rs                          78                 3    96.15%           5                 0   100.00%         152                 0   100.00%           0                 0         -
-config.rs                          36                 2    94.44%          14                 0   100.00%          76                 3    96.05%           0                 0         -
-lib.rs                              9                 6    33.33%           9                 6    33.33%          27                18    33.33%           0                 0         -
-log.rs                            202                26    87.13%          68                 9    86.76%         442                42    90.50%           0                 0         -
-message.rs                         50                14    72.00%          11                 1    90.91%         125                31    75.20%           0                 0         -
-node.rs                           318                42    86.79%          54                 6    88.89%         647                61    90.57%           0                 0         -
-quorum.rs                          35                 1    97.14%           9                 0   100.00%          64                 1    98.44%           0                 0         -
-role.rs                            16                 2    87.50%           4                 0   100.00%          14                 0   100.00%           0                 0         -
------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-TOTAL                             744                96    87.10%         174                22    87.36%        1547               156    89.92%           0                 0         -
-```
