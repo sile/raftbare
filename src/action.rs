@@ -181,7 +181,7 @@ impl Iterator for Actions {
 
 #[cfg(test)]
 mod tests {
-    use crate::{LogEntry, LogIndex, LogPosition, MessageSeqNo, Term};
+    use crate::{LogEntry, LogIndex, LogPosition, Term};
 
     use super::*;
 
@@ -212,14 +212,12 @@ mod tests {
         actions.set(Action::BroadcastMessage(Message::request_vote_call(
             Term::new(2),
             NodeId::new(3),
-            MessageSeqNo::new(10),
             pos(2, 8),
         )));
         actions.set(Action::BroadcastMessage(Message::append_entries_call(
             Term::new(2),
             NodeId::new(3),
             LogIndex::new(10),
-            MessageSeqNo::new(30),
             LogEntries::new(pos(2, 10)),
         )));
         assert!(matches!(
@@ -249,12 +247,7 @@ mod tests {
         // SendMessage
         actions.set(Action::SendMessage(
             NodeId::new(4),
-            Message::request_vote_call(
-                Term::new(2),
-                NodeId::new(3),
-                MessageSeqNo::new(3),
-                pos(2, 8),
-            ),
+            Message::request_vote_call(Term::new(2), NodeId::new(3), pos(2, 8)),
         ));
         actions.set(Action::SendMessage(
             NodeId::new(2),
@@ -262,7 +255,6 @@ mod tests {
                 Term::new(2),
                 NodeId::new(3),
                 LogIndex::new(10),
-                MessageSeqNo::new(30),
                 LogEntries::new(pos(2, 10)),
             ),
         ));

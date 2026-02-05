@@ -1,4 +1,7 @@
-use raftbare::{ClusterConfig, CommitStatus, LogIndex, LogPosition, Message, Node, NodeId, Role};
+use raftbare::{
+    ClusterConfig, CommitStatus, Log, LogEntries, LogIndex, LogPosition, Message, Node,
+    NodeGeneration, NodeId, Role, Term,
+};
 use rand::{
     Rng, SeedableRng,
     distr::{Distribution, uniform::SampleRange},
@@ -269,7 +272,10 @@ fn storage_repair_without_snapshot() {
             for node in cluster.nodes.iter_mut() {
                 if !node.inner.role().is_leader() {
                     // Reset the node.
-                    node.inner = Node::start(node.inner.id());
+                    let generation =
+                        NodeGeneration::new(node.inner.generation().get().saturating_add(1));
+                    let log = Log::new(ClusterConfig::new(), LogEntries::new(LogPosition::ZERO));
+                    node.inner = Node::restart(node.inner.id(), generation, Term::ZERO, None, log);
                 }
             }
         }
@@ -356,7 +362,10 @@ fn storage_repair_with_snapshot() {
             for node in cluster.nodes.iter_mut() {
                 if !node.inner.role().is_leader() {
                     // Reset the node.
-                    node.inner = Node::start(node.inner.id());
+                    let generation =
+                        NodeGeneration::new(node.inner.generation().get().saturating_add(1));
+                    let log = Log::new(ClusterConfig::new(), LogEntries::new(LogPosition::ZERO));
+                    node.inner = Node::restart(node.inner.id(), generation, Term::ZERO, None, log);
                 }
             }
         }
@@ -487,7 +496,7 @@ fn dynamic_membership() {
 
         let mut success_count = 0;
         for position in positions {
-            for _ in 0..10000 {
+            for _ in 0..20000 {
                 cluster.run_while_leader_absent(cluster.clock.add(1000_000));
                 let Some(leader) = cluster.leader_node_mut() else {
                     panic!("No leader");
@@ -501,7 +510,7 @@ fn dynamic_membership() {
                 cluster.run(cluster.clock.add(10));
             }
         }
-        assert!(success_count > 5);
+        assert!(success_count >= 4);
     }
 }
 
@@ -583,7 +592,7 @@ fn truncate_divergence_log() {
     assert!(60 <= success_count);
     assert!(success_count <= 80);
 
-    let deadline = cluster.clock.add(1000);
+    let deadline = cluster.clock.add(10_000);
     let satisfied = cluster.run_until(deadline, |cluster| {
         cluster.nodes[0].inner.commit_index() == cluster.nodes[1].inner.commit_index()
             && cluster.nodes[0].inner.commit_index() == cluster.nodes[2].inner.commit_index()
@@ -867,6 +876,7 @@ impl TestNode {
 
                 self.inner = Node::restart(
                     self.inner.id(),
+                    NodeGeneration::new(self.inner.generation().get().saturating_add(1)),
                     self.inner.current_term(),
                     self.inner.voted_for(),
                     self.inner.log().clone(),

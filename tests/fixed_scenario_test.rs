@@ -1,6 +1,6 @@
 use raftbare::{
     Action, Actions, ClusterConfig, LogEntries, LogEntry, LogIndex, LogPosition, Message,
-    MessageHeader, MessageSeqNo, Node, NodeId, Role, Term,
+    MessageHeader, Node, NodeGeneration, NodeId, Role, Term,
 };
 use std::ops::{Deref, DerefMut};
 
@@ -136,6 +136,7 @@ fn restart() {
     assert_eq!(cluster.node1.role(), Role::Follower);
     cluster.node1.inner = Node::restart(
         cluster.node1.id(),
+        NodeGeneration::new(cluster.node1.inner.generation().get() + 1),
         cluster.node1.current_term(),
         cluster.node1.voted_for(),
         cluster.node1.log().clone(),
@@ -551,6 +552,7 @@ impl TestNode {
         let Message::AppendEntriesReply {
             header,
             last_position,
+            ..
         } = msg
         else {
             unreachable!();
@@ -662,13 +664,9 @@ impl TestNode {
         assert_eq!(self.role(), Role::Candidate);
         assert_eq!(self.current_term(), next_term(prev_term));
 
-        let Some(seqno) = self.actions().broadcast_message.as_ref().map(|a| a.seqno()) else {
-            panic!("No broadcast message action");
-        };
         let call = request_vote_call(
             self.current_term(),
             self.id(),
-            seqno,
             self.log().entries().last_position(),
         );
         assert_action!(self, save_current_term());
@@ -690,13 +688,9 @@ impl TestNode {
         assert_eq!(self.role(), Role::Candidate);
         assert_eq!(self.current_term(), next_term(prev_term));
 
-        let Some(seqno) = self.actions().broadcast_message.as_ref().map(|a| a.seqno()) else {
-            panic!("No broadcast message action");
-        };
         let call = request_vote_call(
             self.current_term(),
             self.id(),
-            seqno,
             self.log().entries().last_position(),
         );
         assert_action!(self, save_current_term());
@@ -715,7 +709,7 @@ impl TestNode {
 
         self.handle_message(msg);
 
-        let reply = request_vote_reply(msg.term(), self.id(), msg.seqno(), true);
+        let reply = request_vote_reply(msg.term(), self.id(), true);
         assert_action!(self, save_current_term());
         assert_eq!(self.current_term(), msg.term());
         assert_action!(self, save_voted_for());
@@ -824,26 +818,16 @@ fn cluster_config_entry(config: ClusterConfig) -> LogEntry {
     LogEntry::ClusterConfig(config)
 }
 
-fn request_vote_call(
-    term: Term,
-    from: NodeId,
-    seqno: MessageSeqNo,
-    last_position: LogPosition,
-) -> Message {
+fn request_vote_call(term: Term, from: NodeId, last_position: LogPosition) -> Message {
     Message::RequestVoteCall {
-        header: MessageHeader { term, from, seqno },
+        header: MessageHeader { term, from },
         last_position,
     }
 }
 
-fn request_vote_reply(
-    term: Term,
-    from: NodeId,
-    seqno: MessageSeqNo,
-    vote_granted: bool,
-) -> Message {
+fn request_vote_reply(term: Term, from: NodeId, vote_granted: bool) -> Message {
     Message::RequestVoteReply {
-        header: MessageHeader { from, term, seqno },
+        header: MessageHeader { from, term },
         vote_granted,
     }
 }
@@ -852,38 +836,25 @@ fn append_entries_call(leader: &Node, entries: LogEntries) -> Message {
     let term = leader.current_term();
     let from = leader.id();
     let commit_index = leader.commit_index();
-    let seqno = leader
-        .actions()
-        .broadcast_message
-        .as_ref()
-        .map(|m| m.seqno())
-        .or_else(|| {
-            leader
-                .actions()
-                .send_messages
-                .values()
-                .map(|m| m.seqno())
-                .next()
-        })
-        .unwrap_or(MessageSeqNo::new(0));
     Message::AppendEntriesCall {
-        header: MessageHeader { from, term, seqno },
+        header: MessageHeader { from, term },
         commit_index,
         entries,
     }
 }
 
 fn append_entries_reply(call: &Message, node: &Node) -> Message {
-    let Message::AppendEntriesCall { header, .. } = call else {
+    let Message::AppendEntriesCall { .. } = call else {
         panic!();
     };
 
     let term = node.current_term();
     let from = node.id();
-    let seqno = header.seqno;
+    let generation = node.generation();
     let last_position = node.log().entries().last_position();
     Message::AppendEntriesReply {
-        header: MessageHeader { term, from, seqno },
+        header: MessageHeader { term, from },
+        generation,
         last_position,
     }
 }

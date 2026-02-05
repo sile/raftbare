@@ -1,7 +1,7 @@
 use crate::{
     Term,
     log::{LogEntries, LogIndex, LogPosition},
-    node::NodeId,
+    node::{NodeGeneration, NodeId},
 };
 
 /// Message for RPC.
@@ -49,6 +49,9 @@ pub enum Message {
         /// Message header.
         header: MessageHeader,
 
+        /// Generation of the sender.
+        generation: NodeGeneration,
+
         /// Last log position of the follower.
         ///
         /// Instead of replying a boolean `success` as defined in the Raft paper,
@@ -80,36 +83,16 @@ impl Message {
         }
     }
 
-    /// Returns the sequence number of the message.
-    pub fn seqno(&self) -> MessageSeqNo {
-        match self {
-            Self::RequestVoteCall { header, .. } => header.seqno,
-            Self::RequestVoteReply { header, .. } => header.seqno,
-            Self::AppendEntriesCall { header, .. } => header.seqno,
-            Self::AppendEntriesReply { header, .. } => header.seqno,
-        }
-    }
-
-    pub(crate) fn request_vote_call(
-        term: Term,
-        from: NodeId,
-        seqno: MessageSeqNo,
-        last_position: LogPosition,
-    ) -> Self {
+    pub(crate) fn request_vote_call(term: Term, from: NodeId, last_position: LogPosition) -> Self {
         Self::RequestVoteCall {
-            header: MessageHeader { term, from, seqno },
+            header: MessageHeader { term, from },
             last_position,
         }
     }
 
-    pub(crate) fn request_vote_reply(
-        term: Term,
-        from: NodeId,
-        seqno: MessageSeqNo,
-        vote_granted: bool,
-    ) -> Self {
+    pub(crate) fn request_vote_reply(term: Term, from: NodeId, vote_granted: bool) -> Self {
         Self::RequestVoteReply {
-            header: MessageHeader { from, term, seqno },
+            header: MessageHeader { from, term },
             vote_granted,
         }
     }
@@ -118,11 +101,10 @@ impl Message {
         term: Term,
         from: NodeId,
         commit_index: LogIndex,
-        seqno: MessageSeqNo,
         entries: LogEntries,
     ) -> Self {
         Self::AppendEntriesCall {
-            header: MessageHeader { from, term, seqno },
+            header: MessageHeader { from, term },
             commit_index,
             entries,
         }
@@ -131,22 +113,18 @@ impl Message {
     pub(crate) fn append_entries_reply(
         term: Term,
         from: NodeId,
-        seqno: MessageSeqNo,
+        generation: NodeGeneration,
         last_position: LogPosition,
     ) -> Self {
         Self::AppendEntriesReply {
-            header: MessageHeader { term, from, seqno },
+            header: MessageHeader { term, from },
+            generation,
             last_position,
         }
     }
 
     pub(crate) fn merge(&mut self, other: Self) {
         debug_assert_eq!(self.from(), other.from());
-
-        if other.seqno() <= self.seqno() {
-            return;
-        }
-
         debug_assert!(self.term() <= other.term());
 
         let Self::AppendEntriesCall {
@@ -199,6 +177,7 @@ impl Message {
             }
             Message::AppendEntriesReply {
                 header,
+                generation: _,
                 last_position,
             } => {
                 header.term = header.term.max(last_included_position.term);
@@ -218,25 +197,4 @@ pub struct MessageHeader {
 
     /// Term of the sender.
     pub term: Term,
-
-    /// Sequence number of the message.
-    pub seqno: MessageSeqNo,
-}
-
-/// Message sequence number.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub struct MessageSeqNo(u64);
-
-impl MessageSeqNo {
-    pub(crate) const ZERO: Self = Self(0);
-
-    /// Makes a new [`MessageSeqNo`] instance.
-    pub const fn new(seqno: u64) -> Self {
-        Self(seqno)
-    }
-
-    /// Returns the value of the sequence number.
-    pub const fn get(self) -> u64 {
-        self.0
-    }
 }
