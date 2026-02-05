@@ -546,14 +546,25 @@ impl Node {
         };
 
         let config = self.log.latest_config();
-        *quorum = Quorum::new(config);
-
-        quorum.update_match_index(
+        Self::rebuild_quorum_inner(
+            quorum,
+            followers,
             config,
             self.id,
-            LogIndex::ZERO,
             self.log.last_position().index,
         );
+    }
+
+    fn rebuild_quorum_inner(
+        quorum: &mut Quorum,
+        followers: &BTreeMap<NodeId, Follower>,
+        config: &ClusterConfig,
+        self_id: NodeId,
+        self_last: LogIndex,
+    ) {
+        *quorum = Quorum::new(config);
+
+        quorum.update_match_index(config, self_id, LogIndex::ZERO, self_last);
 
         for (&id, follower) in followers {
             quorum.update_match_index(config, id, LogIndex::ZERO, follower.match_index);
@@ -957,7 +968,10 @@ impl Node {
             return;
         }
 
-        let RoleState::Leader { followers, .. } = &mut self.role else {
+        let RoleState::Leader {
+            followers, quorum, ..
+        } = &mut self.role
+        else {
             return;
         };
 
@@ -971,18 +985,37 @@ impl Node {
             return;
         }
 
+        let mut should_rebuild_quorum = false;
         if header.generation > follower.generation {
-            follower.match_index = self.log.snapshot_position().index;
             follower.generation = header.generation;
-            self.rebuild_quorum();
+            if follower_last_position.index < follower.match_index {
+                follower.match_index = follower_last_position.index;
+                should_rebuild_quorum = true;
+            }
         }
 
-        let RoleState::Leader {
-            followers, quorum, ..
-        } = &mut self.role
-        else {
-            return;
-        };
+        if should_rebuild_quorum {
+            // Generation update can decrease match_index, and `Quorum::update_match_index()`
+            // only supports monotonic increases, so a full rebuild is required.
+            //
+            // [NOTE]
+            // The Raft algorithm assumes that storage is reliable.
+            // Therefore, theoretically, this case should not occur.
+            // However, in practice, it is possible for the follower's log to be fully or partially lost.
+            // To recover log entries as much as possible in such cases,
+            // this crate allows proceeding even if the above condition is met.
+            // But be cautious, as there is a risk of compromising the properties guaranteed by
+            // the Raft algorithm.
+            // However, as the leader log grows, a divergence point will be detected.
+            Self::rebuild_quorum_inner(
+                quorum,
+                followers,
+                self.log.latest_config(),
+                self.id,
+                self.log.last_position().index,
+            );
+        }
+
         let Some(follower) = followers.get_mut(&header.from) else {
             return;
         };
