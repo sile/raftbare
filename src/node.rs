@@ -73,6 +73,7 @@ impl std::ops::SubAssign for NodeId {
 /// Node generation ([`u64`]).
 ///
 /// The crate user is responsible for supplying a unique generation on restart.
+/// The generation should be monotonically increasing for the same node.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct NodeGeneration(u64);
 
@@ -156,9 +157,11 @@ impl Node {
 
     /// Restarts a node.
     ///
-    /// `generation`, `current_term`, `voted_for`, and `log` are restored from persistent storage.
+    /// `current_term`, `voted_for`, and `log` are restored from persistent storage.
     /// The generation must be a value that is unique across restarts of the same node,
     /// and should be monotonically increasing.
+    /// It can be derived from persistent storage or an external source such as a system clock,
+    /// as long as it satisfies the uniqueness and monotonicity requirements.
     /// Note that managing the persistent storage is outside the scope of this crate.
     ///
     /// # Notes
@@ -1156,7 +1159,6 @@ impl Node {
         }
         self.log.get_config(last_included_position.index) == Some(last_included_config)
     }
-
 }
 
 #[derive(Debug, Clone)]
