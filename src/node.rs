@@ -1,5 +1,5 @@
 use crate::{
-    CommitStatus, Log, MessageHeader, Role, Term,
+    CommitStatus, Log, Role, Term,
     action::{Action, Actions},
     config::ClusterConfig,
     log::{LogEntries, LogEntry, LogIndex, LogPosition},
@@ -812,7 +812,7 @@ impl Node {
     /// # raftbare::Node::start(raftbare::NodeId::new(1));
     ///
     /// let msg = /* ... ; */
-    /// # raftbare::Message::RequestVoteReply { header: raftbare::MessageHeader { from: raftbare::NodeId::new(1), term: raftbare::Term::new(1) }, vote_granted: true };
+    /// # raftbare::Message::RequestVoteReply { from: raftbare::NodeId::new(1), term: raftbare::Term::new(1), vote_granted: true };
     /// node.handle_message(&msg);
     ///
     /// // Execute actions queued by the message handling.
@@ -836,31 +836,35 @@ impl Node {
 
         match msg {
             Message::RequestVoteCall {
-                header,
+                from,
+                term,
                 last_position,
-            } => self.handle_request_vote_call(*header, *last_position),
+            } => self.handle_request_vote_call(*from, *term, *last_position),
             Message::RequestVoteReply {
-                header,
+                from,
+                term,
                 vote_granted,
-            } => self.handle_request_vote_reply(*header, *vote_granted),
+            } => self.handle_request_vote_reply(*from, *term, *vote_granted),
             Message::AppendEntriesCall {
-                header,
+                from,
+                term,
                 commit_index,
                 entries,
-            } => self.handle_append_entries_call(*header, *commit_index, entries),
+            } => self.handle_append_entries_call(*from, *term, *commit_index, entries),
             Message::AppendEntriesReply {
-                header,
+                from,
+                term,
                 generation,
                 last_position,
-            } => self.handle_append_entries_reply(*header, *generation, *last_position),
+            } => self.handle_append_entries_reply(*from, *term, *generation, *last_position),
         }
     }
 
-    fn handle_request_vote_call(&mut self, header: MessageHeader, last_position: LogPosition) {
-        if header.term < self.current_term {
+    fn handle_request_vote_call(&mut self, from: NodeId, term: Term, last_position: LogPosition) {
+        if term < self.current_term {
             // Needs to reply to update the sender's term.
             let reply = Message::request_vote_reply(self.current_term, self.id, false);
-            self.actions.set(Action::SendMessage(header.from, reply));
+            self.actions.set(Action::SendMessage(from, reply));
             return;
         }
 
@@ -869,10 +873,10 @@ impl Node {
         }
 
         if self.voted_for.is_none() {
-            self.set_voted_for(Some(header.from));
+            self.set_voted_for(Some(from));
         }
 
-        if self.voted_for != Some(header.from) {
+        if self.voted_for != Some(from) {
             // This node is either a candidate, a leader, or has already voted for another node.
             return;
         }
@@ -880,22 +884,22 @@ impl Node {
 
         // This follower votes for the candidate.
         let reply = Message::request_vote_reply(self.current_term, self.id, true);
-        self.actions.set(Action::SendMessage(header.from, reply));
+        self.actions.set(Action::SendMessage(from, reply));
         self.actions.set(Action::SetElectionTimeout);
     }
 
-    fn handle_request_vote_reply(&mut self, header: MessageHeader, vote_granted: bool) {
+    fn handle_request_vote_reply(&mut self, from: NodeId, term: Term, vote_granted: bool) {
         let RoleState::Candidate { granted_votes } = &mut self.role else {
             return;
         };
         if !vote_granted {
             return;
         }
-        if header.term < self.current_term {
+        if term < self.current_term {
             // Delayed (obsolete) reply from an old term.
             return;
         }
-        granted_votes.insert(header.from);
+        granted_votes.insert(from);
 
         let config = self.log.latest_config();
         let n = config
@@ -921,13 +925,14 @@ impl Node {
 
     fn handle_append_entries_call(
         &mut self,
-        header: MessageHeader,
+        from: NodeId,
+        term: Term,
         leader_commit: LogIndex,
         entries: &LogEntries,
     ) {
-        if header.term < self.current_term {
+        if term < self.current_term {
             // Needs to reply to update the sender's term.
-            self.reply_append_entries(header);
+            self.reply_append_entries(from);
             return;
         }
 
@@ -936,10 +941,10 @@ impl Node {
         }
 
         if self.voted_for.is_none() {
-            self.set_voted_for(Some(header.from));
+            self.set_voted_for(Some(from));
         }
 
-        if self.voted_for != Some(header.from) {
+        if self.voted_for != Some(from) {
             return;
         }
 
@@ -951,17 +956,18 @@ impl Node {
             }
         }
 
-        self.reply_append_entries(header);
+        self.reply_append_entries(from);
         self.actions.set(Action::SetElectionTimeout);
     }
 
     fn handle_append_entries_reply(
         &mut self,
-        header: MessageHeader,
+        from: NodeId,
+        term: Term,
         generation: NodeGeneration,
         follower_last_position: LogPosition,
     ) {
-        if header.term < self.current_term {
+        if term < self.current_term {
             // Delayed (obsolete) reply from an old term.
             return;
         }
@@ -973,7 +979,7 @@ impl Node {
             return;
         };
 
-        let Some(follower) = followers.get_mut(&header.from) else {
+        let Some(follower) = followers.get_mut(&from) else {
             // Replies from unknown nodes are ignored.
             return;
         };
@@ -1016,7 +1022,7 @@ impl Node {
             );
         }
 
-        let follower = followers.get_mut(&header.from).expect("infallible");
+        let follower = followers.get_mut(&from).expect("infallible");
 
         if !self.log.entries().contains(follower_last_position) {
             if let Some(term) = self.log.entries().get_term(follower_last_position.index) {
@@ -1028,14 +1034,14 @@ impl Node {
                     self.commit_index,
                     LogEntries::new(LogPosition { term, index }),
                 );
-                self.actions.set(Action::SendMessage(header.from, call));
+                self.actions.set(Action::SendMessage(from, call));
             } else if self.log.last_position().index < follower_last_position.index {
                 // Something seems strange.
                 // However, as the leader log grows, a divergence point will be detected.
             } else {
                 // The follower's log is too old. Needs to install a snapshot.
                 debug_assert!(follower_last_position.index <= self.log.snapshot_position().index);
-                self.actions.set(Action::InstallSnapshot(header.from));
+                self.actions.set(Action::InstallSnapshot(from));
             }
 
             return;
@@ -1052,7 +1058,7 @@ impl Node {
 
             quorum.update_match_index(
                 self.log.latest_config(),
-                header.from,
+                from,
                 old_match_index,
                 follower.match_index,
             );
@@ -1073,17 +1079,17 @@ impl Node {
         };
         let call =
             Message::append_entries_call(self.current_term, self.id, self.commit_index, delta);
-        self.actions.set(Action::SendMessage(header.from, call));
+        self.actions.set(Action::SendMessage(from, call));
     }
 
-    fn reply_append_entries(&mut self, call: MessageHeader) {
+    fn reply_append_entries(&mut self, to: NodeId) {
         let reply = Message::append_entries_reply(
             self.current_term,
             self.id,
             self.generation,
             self.log.last_position(),
         );
-        self.actions.set(Action::SendMessage(call.from, reply));
+        self.actions.set(Action::SendMessage(to, reply));
     }
 
     /// Handles an election timeout.

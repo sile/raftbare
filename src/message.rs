@@ -13,8 +13,11 @@ use crate::{
 pub enum Message {
     /// RequestVote RPC call.
     RequestVoteCall {
-        /// Message header.
-        header: MessageHeader,
+        /// Sender of the message.
+        from: NodeId,
+
+        /// Term of the sender.
+        term: Term,
 
         /// Last log position of the candidate.
         last_position: LogPosition,
@@ -22,8 +25,11 @@ pub enum Message {
 
     /// RequestVote RPC reply.
     RequestVoteReply {
-        /// Message header.
-        header: MessageHeader,
+        /// Sender of the message.
+        from: NodeId,
+
+        /// Term of the sender.
+        term: Term,
 
         /// Whether the vote is granted or not.
         vote_granted: bool,
@@ -31,8 +37,11 @@ pub enum Message {
 
     /// AppendEntries RPC call.
     AppendEntriesCall {
-        /// Message header.
-        header: MessageHeader,
+        /// Sender of the message.
+        from: NodeId,
+
+        /// Term of the sender.
+        term: Term,
 
         /// Leader's commit index.
         commit_index: LogIndex,
@@ -46,8 +55,11 @@ pub enum Message {
 
     /// AppendEntries RPC reply.
     AppendEntriesReply {
-        /// Message header.
-        header: MessageHeader,
+        /// Sender of the message.
+        from: NodeId,
+
+        /// Term of the sender.
+        term: Term,
 
         /// Generation of the sender.
         generation: NodeGeneration,
@@ -66,33 +78,35 @@ impl Message {
     /// Returns the sender node ID of the message.
     pub fn from(&self) -> NodeId {
         match self {
-            Self::RequestVoteCall { header, .. } => header.from,
-            Self::RequestVoteReply { header, .. } => header.from,
-            Self::AppendEntriesCall { header, .. } => header.from,
-            Self::AppendEntriesReply { header, .. } => header.from,
+            Self::RequestVoteCall { from, .. } => *from,
+            Self::RequestVoteReply { from, .. } => *from,
+            Self::AppendEntriesCall { from, .. } => *from,
+            Self::AppendEntriesReply { from, .. } => *from,
         }
     }
 
     /// Returns the term of the message.
     pub fn term(&self) -> Term {
         match self {
-            Self::RequestVoteCall { header, .. } => header.term,
-            Self::RequestVoteReply { header, .. } => header.term,
-            Self::AppendEntriesCall { header, .. } => header.term,
-            Self::AppendEntriesReply { header, .. } => header.term,
+            Self::RequestVoteCall { term, .. } => *term,
+            Self::RequestVoteReply { term, .. } => *term,
+            Self::AppendEntriesCall { term, .. } => *term,
+            Self::AppendEntriesReply { term, .. } => *term,
         }
     }
 
     pub(crate) fn request_vote_call(term: Term, from: NodeId, last_position: LogPosition) -> Self {
         Self::RequestVoteCall {
-            header: MessageHeader { term, from },
+            from,
+            term,
             last_position,
         }
     }
 
     pub(crate) fn request_vote_reply(term: Term, from: NodeId, vote_granted: bool) -> Self {
         Self::RequestVoteReply {
-            header: MessageHeader { from, term },
+            from,
+            term,
             vote_granted,
         }
     }
@@ -104,7 +118,8 @@ impl Message {
         entries: LogEntries,
     ) -> Self {
         Self::AppendEntriesCall {
-            header: MessageHeader { from, term },
+            from,
+            term,
             commit_index,
             entries,
         }
@@ -117,7 +132,8 @@ impl Message {
         last_position: LogPosition,
     ) -> Self {
         Self::AppendEntriesReply {
-            header: MessageHeader { term, from },
+            from,
+            term,
             generation,
             last_position,
         }
@@ -128,7 +144,8 @@ impl Message {
         debug_assert!(self.term() <= other.term());
 
         let Self::AppendEntriesCall {
-            header: header0,
+            from: from0,
+            term: term0,
             commit_index: leader_commit0,
             entries: entries0,
         } = self
@@ -137,7 +154,8 @@ impl Message {
             return;
         };
         let Self::AppendEntriesCall {
-            header: header1,
+            from: from1,
+            term: term1,
             commit_index: leader_commit1,
             entries: entries1,
         } = other
@@ -146,7 +164,8 @@ impl Message {
             return;
         };
 
-        *header0 = header1;
+        *from0 = from1;
+        *term0 = term1;
         *leader_commit0 = leader_commit1;
         if entries0.contains(entries1.prev_position()) {
             entries0.append(&entries1);
@@ -158,43 +177,35 @@ impl Message {
     pub(crate) fn handle_snapshot_installed(&mut self, last_included_position: LogPosition) {
         match self {
             Message::RequestVoteCall {
-                header,
+                term,
                 last_position,
+                ..
             } => {
-                header.term = header.term.max(last_included_position.term);
+                *term = (*term).max(last_included_position.term);
                 if last_position.index < last_included_position.index {
                     *last_position = last_included_position;
                 }
             }
-            Message::RequestVoteReply { header, .. } => {
-                header.term = header.term.max(last_included_position.term);
+            Message::RequestVoteReply { term, .. } => {
+                *term = (*term).max(last_included_position.term);
             }
             Message::AppendEntriesCall {
-                header, entries, ..
+                term, entries, ..
             } => {
-                header.term = header.term.max(last_included_position.term);
+                *term = (*term).max(last_included_position.term);
                 entries.handle_snapshot_installed(last_included_position);
             }
             Message::AppendEntriesReply {
-                header,
+                term,
                 generation: _,
                 last_position,
+                ..
             } => {
-                header.term = header.term.max(last_included_position.term);
+                *term = (*term).max(last_included_position.term);
                 if last_position.index < last_included_position.index {
                     *last_position = last_included_position;
                 }
             }
         }
     }
-}
-
-/// Common header for all messages.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct MessageHeader {
-    /// Sender of the message.
-    pub from: NodeId,
-
-    /// Term of the sender.
-    pub term: Term,
 }

@@ -73,7 +73,7 @@ mod role;
 pub use action::{Action, Actions};
 pub use config::ClusterConfig;
 pub use log::{CommitStatus, Log, LogEntries, LogEntry, LogIndex, LogPosition};
-pub use message::{Message, MessageHeader};
+pub use message::Message;
 pub use node::{Node, NodeGeneration, NodeId};
 pub use role::Role;
 

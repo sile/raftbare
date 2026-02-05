@@ -1,6 +1,6 @@
 use raftbare::{
     Action, Actions, ClusterConfig, LogEntries, LogEntry, LogIndex, LogPosition, Message,
-    MessageHeader, Node, NodeGeneration, NodeId, Role, Term,
+    Node, NodeGeneration, NodeId, Role, Term,
 };
 use std::ops::{Deref, DerefMut};
 
@@ -550,7 +550,7 @@ impl TestNode {
         assert!(matches!(msg, Message::AppendEntriesReply { .. }));
 
         let Message::AppendEntriesReply {
-            header,
+            from,
             last_position,
             ..
         } = msg
@@ -560,7 +560,7 @@ impl TestNode {
         assert!(since(self.log().entries(), *last_position).is_none());
 
         self.handle_message(msg);
-        assert_action!(self, Action::InstallSnapshot(header.from));
+        assert_action!(self, Action::InstallSnapshot(*from));
         assert_no_action!(self);
 
         (
@@ -820,14 +820,16 @@ fn cluster_config_entry(config: ClusterConfig) -> LogEntry {
 
 fn request_vote_call(term: Term, from: NodeId, last_position: LogPosition) -> Message {
     Message::RequestVoteCall {
-        header: MessageHeader { term, from },
+        from,
+        term,
         last_position,
     }
 }
 
 fn request_vote_reply(term: Term, from: NodeId, vote_granted: bool) -> Message {
     Message::RequestVoteReply {
-        header: MessageHeader { from, term },
+        from,
+        term,
         vote_granted,
     }
 }
@@ -837,7 +839,8 @@ fn append_entries_call(leader: &Node, entries: LogEntries) -> Message {
     let from = leader.id();
     let commit_index = leader.commit_index();
     Message::AppendEntriesCall {
-        header: MessageHeader { from, term },
+        from,
+        term,
         commit_index,
         entries,
     }
@@ -853,7 +856,8 @@ fn append_entries_reply(call: &Message, node: &Node) -> Message {
     let generation = node.generation();
     let last_position = node.log().entries().last_position();
     Message::AppendEntriesReply {
-        header: MessageHeader { term, from },
+        from,
+        term,
         generation,
         last_position,
     }
