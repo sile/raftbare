@@ -274,17 +274,8 @@ fn storage_repair_without_snapshot() {
                     // Reset the node.
                     let generation =
                         NodeGeneration::new(node.inner.generation().get().saturating_add(1));
-                    let log = Log::new(
-                        ClusterConfig::new(),
-                        LogEntries::new(LogPosition::ZERO),
-                    );
-                    node.inner = Node::restart(
-                        node.inner.id(),
-                        generation,
-                        Term::ZERO,
-                        None,
-                        log,
-                    );
+                    let log = Log::new(ClusterConfig::new(), LogEntries::new(LogPosition::ZERO));
+                    node.inner = Node::restart(node.inner.id(), generation, Term::ZERO, None, log);
                 }
             }
         }
@@ -373,17 +364,8 @@ fn storage_repair_with_snapshot() {
                     // Reset the node.
                     let generation =
                         NodeGeneration::new(node.inner.generation().get().saturating_add(1));
-                    let log = Log::new(
-                        ClusterConfig::new(),
-                        LogEntries::new(LogPosition::ZERO),
-                    );
-                    node.inner = Node::restart(
-                        node.inner.id(),
-                        generation,
-                        Term::ZERO,
-                        None,
-                        log,
-                    );
+                    let log = Log::new(ClusterConfig::new(), LogEntries::new(LogPosition::ZERO));
+                    node.inner = Node::restart(node.inner.id(), generation, Term::ZERO, None, log);
                 }
             }
         }

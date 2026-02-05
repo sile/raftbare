@@ -663,7 +663,11 @@ impl TestNode {
         assert_eq!(self.role(), Role::Candidate);
         assert_eq!(self.current_term(), next_term(prev_term));
 
-        let Some(generation) = self.actions().broadcast_message.as_ref().map(|a| a.generation())
+        let Some(generation) = self
+            .actions()
+            .broadcast_message
+            .as_ref()
+            .map(|a| a.generation())
         else {
             panic!("No broadcast message action");
         };
@@ -692,7 +696,11 @@ impl TestNode {
         assert_eq!(self.role(), Role::Candidate);
         assert_eq!(self.current_term(), next_term(prev_term));
 
-        let Some(generation) = self.actions().broadcast_message.as_ref().map(|a| a.generation())
+        let Some(generation) = self
+            .actions()
+            .broadcast_message
+            .as_ref()
+            .map(|a| a.generation())
         else {
             panic!("No broadcast message action");
         };
