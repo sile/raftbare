@@ -1,4 +1,7 @@
-use raftbare::{ClusterConfig, CommitStatus, LogIndex, LogPosition, Message, Node, NodeId, Role};
+use raftbare::{
+    ClusterConfig, CommitStatus, Log, LogEntries, LogIndex, LogPosition, Message, Node,
+    NodeGeneration, NodeId, Role, Term,
+};
 use rand::{
     Rng, SeedableRng,
     distr::{Distribution, uniform::SampleRange},
@@ -269,7 +272,19 @@ fn storage_repair_without_snapshot() {
             for node in cluster.nodes.iter_mut() {
                 if !node.inner.role().is_leader() {
                     // Reset the node.
-                    node.inner = Node::start(node.inner.id());
+                    let generation =
+                        NodeGeneration::new(node.inner.generation().get().saturating_add(1));
+                    let log = Log::new(
+                        ClusterConfig::new(),
+                        LogEntries::new(LogPosition::ZERO),
+                    );
+                    node.inner = Node::restart(
+                        node.inner.id(),
+                        generation,
+                        Term::ZERO,
+                        None,
+                        log,
+                    );
                 }
             }
         }
@@ -356,7 +371,19 @@ fn storage_repair_with_snapshot() {
             for node in cluster.nodes.iter_mut() {
                 if !node.inner.role().is_leader() {
                     // Reset the node.
-                    node.inner = Node::start(node.inner.id());
+                    let generation =
+                        NodeGeneration::new(node.inner.generation().get().saturating_add(1));
+                    let log = Log::new(
+                        ClusterConfig::new(),
+                        LogEntries::new(LogPosition::ZERO),
+                    );
+                    node.inner = Node::restart(
+                        node.inner.id(),
+                        generation,
+                        Term::ZERO,
+                        None,
+                        log,
+                    );
                 }
             }
         }
@@ -867,6 +894,7 @@ impl TestNode {
 
                 self.inner = Node::restart(
                     self.inner.id(),
+                    NodeGeneration::new(self.inner.generation().get().saturating_add(1)),
                     self.inner.current_term(),
                     self.inner.voted_for(),
                     self.inner.log().clone(),

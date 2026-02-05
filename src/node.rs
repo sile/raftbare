@@ -3,7 +3,7 @@ use crate::{
     action::{Action, Actions},
     config::ClusterConfig,
     log::{LogEntries, LogEntry, LogIndex, LogPosition},
-    message::{Message, MessageSeqNo},
+    message::Message,
     quorum::Quorum,
 };
 use std::collections::{BTreeMap, BTreeSet};
@@ -70,15 +70,48 @@ impl std::ops::SubAssign for NodeId {
     }
 }
 
+/// Node generation ([`u64`]).
+///
+/// The crate user is responsible for supplying a unique generation on restart.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct NodeGeneration(u64);
+
+impl NodeGeneration {
+    /// The initial generation.
+    pub const ZERO: Self = Self(0);
+
+    /// Makes a new [`NodeGeneration`] instance.
+    pub const fn new(generation: u64) -> Self {
+        Self(generation)
+    }
+
+    /// Returns the value of this generation.
+    pub const fn get(self) -> u64 {
+        self.0
+    }
+}
+
+impl From<u64> for NodeGeneration {
+    fn from(value: u64) -> Self {
+        Self::new(value)
+    }
+}
+
+impl From<NodeGeneration> for u64 {
+    fn from(value: NodeGeneration) -> Self {
+        value.get()
+    }
+}
+
 /// Raft node.
 #[derive(Debug, Clone)]
 pub struct Node {
     id: NodeId,
+    generation: NodeGeneration,
     voted_for: Option<NodeId>,
     current_term: Term,
     log: Log,
     commit_index: LogIndex,
-    seqno: MessageSeqNo,
     actions: Actions,
     role: RoleState,
 }
@@ -118,12 +151,13 @@ impl Node {
     /// // [NOTE] To complete the cluster creation, the user needs to handle the queued actions.
     /// ```
     pub fn start(id: NodeId) -> Self {
-        Self::new(id)
+        Self::new(id, NodeGeneration::ZERO)
     }
 
     /// Restarts a node.
     ///
-    /// `current_term`, `voted_for`, and `log` are restored from persistent storage.
+    /// `generation`, `current_term`, `voted_for`, and `log` are restored from persistent storage.
+    /// The generation must be a value that is unique across restarts of the same node.
     /// Note that managing the persistent storage is outside the scope of this crate.
     ///
     /// # Notes
@@ -140,7 +174,7 @@ impl Node {
     ///
     /// # Examples
     /// ```
-    /// use raftbare::{Node, NodeId};
+    /// use raftbare::{Node, NodeGeneration, NodeId};
     ///
     /// // Loads the persistent state.
     /// let current_term = /* ... ; */
@@ -152,15 +186,22 @@ impl Node {
     ///
     /// // Restarts a node.
     /// let snapshot_index = log.snapshot_position().index;
-    /// let node = Node::restart(NodeId::new(0), current_term, voted_for, log);
+    /// let generation = NodeGeneration::new(1);
+    /// let node = Node::restart(NodeId::new(0), generation, current_term, voted_for, log);
     /// assert!(node.role().is_follower());
     /// assert_eq!(node.commit_index(), snapshot_index);
     ///
     /// // Unlike `Node::start()`, the restarted node has actions to execute.
     /// assert!(!node.actions().is_empty());
     /// ```
-    pub fn restart(id: NodeId, current_term: Term, voted_for: Option<NodeId>, log: Log) -> Self {
-        let mut node = Self::new(id);
+    pub fn restart(
+        id: NodeId,
+        generation: NodeGeneration,
+        current_term: Term,
+        voted_for: Option<NodeId>,
+        log: Log,
+    ) -> Self {
+        let mut node = Self::new(id, generation);
 
         node.current_term = current_term;
         node.voted_for = voted_for;
@@ -218,15 +259,15 @@ impl Node {
         self.log.last_position()
     }
 
-    fn new(id: NodeId) -> Self {
+    fn new(id: NodeId, generation: NodeGeneration) -> Self {
         let config = ClusterConfig::new();
         Self {
             id,
+            generation,
             voted_for: None,
             current_term: Term::ZERO,
             log: Log::new(config, LogEntries::new(LogPosition::ZERO)),
             commit_index: LogIndex::ZERO,
-            seqno: MessageSeqNo::ZERO,
             actions: Actions::default(),
             role: RoleState::Follower,
         }
@@ -235,6 +276,11 @@ impl Node {
     /// Returns the identifier of this node.
     pub fn id(&self) -> NodeId {
         self.id
+    }
+
+    /// Returns the generation of this node.
+    pub fn generation(&self) -> NodeGeneration {
+        self.generation
     }
 
     /// Returns the role of this node.
@@ -338,12 +384,11 @@ impl Node {
             granted_votes: std::iter::once(self.id).collect(),
         };
 
-        let seqno = self.next_seqno();
         self.actions
             .set(Action::BroadcastMessage(Message::request_vote_call(
                 self.current_term,
                 self.id,
-                seqno,
+                self.generation,
                 self.log.last_position(),
             )));
         self.actions.set(Action::SetElectionTimeout);
@@ -455,12 +500,11 @@ impl Node {
             unreachable!();
         };
         if !followers.is_empty() {
-            let seqno = self.next_seqno();
             let call = Message::append_entries_call(
                 self.current_term,
                 self.id,
                 self.commit_index,
-                seqno,
+                self.generation,
                 LogEntries::from_iter(old_last_position, std::iter::once(entry)),
             );
             self.actions.set(Action::BroadcastMessage(call));
@@ -631,8 +675,9 @@ impl Node {
     ///
     /// This method can be used to perform consistent queries through the following steps:
     /// 1. Invoke `heartbeat()`.
-    /// 2. Record the sequence number from the heartbeat message.
-    /// 3. Wait until this node receives the majority of response messages that are equal to or newer than the sequence number, to confirm that this node is still the leader of the cluster.
+    /// 2. Attach a user-defined request identifier (e.g., timestamp) to the message.
+    /// 3. Wait until this node receives the majority of response messages that match the identifier,
+    ///    to confirm that this node is still the leader of the cluster.
     /// 4. Execute the consistent query.
     pub fn heartbeat(&mut self) -> bool {
         let RoleState::Leader { followers, .. } = &self.role else {
@@ -640,12 +685,11 @@ impl Node {
         };
 
         if !followers.is_empty() {
-            let seqno = self.next_seqno();
             let call = Message::append_entries_call(
                 self.current_term,
                 self.id,
                 self.commit_index,
-                seqno,
+                self.generation,
                 LogEntries::new(self.log.entries().last_position()),
             );
             self.actions.set(Action::BroadcastMessage(call));
@@ -756,7 +800,7 @@ impl Node {
     /// # raftbare::Node::start(raftbare::NodeId::new(1));
     ///
     /// let msg = /* ... ; */
-    /// # raftbare::Message::RequestVoteReply { header: raftbare::MessageHeader { from: raftbare::NodeId::new(1), term: raftbare::Term::new(1), seqno: raftbare::MessageSeqNo::new(3) }, vote_granted: true };
+    /// # raftbare::Message::RequestVoteReply { header: raftbare::MessageHeader { from: raftbare::NodeId::new(1), term: raftbare::Term::new(1), generation: raftbare::NodeGeneration::new(3) }, vote_granted: true };
     /// node.handle_message(&msg);
     ///
     /// // Execute actions queued by the message handling.
@@ -803,7 +847,7 @@ impl Node {
         if header.term < self.current_term {
             // Needs to reply to update the sender's term.
             let reply =
-                Message::request_vote_reply(self.current_term, self.id, header.seqno, false);
+                Message::request_vote_reply(self.current_term, self.id, self.generation, false);
             self.actions.set(Action::SendMessage(header.from, reply));
             return;
         }
@@ -823,7 +867,7 @@ impl Node {
         debug_assert!(self.role().is_follower());
 
         // This follower votes for the candidate.
-        let reply = Message::request_vote_reply(self.current_term, self.id, header.seqno, true);
+        let reply = Message::request_vote_reply(self.current_term, self.id, self.generation, true);
         self.actions.set(Action::SendMessage(header.from, reply));
         self.actions.set(Action::SetElectionTimeout);
     }
@@ -904,44 +948,50 @@ impl Node {
         header: MessageHeader,
         follower_last_position: LogPosition,
     ) {
+        if header.term < self.current_term {
+            // Delayed (obsolete) reply from an old term.
+            return;
+        }
+
+        let generation_changed = {
+            let RoleState::Leader { followers, .. } = &mut self.role else {
+                return;
+            };
+            let Some(follower) = followers.get_mut(&header.from) else {
+                // Replies from unknown nodes are ignored.
+                return;
+            };
+            if header.generation != follower.generation {
+                follower.match_index = self.log.snapshot_position().index;
+                follower.generation = header.generation;
+                true
+            } else {
+                false
+            }
+        };
+        if generation_changed {
+            self.rebuild_quorum();
+        }
+
         let RoleState::Leader {
             followers, quorum, ..
         } = &mut self.role
         else {
             return;
         };
-
-        if header.term < self.current_term {
-            // Delayed (obsolete) reply from an old term.
-            return;
-        }
-
         let Some(follower) = followers.get_mut(&header.from) else {
-            // Replies from unknown nodes are ignored.
             return;
         };
-
-        if header.seqno <= follower.max_seqno {
-            // Duplicate or delayed (reordered) reply.
-            //
-            // [NOTE]
-            // When a node restarts, the seqno is reset to 0.
-            // However, within a term, the seqno values are guaranteed to increase monotonically.
-            return;
-        }
-
-        follower.max_seqno = header.seqno;
 
         if !self.log.entries().contains(follower_last_position) {
             if let Some(term) = self.log.entries().get_term(follower_last_position.index) {
                 // Delete the follower's last log entry.
                 let index = follower_last_position.index;
-                let seqno = self.next_seqno();
                 let call = Message::append_entries_call(
                     self.current_term,
                     self.id,
                     self.commit_index,
-                    seqno,
+                    self.generation,
                     LogEntries::new(LogPosition { term, index }),
                 );
                 self.actions.set(Action::SendMessage(header.from, call));
@@ -977,17 +1027,7 @@ impl Node {
             if self.commit_index < follower.match_index {
                 self.update_commit_index_if_possible();
             }
-        } else if follower_last_position.index < follower.match_index {
-            // [NOTE]
-            // The Raft algorithm assumes that storage is reliable.
-            // Therefore, theoretically, this case should not occur.
-            // However, in practice, it is possible for the follower's log to be fully or partially lost.
-            // To recover log entries as much as possible in such cases,
-            // this crate allows proceeding even if the above condition is met.
-            // But be cautious, as there is a risk of compromising the properties guaranteed by
-            // the Raft algorithm.
         }
-
         if is_follower_up_to_date {
             // The follower's log is up-to-date.
             return;
@@ -997,12 +1037,11 @@ impl Node {
         let Some(delta) = self.log.entries().since(follower_last_position) else {
             unreachable!();
         };
-        let seqno = self.next_seqno();
         let call = Message::append_entries_call(
             self.current_term,
             self.id,
             self.commit_index,
-            seqno,
+            self.generation,
             delta,
         );
         self.actions.set(Action::SendMessage(header.from, call));
@@ -1012,7 +1051,7 @@ impl Node {
         let reply = Message::append_entries_reply(
             self.current_term,
             self.id,
-            call.seqno,
+            self.generation,
             self.log.last_position(),
         );
         self.actions.set(Action::SendMessage(call.from, reply));
@@ -1113,10 +1152,6 @@ impl Node {
         self.log.get_config(last_included_position.index) == Some(last_included_config)
     }
 
-    fn next_seqno(&mut self) -> MessageSeqNo {
-        self.seqno = MessageSeqNo::new(self.seqno.get() + 1);
-        self.seqno
-    }
 }
 
 #[derive(Debug, Clone)]
@@ -1135,14 +1170,14 @@ enum RoleState {
 #[derive(Debug, Clone)]
 struct Follower {
     pub match_index: LogIndex,
-    pub max_seqno: MessageSeqNo,
+    pub generation: NodeGeneration,
 }
 
 impl Follower {
     pub fn new() -> Self {
         Self {
             match_index: LogIndex::new(0),
-            max_seqno: MessageSeqNo::ZERO,
+            generation: NodeGeneration::ZERO,
         }
     }
 }

@@ -1,7 +1,7 @@
 use crate::{
     Term,
     log::{LogEntries, LogIndex, LogPosition},
-    node::NodeId,
+    node::{NodeGeneration, NodeId},
 };
 
 /// Message for RPC.
@@ -80,24 +80,28 @@ impl Message {
         }
     }
 
-    /// Returns the sequence number of the message.
-    pub fn seqno(&self) -> MessageSeqNo {
+    /// Returns the generation of the sender.
+    pub fn generation(&self) -> NodeGeneration {
         match self {
-            Self::RequestVoteCall { header, .. } => header.seqno,
-            Self::RequestVoteReply { header, .. } => header.seqno,
-            Self::AppendEntriesCall { header, .. } => header.seqno,
-            Self::AppendEntriesReply { header, .. } => header.seqno,
+            Self::RequestVoteCall { header, .. } => header.generation,
+            Self::RequestVoteReply { header, .. } => header.generation,
+            Self::AppendEntriesCall { header, .. } => header.generation,
+            Self::AppendEntriesReply { header, .. } => header.generation,
         }
     }
 
     pub(crate) fn request_vote_call(
         term: Term,
         from: NodeId,
-        seqno: MessageSeqNo,
+        generation: NodeGeneration,
         last_position: LogPosition,
     ) -> Self {
         Self::RequestVoteCall {
-            header: MessageHeader { term, from, seqno },
+            header: MessageHeader {
+                term,
+                from,
+                generation,
+            },
             last_position,
         }
     }
@@ -105,11 +109,15 @@ impl Message {
     pub(crate) fn request_vote_reply(
         term: Term,
         from: NodeId,
-        seqno: MessageSeqNo,
+        generation: NodeGeneration,
         vote_granted: bool,
     ) -> Self {
         Self::RequestVoteReply {
-            header: MessageHeader { from, term, seqno },
+            header: MessageHeader {
+                from,
+                term,
+                generation,
+            },
             vote_granted,
         }
     }
@@ -118,11 +126,15 @@ impl Message {
         term: Term,
         from: NodeId,
         commit_index: LogIndex,
-        seqno: MessageSeqNo,
+        generation: NodeGeneration,
         entries: LogEntries,
     ) -> Self {
         Self::AppendEntriesCall {
-            header: MessageHeader { from, term, seqno },
+            header: MessageHeader {
+                from,
+                term,
+                generation,
+            },
             commit_index,
             entries,
         }
@@ -131,11 +143,15 @@ impl Message {
     pub(crate) fn append_entries_reply(
         term: Term,
         from: NodeId,
-        seqno: MessageSeqNo,
+        generation: NodeGeneration,
         last_position: LogPosition,
     ) -> Self {
         Self::AppendEntriesReply {
-            header: MessageHeader { term, from, seqno },
+            header: MessageHeader {
+                term,
+                from,
+                generation,
+            },
             last_position,
         }
     }
@@ -143,11 +159,14 @@ impl Message {
     pub(crate) fn merge(&mut self, other: Self) {
         debug_assert_eq!(self.from(), other.from());
 
-        if other.seqno() <= self.seqno() {
+        if other.term() < self.term() {
             return;
         }
 
-        debug_assert!(self.term() <= other.term());
+        if other.term() > self.term() {
+            *self = other;
+            return;
+        }
 
         let Self::AppendEntriesCall {
             header: header0,
@@ -219,24 +238,6 @@ pub struct MessageHeader {
     /// Term of the sender.
     pub term: Term,
 
-    /// Sequence number of the message.
-    pub seqno: MessageSeqNo,
-}
-
-/// Message sequence number.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub struct MessageSeqNo(u64);
-
-impl MessageSeqNo {
-    pub(crate) const ZERO: Self = Self(0);
-
-    /// Makes a new [`MessageSeqNo`] instance.
-    pub const fn new(seqno: u64) -> Self {
-        Self(seqno)
-    }
-
-    /// Returns the value of the sequence number.
-    pub const fn get(self) -> u64 {
-        self.0
-    }
+    /// Generation of the sender.
+    pub generation: NodeGeneration,
 }
