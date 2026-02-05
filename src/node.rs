@@ -1006,7 +1006,6 @@ impl Node {
             // this crate allows proceeding even if the above condition is met.
             // But be cautious, as there is a risk of compromising the properties guaranteed by
             // the Raft algorithm.
-            // However, as the leader log grows, a divergence point will be detected.
             Self::rebuild_quorum_inner(
                 quorum,
                 followers,
