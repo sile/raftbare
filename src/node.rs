@@ -157,7 +157,8 @@ impl Node {
     /// Restarts a node.
     ///
     /// `generation`, `current_term`, `voted_for`, and `log` are restored from persistent storage.
-    /// The generation must be a value that is unique across restarts of the same node.
+    /// The generation must be a value that is unique across restarts of the same node,
+    /// and should be monotonically increasing.
     /// Note that managing the persistent storage is outside the scope of this crate.
     ///
     /// # Notes
@@ -961,7 +962,11 @@ impl Node {
                 // Replies from unknown nodes are ignored.
                 return;
             };
-            if header.generation != follower.generation {
+            if header.generation < follower.generation {
+                // Delayed reply from an old generation.
+                return;
+            }
+            if header.generation > follower.generation {
                 follower.match_index = self.log.snapshot_position().index;
                 follower.generation = header.generation;
                 true
