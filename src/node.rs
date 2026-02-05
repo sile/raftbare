@@ -859,8 +859,7 @@ impl Node {
     fn handle_request_vote_call(&mut self, header: MessageHeader, last_position: LogPosition) {
         if header.term < self.current_term {
             // Needs to reply to update the sender's term.
-            let reply =
-                Message::request_vote_reply(self.current_term, self.id, false);
+            let reply = Message::request_vote_reply(self.current_term, self.id, false);
             self.actions.set(Action::SendMessage(header.from, reply));
             return;
         }
@@ -979,8 +978,11 @@ impl Node {
             return;
         };
 
-        if generation < follower.generation {
-            // Delayed reply from an old generation.
+        if generation < follower.generation
+            || (generation == follower.generation
+                && follower_last_position.index < follower.match_index)
+        {
+            // Delayed reply.
             return;
         }
 
@@ -1069,12 +1071,8 @@ impl Node {
         let Some(delta) = self.log.entries().since(follower_last_position) else {
             unreachable!();
         };
-        let call = Message::append_entries_call(
-            self.current_term,
-            self.id,
-            self.commit_index,
-            delta,
-        );
+        let call =
+            Message::append_entries_call(self.current_term, self.id, self.commit_index, delta);
         self.actions.set(Action::SendMessage(header.from, call));
     }
 
