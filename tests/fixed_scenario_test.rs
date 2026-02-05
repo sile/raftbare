@@ -552,6 +552,7 @@ impl TestNode {
         let Message::AppendEntriesReply {
             header,
             last_position,
+            ..
         } = msg
         else {
             unreachable!();
@@ -663,18 +664,9 @@ impl TestNode {
         assert_eq!(self.role(), Role::Candidate);
         assert_eq!(self.current_term(), next_term(prev_term));
 
-        let Some(generation) = self
-            .actions()
-            .broadcast_message
-            .as_ref()
-            .map(|a| a.generation())
-        else {
-            panic!("No broadcast message action");
-        };
         let call = request_vote_call(
             self.current_term(),
             self.id(),
-            generation,
             self.log().entries().last_position(),
         );
         assert_action!(self, save_current_term());
@@ -696,18 +688,9 @@ impl TestNode {
         assert_eq!(self.role(), Role::Candidate);
         assert_eq!(self.current_term(), next_term(prev_term));
 
-        let Some(generation) = self
-            .actions()
-            .broadcast_message
-            .as_ref()
-            .map(|a| a.generation())
-        else {
-            panic!("No broadcast message action");
-        };
         let call = request_vote_call(
             self.current_term(),
             self.id(),
-            generation,
             self.log().entries().last_position(),
         );
         assert_action!(self, save_current_term());
@@ -726,7 +709,7 @@ impl TestNode {
 
         self.handle_message(msg);
 
-        let reply = request_vote_reply(msg.term(), self.id(), self.generation(), true);
+        let reply = request_vote_reply(msg.term(), self.id(), true);
         assert_action!(self, save_current_term());
         assert_eq!(self.current_term(), msg.term());
         assert_action!(self, save_voted_for());
@@ -838,15 +821,10 @@ fn cluster_config_entry(config: ClusterConfig) -> LogEntry {
 fn request_vote_call(
     term: Term,
     from: NodeId,
-    generation: NodeGeneration,
     last_position: LogPosition,
 ) -> Message {
     Message::RequestVoteCall {
-        header: MessageHeader {
-            term,
-            from,
-            generation,
-        },
+        header: MessageHeader { term, from },
         last_position,
     }
 }
@@ -854,15 +832,10 @@ fn request_vote_call(
 fn request_vote_reply(
     term: Term,
     from: NodeId,
-    generation: NodeGeneration,
     vote_granted: bool,
 ) -> Message {
     Message::RequestVoteReply {
-        header: MessageHeader {
-            from,
-            term,
-            generation,
-        },
+        header: MessageHeader { from, term },
         vote_granted,
     }
 }
@@ -871,26 +844,8 @@ fn append_entries_call(leader: &Node, entries: LogEntries) -> Message {
     let term = leader.current_term();
     let from = leader.id();
     let commit_index = leader.commit_index();
-    let generation = leader
-        .actions()
-        .broadcast_message
-        .as_ref()
-        .map(|m| m.generation())
-        .or_else(|| {
-            leader
-                .actions()
-                .send_messages
-                .values()
-                .map(|m| m.generation())
-                .next()
-        })
-        .unwrap_or(NodeGeneration::ZERO);
     Message::AppendEntriesCall {
-        header: MessageHeader {
-            from,
-            term,
-            generation,
-        },
+        header: MessageHeader { from, term },
         commit_index,
         entries,
     }
@@ -906,11 +861,8 @@ fn append_entries_reply(call: &Message, node: &Node) -> Message {
     let generation = node.generation();
     let last_position = node.log().entries().last_position();
     Message::AppendEntriesReply {
-        header: MessageHeader {
-            term,
-            from,
-            generation,
-        },
+        header: MessageHeader { term, from },
+        generation,
         last_position,
     }
 }

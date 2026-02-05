@@ -392,7 +392,6 @@ impl Node {
             .set(Action::BroadcastMessage(Message::request_vote_call(
                 self.current_term,
                 self.id,
-                self.generation,
                 self.log.last_position(),
             )));
         self.actions.set(Action::SetElectionTimeout);
@@ -508,7 +507,6 @@ impl Node {
                 self.current_term,
                 self.id,
                 self.commit_index,
-                self.generation,
                 LogEntries::from_iter(old_last_position, std::iter::once(entry)),
             );
             self.actions.set(Action::BroadcastMessage(call));
@@ -704,7 +702,6 @@ impl Node {
                 self.current_term,
                 self.id,
                 self.commit_index,
-                self.generation,
                 LogEntries::new(self.log.entries().last_position()),
             );
             self.actions.set(Action::BroadcastMessage(call));
@@ -815,7 +812,7 @@ impl Node {
     /// # raftbare::Node::start(raftbare::NodeId::new(1));
     ///
     /// let msg = /* ... ; */
-    /// # raftbare::Message::RequestVoteReply { header: raftbare::MessageHeader { from: raftbare::NodeId::new(1), term: raftbare::Term::new(1), generation: raftbare::NodeGeneration::new(3) }, vote_granted: true };
+    /// # raftbare::Message::RequestVoteReply { header: raftbare::MessageHeader { from: raftbare::NodeId::new(1), term: raftbare::Term::new(1) }, vote_granted: true };
     /// node.handle_message(&msg);
     ///
     /// // Execute actions queued by the message handling.
@@ -853,8 +850,9 @@ impl Node {
             } => self.handle_append_entries_call(*header, *commit_index, entries),
             Message::AppendEntriesReply {
                 header,
+                generation,
                 last_position,
-            } => self.handle_append_entries_reply(*header, *last_position),
+            } => self.handle_append_entries_reply(*header, *generation, *last_position),
         }
     }
 
@@ -862,7 +860,7 @@ impl Node {
         if header.term < self.current_term {
             // Needs to reply to update the sender's term.
             let reply =
-                Message::request_vote_reply(self.current_term, self.id, self.generation, false);
+                Message::request_vote_reply(self.current_term, self.id, false);
             self.actions.set(Action::SendMessage(header.from, reply));
             return;
         }
@@ -882,7 +880,7 @@ impl Node {
         debug_assert!(self.role().is_follower());
 
         // This follower votes for the candidate.
-        let reply = Message::request_vote_reply(self.current_term, self.id, self.generation, true);
+        let reply = Message::request_vote_reply(self.current_term, self.id, true);
         self.actions.set(Action::SendMessage(header.from, reply));
         self.actions.set(Action::SetElectionTimeout);
     }
@@ -961,6 +959,7 @@ impl Node {
     fn handle_append_entries_reply(
         &mut self,
         header: MessageHeader,
+        generation: NodeGeneration,
         follower_last_position: LogPosition,
     ) {
         if header.term < self.current_term {
@@ -980,14 +979,14 @@ impl Node {
             return;
         };
 
-        if header.generation < follower.generation {
+        if generation < follower.generation {
             // Delayed reply from an old generation.
             return;
         }
 
         let mut should_rebuild_quorum = false;
-        if header.generation > follower.generation {
-            follower.generation = header.generation;
+        if generation > follower.generation {
+            follower.generation = generation;
             if follower_last_position.index < follower.match_index {
                 follower.match_index = follower_last_position.index;
                 should_rebuild_quorum = true;
@@ -1025,7 +1024,6 @@ impl Node {
                     self.current_term,
                     self.id,
                     self.commit_index,
-                    self.generation,
                     LogEntries::new(LogPosition { term, index }),
                 );
                 self.actions.set(Action::SendMessage(header.from, call));
@@ -1075,7 +1073,6 @@ impl Node {
             self.current_term,
             self.id,
             self.commit_index,
-            self.generation,
             delta,
         );
         self.actions.set(Action::SendMessage(header.from, call));

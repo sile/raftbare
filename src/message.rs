@@ -49,6 +49,9 @@ pub enum Message {
         /// Message header.
         header: MessageHeader,
 
+        /// Generation of the sender.
+        generation: NodeGeneration,
+
         /// Last log position of the follower.
         ///
         /// Instead of replying a boolean `success` as defined in the Raft paper,
@@ -80,28 +83,13 @@ impl Message {
         }
     }
 
-    /// Returns the generation of the sender.
-    pub fn generation(&self) -> NodeGeneration {
-        match self {
-            Self::RequestVoteCall { header, .. } => header.generation,
-            Self::RequestVoteReply { header, .. } => header.generation,
-            Self::AppendEntriesCall { header, .. } => header.generation,
-            Self::AppendEntriesReply { header, .. } => header.generation,
-        }
-    }
-
     pub(crate) fn request_vote_call(
         term: Term,
         from: NodeId,
-        generation: NodeGeneration,
         last_position: LogPosition,
     ) -> Self {
         Self::RequestVoteCall {
-            header: MessageHeader {
-                term,
-                from,
-                generation,
-            },
+            header: MessageHeader { term, from },
             last_position,
         }
     }
@@ -109,15 +97,10 @@ impl Message {
     pub(crate) fn request_vote_reply(
         term: Term,
         from: NodeId,
-        generation: NodeGeneration,
         vote_granted: bool,
     ) -> Self {
         Self::RequestVoteReply {
-            header: MessageHeader {
-                from,
-                term,
-                generation,
-            },
+            header: MessageHeader { from, term },
             vote_granted,
         }
     }
@@ -126,15 +109,10 @@ impl Message {
         term: Term,
         from: NodeId,
         commit_index: LogIndex,
-        generation: NodeGeneration,
         entries: LogEntries,
     ) -> Self {
         Self::AppendEntriesCall {
-            header: MessageHeader {
-                from,
-                term,
-                generation,
-            },
+            header: MessageHeader { from, term },
             commit_index,
             entries,
         }
@@ -147,11 +125,8 @@ impl Message {
         last_position: LogPosition,
     ) -> Self {
         Self::AppendEntriesReply {
-            header: MessageHeader {
-                term,
-                from,
-                generation,
-            },
+            header: MessageHeader { term, from },
+            generation,
             last_position,
         }
     }
@@ -218,6 +193,7 @@ impl Message {
             }
             Message::AppendEntriesReply {
                 header,
+                generation: _,
                 last_position,
             } => {
                 header.term = header.term.max(last_included_position.term);
@@ -237,7 +213,4 @@ pub struct MessageHeader {
 
     /// Term of the sender.
     pub term: Term,
-
-    /// Generation of the sender.
-    pub generation: NodeGeneration,
 }
