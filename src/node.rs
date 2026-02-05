@@ -1064,6 +1064,7 @@ impl Node {
                 self.update_commit_index_if_possible();
             }
         }
+
         if is_follower_up_to_date {
             // The follower's log is up-to-date.
             return;
