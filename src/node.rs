@@ -1015,9 +1015,7 @@ impl Node {
             );
         }
 
-        let Some(follower) = followers.get_mut(&header.from) else {
-            return;
-        };
+        let follower = followers.get_mut(&header.from).expect("infallible");
 
         if !self.log.entries().contains(follower_last_position) {
             if let Some(term) = self.log.entries().get_term(follower_last_position.index) {
