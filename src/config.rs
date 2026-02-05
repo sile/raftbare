@@ -12,21 +12,19 @@ use std::{
 /// # Examples
 ///
 /// ```
-/// use raftbare::{ClusterConfig, NodeId};
-///
 /// // Makes a new cluster configuration with two voting nodes.
-/// let mut config = ClusterConfig::new();
-/// config.voters.insert(NodeId::new(0));
-/// config.voters.insert(NodeId::new(1));
+/// let mut config = noraft::ClusterConfig::new();
+/// config.voters.insert(noraft::NodeId::new(0));
+/// config.voters.insert(noraft::NodeId::new(1));
 /// assert!(!config.is_joint_consensus());
 ///
 /// // Adds a new non-voting node.
-/// config.non_voters.insert(NodeId::new(2));
+/// config.non_voters.insert(noraft::NodeId::new(2));
 /// assert!(!config.is_joint_consensus());
 ///
 /// // Updates the configuration to add a new voting node.
 /// config.new_voters = config.voters.clone();
-/// config.new_voters.insert(NodeId::new(3));
+/// config.new_voters.insert(noraft::NodeId::new(3));
 /// assert!(config.is_joint_consensus());
 /// ```
 ///
@@ -105,16 +103,14 @@ impl ClusterConfig {
     /// # Examples
     ///
     /// ```
-    /// use raftbare::{Node, NodeId};
-    ///
-    /// fn add_node(node: &mut Node, adding_node_id: NodeId) {
+    /// fn add_node(node: &mut noraft::Node, adding_node_id: noraft::NodeId) {
     ///     let new_config = node.config().to_joint_consensus(&[adding_node_id], &[]);
     ///     assert_eq!(new_config.voters.len() + 1, new_config.new_voters.len());
     ///
     ///     node.propose_config(new_config);
     /// }
     ///
-    /// fn remove_node(node: &mut Node, removing_id: NodeId) {
+    /// fn remove_node(node: &mut noraft::Node, removing_id: noraft::NodeId) {
     ///     let new_config = node.config().to_joint_consensus(&[], &[removing_id]);
     ///     assert_eq!(new_config.voters.len() - 1, new_config.new_voters.len());
     ///

@@ -14,23 +14,21 @@ impl Log {
     /// # Examples
     ///
     /// ```
-    /// use raftbare::{ClusterConfig, Log, LogEntries, LogEntry, LogPosition, NodeId, Term};
+    /// let empty_config = noraft::ClusterConfig::new();
+    /// let mut single_config = noraft::ClusterConfig::new();
+    /// single_config.voters.insert(noraft::NodeId::new(1));
     ///
-    /// let empty_config = ClusterConfig::new();
-    /// let mut single_config = ClusterConfig::new();
-    /// single_config.voters.insert(NodeId::new(1));
-    ///
-    /// let entries = LogEntries::from_iter(
-    ///     LogPosition::ZERO,
+    /// let entries = noraft::LogEntries::from_iter(
+    ///     noraft::LogPosition::ZERO,
     ///     vec![
-    ///         LogEntry::Term(Term::ZERO),
-    ///         LogEntry::ClusterConfig(single_config.clone()),
-    ///         LogEntry::Command,
+    ///         noraft::LogEntry::Term(noraft::Term::ZERO),
+    ///         noraft::LogEntry::ClusterConfig(single_config.clone()),
+    ///         noraft::LogEntry::Command,
     ///     ],
     /// );
-    /// let log = Log::new(empty_config.clone(), entries);
+    /// let log = noraft::Log::new(empty_config.clone(), entries);
     ///
-    /// assert_eq!(log.snapshot_position(), LogPosition::ZERO);
+    /// assert_eq!(log.snapshot_position(), noraft::LogPosition::ZERO);
     /// assert_eq!(log.snapshot_config(), &empty_config);
     /// assert_eq!(log.latest_config(), &single_config);
     /// ```
@@ -132,14 +130,12 @@ impl LogEntries {
     /// # Examples
     ///
     /// ```
-    /// use raftbare::{LogEntries, LogEntry, LogPosition};
-    ///
-    /// let entries = LogEntries::new(LogPosition::ZERO);
+    /// let entries = noraft::LogEntries::new(noraft::LogPosition::ZERO);
     /// assert!(entries.is_empty());
     /// assert_eq!(entries.len(), 0);
     /// assert_eq!(entries.iter().count(), 0);
-    /// assert_eq!(entries.prev_position(), LogPosition::ZERO);
-    /// assert_eq!(entries.last_position(), LogPosition::ZERO);
+    /// assert_eq!(entries.prev_position(), noraft::LogPosition::ZERO);
+    /// assert_eq!(entries.last_position(), noraft::LogPosition::ZERO);
     /// ```
     pub const fn new(prev_position: LogPosition) -> Self {
         Self {
@@ -155,21 +151,25 @@ impl LogEntries {
     /// # Examples
     ///
     /// ```
-    /// use raftbare::{LogEntries, LogEntry, LogIndex, LogPosition, Term};
-    ///
-    /// let entries = LogEntries::from_iter(
-    ///     LogPosition::ZERO,
+    /// let entries = noraft::LogEntries::from_iter(
+    ///     noraft::LogPosition::ZERO,
     ///     vec![
-    ///         LogEntry::Term(Term::ZERO),
-    ///         LogEntry::Command,
-    ///         LogEntry::Command,
+    ///         noraft::LogEntry::Term(noraft::Term::ZERO),
+    ///         noraft::LogEntry::Command,
+    ///         noraft::LogEntry::Command,
     ///     ],
     /// );
     /// assert!(!entries.is_empty());
     /// assert_eq!(entries.len(), 3);
     /// assert_eq!(entries.iter().count(), 3);
-    /// assert_eq!(entries.prev_position(), LogPosition::ZERO);
-    /// assert_eq!(entries.last_position(), LogPosition { term: Term::ZERO, index: LogIndex::new(3) });
+    /// assert_eq!(entries.prev_position(), noraft::LogPosition::ZERO);
+    /// assert_eq!(
+    ///     entries.last_position(),
+    ///     noraft::LogPosition {
+    ///         term: noraft::Term::ZERO,
+    ///         index: noraft::LogIndex::new(3),
+    ///     }
+    /// );
     /// ```
     pub fn from_iter<I>(prev_position: LogPosition, entries: I) -> Self
     where
@@ -218,21 +218,25 @@ impl LogEntries {
     ///
     /// # Examples
     /// ```
-    /// use raftbare::{LogEntries, LogEntry, LogIndex, LogPosition, Term};
+    /// let mut entries = noraft::LogEntries::new(noraft::LogPosition::ZERO);
+    /// entries.push(noraft::LogEntry::Command);
+    /// entries.push(noraft::LogEntry::Term(noraft::Term::new(1)));
+    /// entries.push(noraft::LogEntry::Command);
     ///
-    /// let mut entries = LogEntries::new(LogPosition::ZERO);
-    /// entries.push(LogEntry::Command);
-    /// entries.push(LogEntry::Term(Term::new(1)));
-    /// entries.push(LogEntry::Command);
-    ///
-    /// fn pos(term: u64, index: u64) -> LogPosition {
-    ///     LogPosition { term: Term::new(term), index: LogIndex::new(index) }
+    /// fn pos(term: u64, index: u64) -> noraft::LogPosition {
+    ///     noraft::LogPosition {
+    ///         term: noraft::Term::new(term),
+    ///         index: noraft::LogIndex::new(index),
+    ///     }
     /// }
     ///
     /// let mut iter = entries.iter_with_positions();
-    /// assert_eq!(iter.next(), Some((pos(0, 1), LogEntry::Command)));
-    /// assert_eq!(iter.next(), Some((pos(1, 2), LogEntry::Term(Term::new(1)))));
-    /// assert_eq!(iter.next(), Some((pos(1, 3), LogEntry::Command)));
+    /// assert_eq!(iter.next(), Some((pos(0, 1), noraft::LogEntry::Command)));
+    /// assert_eq!(
+    ///     iter.next(),
+    ///     Some((pos(1, 2), noraft::LogEntry::Term(noraft::Term::new(1))))
+    /// );
+    /// assert_eq!(iter.next(), Some((pos(1, 3), noraft::LogEntry::Command)));
     /// assert_eq!(iter.next(), None);
     /// ```
     pub fn iter_with_positions(&self) -> impl '_ + Iterator<Item = (LogPosition, LogEntry)> {
@@ -253,19 +257,20 @@ impl LogEntries {
     /// # Examples
     ///
     /// ```
-    /// use raftbare::{LogEntries, LogEntry, LogIndex, LogPosition, Term};
-    ///
-    /// fn pos(term: u64, index: u64) -> LogPosition {
-    ///     LogPosition { term: Term::new(term), index: LogIndex::new(index) }
+    /// fn pos(term: u64, index: u64) -> noraft::LogPosition {
+    ///     noraft::LogPosition {
+    ///         term: noraft::Term::new(term),
+    ///         index: noraft::LogIndex::new(index),
+    ///     }
     /// }
     ///
-    /// let entries = LogEntries::from_iter(
-    ///     LogPosition::ZERO,
+    /// let entries = noraft::LogEntries::from_iter(
+    ///     noraft::LogPosition::ZERO,
     ///     vec![
-    ///         LogEntry::Term(Term::ZERO),
-    ///         LogEntry::Command,
-    ///         LogEntry::Term(Term::new(1)),
-    ///         LogEntry::Command,
+    ///         noraft::LogEntry::Term(noraft::Term::ZERO),
+    ///         noraft::LogEntry::Command,
+    ///         noraft::LogEntry::Term(noraft::Term::new(1)),
+    ///         noraft::LogEntry::Command,
     ///     ],
     /// );
     /// assert!(entries.contains(pos(0, 0))); // Including the previous position
@@ -284,21 +289,19 @@ impl LogEntries {
     /// # Examples
     ///
     /// ```
-    /// use raftbare::{LogEntries, LogEntry, LogIndex, LogPosition, Term};
-    ///
-    /// let entries = LogEntries::from_iter(
-    ///     LogPosition::ZERO,
+    /// let entries = noraft::LogEntries::from_iter(
+    ///     noraft::LogPosition::ZERO,
     ///     vec![
-    ///         LogEntry::Term(Term::ZERO),
-    ///         LogEntry::Command,
-    ///         LogEntry::Term(Term::new(1)),
-    ///         LogEntry::Command,
+    ///         noraft::LogEntry::Term(noraft::Term::ZERO),
+    ///         noraft::LogEntry::Command,
+    ///         noraft::LogEntry::Term(noraft::Term::new(1)),
+    ///         noraft::LogEntry::Command,
     ///     ],
     /// );
-    /// assert!(entries.contains_index(LogIndex::ZERO)); // Including the previous index
-    /// assert!(entries.contains_index(LogIndex::new(1)));
-    /// assert!(entries.contains_index(LogIndex::new(4))); // Including the last index
-    /// assert!(!entries.contains_index(LogIndex::new(5)));
+    /// assert!(entries.contains_index(noraft::LogIndex::ZERO)); // Including the previous index
+    /// assert!(entries.contains_index(noraft::LogIndex::new(1)));
+    /// assert!(entries.contains_index(noraft::LogIndex::new(4))); // Including the last index
+    /// assert!(!entries.contains_index(noraft::LogIndex::new(5)));
     /// ```
     pub fn contains_index(&self, index: LogIndex) -> bool {
         (self.prev_position.index..=self.last_position.index).contains(&index)
@@ -322,21 +325,28 @@ impl LogEntries {
     /// # Examples
     ///
     /// ```
-    /// use raftbare::{LogEntries, LogEntry, LogIndex, LogPosition, Term};
-    ///
-    /// let entries = LogEntries::from_iter(
-    ///     LogPosition::ZERO,
+    /// let entries = noraft::LogEntries::from_iter(
+    ///     noraft::LogPosition::ZERO,
     ///     vec![
-    ///         LogEntry::Term(Term::ZERO),
-    ///         LogEntry::Command,
-    ///         LogEntry::Term(Term::new(1)),
+    ///         noraft::LogEntry::Term(noraft::Term::ZERO),
+    ///         noraft::LogEntry::Command,
+    ///         noraft::LogEntry::Term(noraft::Term::new(1)),
     ///     ],
     /// );
-    /// assert_eq!(entries.get_entry(LogIndex::ZERO), None);
-    /// assert_eq!(entries.get_entry(LogIndex::new(1)), Some(LogEntry::Term(Term::ZERO)));
-    /// assert_eq!(entries.get_entry(LogIndex::new(2)), Some(LogEntry::Command));
-    /// assert_eq!(entries.get_entry(LogIndex::new(3)), Some(LogEntry::Term(Term::new(1))));
-    /// assert_eq!(entries.get_entry(LogIndex::new(4)), None);
+    /// assert_eq!(entries.get_entry(noraft::LogIndex::ZERO), None);
+    /// assert_eq!(
+    ///     entries.get_entry(noraft::LogIndex::new(1)),
+    ///     Some(noraft::LogEntry::Term(noraft::Term::ZERO))
+    /// );
+    /// assert_eq!(
+    ///     entries.get_entry(noraft::LogIndex::new(2)),
+    ///     Some(noraft::LogEntry::Command)
+    /// );
+    /// assert_eq!(
+    ///     entries.get_entry(noraft::LogIndex::new(3)),
+    ///     Some(noraft::LogEntry::Term(noraft::Term::new(1)))
+    /// );
+    /// assert_eq!(entries.get_entry(noraft::LogIndex::new(4)), None);
     /// ```
     pub fn get_entry(&self, index: LogIndex) -> Option<LogEntry> {
         if !self.contains_index(index) || self.prev_position.index == index {
@@ -355,14 +365,21 @@ impl LogEntries {
     /// # Examples
     ///
     /// ```
-    /// use raftbare::{LogEntries, LogEntry, LogIndex, LogPosition, Term};
+    /// let mut entries = noraft::LogEntries::new(noraft::LogPosition::ZERO);
+    /// entries.push(noraft::LogEntry::Term(noraft::Term::ZERO));
+    /// entries.push(noraft::LogEntry::Command);
     ///
-    /// let mut entries = LogEntries::new(LogPosition::ZERO);
-    /// entries.push(LogEntry::Term(Term::ZERO));
-    /// entries.push(LogEntry::Command);
-    ///
-    /// assert_eq!(entries.get_entry(LogIndex::new(1)), Some(LogEntry::Term(Term::ZERO)));
-    /// assert_eq!(entries.last_position(), LogPosition { term: Term::ZERO, index: LogIndex::new(2) });
+    /// assert_eq!(
+    ///     entries.get_entry(noraft::LogIndex::new(1)),
+    ///     Some(noraft::LogEntry::Term(noraft::Term::ZERO))
+    /// );
+    /// assert_eq!(
+    ///     entries.last_position(),
+    ///     noraft::LogPosition {
+    ///         term: noraft::Term::ZERO,
+    ///         index: noraft::LogIndex::new(2),
+    ///     }
+    /// );
     /// ```
     pub fn push(&mut self, entry: LogEntry) {
         self.last_position = self.last_position.next();
@@ -385,12 +402,10 @@ impl LogEntries {
     /// # Examples
     ///
     /// ```
-    /// use raftbare::{LogEntries, LogEntry, LogIndex, LogPosition, Term};
-    ///
-    /// let mut entries = LogEntries::new(LogPosition::ZERO);
-    /// entries.push(LogEntry::Term(Term::ZERO));
-    /// entries.push(LogEntry::Command);
-    /// entries.push(LogEntry::Term(Term::new(1)));
+    /// let mut entries = noraft::LogEntries::new(noraft::LogPosition::ZERO);
+    /// entries.push(noraft::LogEntry::Term(noraft::Term::ZERO));
+    /// entries.push(noraft::LogEntry::Command);
+    /// entries.push(noraft::LogEntry::Term(noraft::Term::new(1)));
     /// assert_eq!(entries.len(), 3);
     ///
     /// // No effect.
@@ -400,13 +415,16 @@ impl LogEntries {
     /// // Drop the last two entries.
     /// entries.truncate(1);
     /// assert_eq!(entries.len(), 1);
-    /// assert_eq!(entries.get_entry(LogIndex::new(1)), Some(LogEntry::Term(Term::ZERO)));
-    /// assert_eq!(entries.get_entry(LogIndex::new(2)), None);
+    /// assert_eq!(
+    ///     entries.get_entry(noraft::LogIndex::new(1)),
+    ///     Some(noraft::LogEntry::Term(noraft::Term::ZERO))
+    /// );
+    /// assert_eq!(entries.get_entry(noraft::LogIndex::new(2)), None);
     ///
     /// // Drop all entries.
     /// entries.truncate(0);
     /// assert_eq!(entries.len(), 0);
-    /// assert_eq!(entries.get_entry(LogIndex::new(1)), None);
+    /// assert_eq!(entries.get_entry(noraft::LogIndex::new(1)), None);
     /// ```
     pub fn truncate(&mut self, len: usize) {
         let last_index = LogIndex::new(self.prev_position.index.get() + len as u64);

@@ -1,4 +1,4 @@
-use raftbare::{
+use noraft::{
     ClusterConfig, CommitStatus, Log, LogEntries, LogIndex, LogPosition, Message, Node,
     NodeGeneration, NodeId, Role, Term,
 };
