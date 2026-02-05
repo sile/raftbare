@@ -957,27 +957,23 @@ impl Node {
             return;
         }
 
-        let generation_changed = {
-            let RoleState::Leader { followers, .. } = &mut self.role else {
-                return;
-            };
-            let Some(follower) = followers.get_mut(&header.from) else {
-                // Replies from unknown nodes are ignored.
-                return;
-            };
-            if header.generation < follower.generation {
-                // Delayed reply from an old generation.
-                return;
-            }
-            if header.generation > follower.generation {
-                follower.match_index = self.log.snapshot_position().index;
-                follower.generation = header.generation;
-                true
-            } else {
-                false
-            }
+        let RoleState::Leader { followers, .. } = &mut self.role else {
+            return;
         };
-        if generation_changed {
+
+        let Some(follower) = followers.get_mut(&header.from) else {
+            // Replies from unknown nodes are ignored.
+            return;
+        };
+
+        if header.generation < follower.generation {
+            // Delayed reply from an old generation.
+            return;
+        }
+
+        if header.generation > follower.generation {
+            follower.match_index = self.log.snapshot_position().index;
+            follower.generation = header.generation;
             self.rebuild_quorum();
         }
 
@@ -1020,7 +1016,6 @@ impl Node {
         // `self.update_commit_index_if_possible()`.
         let is_follower_up_to_date = follower_last_position.index == self.log.last_position().index;
 
-        #[allow(clippy::comparison_chain)]
         if follower.match_index < follower_last_position.index {
             let old_match_index = follower.match_index;
             follower.match_index = follower_last_position.index;
