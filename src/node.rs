@@ -814,6 +814,9 @@ impl Node {
     /// }
     /// ```
     pub fn handle_message(&mut self, msg: &Message) {
+        if msg.from() == self.id {
+            return;
+        }
         if self.current_term < msg.term() {
             if matches!(msg, Message::RequestVoteCall { .. })
                 && !matches!(self.role, RoleState::Candidate { .. })

@@ -72,6 +72,28 @@ fn create_three_nodes_cluster() {
 }
 
 #[test]
+fn self_request_vote_call_is_ignored() {
+    let mut node = TestNode::asserted_start(id(0), &[id(0), id(1)]);
+    assert_eq!(node.role(), Role::Candidate);
+
+    let prev_term = node.current_term();
+    let prev_voted_for = node.voted_for();
+    let prev_role = node.role();
+    let msg = request_vote_call(
+        node.current_term(),
+        node.id(),
+        node.log().entries().last_position(),
+    );
+
+    node.handle_message(&msg);
+
+    assert_eq!(node.current_term(), prev_term);
+    assert_eq!(node.voted_for(), prev_voted_for);
+    assert_eq!(node.role(), prev_role);
+    assert_no_action!(node);
+}
+
+#[test]
 fn election() {
     let mut cluster = ThreeNodeCluster::new();
     cluster.init_cluster();
