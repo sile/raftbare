@@ -915,6 +915,9 @@ impl TestNode {
         while let Some(entry) = self.incoming_messages.first_entry() {
             if entry.key().0 <= now {
                 let message = entry.remove();
+                if self.inner.could_be_disruptive_request_vote(&message) {
+                    continue;
+                }
                 self.inner.handle_message(&message);
             } else {
                 break;

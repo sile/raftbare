@@ -796,7 +796,41 @@ impl Node {
         self.actions.set(Action::SaveVotedFor);
     }
 
+    /// Returns `true` if this node considers the given message a potentially disruptive
+    /// `RequestVoteCall`.
+    ///
+    /// This method is intended for pre-filtering at the integration layer.
+    /// The returned value is `true` when all of the following conditions are met:
+    /// - `msg` is [`Message::RequestVoteCall`]
+    /// - `msg.term()` is greater than this node's current term
+    /// - this node is not a candidate
+    /// - this node has already voted for another node in the current term
+    ///
+    /// Such a message might be sent from a removed node and could disrupt an active leader.
+    /// For details, see section 6 of the Raft paper.
+    ///
+    /// If your integration already guarantees in advance (for example, by a pre-vote
+    /// mechanism) that disruptive `RequestVoteCall` messages are not sent, avoid using
+    /// this method for filtering. Otherwise, valid `RequestVoteCall` messages may be
+    /// dropped unexpectedly.
+    ///
+    /// Note that [`Node::handle_message`] does not automatically ignore this case.
+    /// If you want to drop these messages, call this method before passing the message to
+    /// [`Node::handle_message`].
+    pub fn could_be_disruptive_request_vote(&self, msg: &Message) -> bool {
+        self.current_term < msg.term()
+            && matches!(msg, Message::RequestVoteCall { .. })
+            && !matches!(self.role, RoleState::Candidate { .. })
+            && self.voted_for.is_some_and(|id| id != msg.from())
+    }
+
     /// Handles an incoming message from other nodes.
+    ///
+    /// # Note
+    ///
+    /// This method processes potentially disruptive `RequestVoteCall` messages as normal input.
+    /// To pre-filter such messages, call [`Node::could_be_disruptive_request_vote`]
+    /// before invoking this method.
     ///
     /// # Examples
     ///
@@ -818,15 +852,6 @@ impl Node {
             return;
         }
         if self.current_term < msg.term() {
-            if matches!(msg, Message::RequestVoteCall { .. })
-                && !matches!(self.role, RoleState::Candidate { .. })
-                && self.voted_for.is_some_and(|id| id != msg.from())
-            {
-                // This message might have been sent from a removed node and should be ignored
-                // to prevent disruption of the cluster.
-                // For more details, please refer to section 6 of the Raft paper.
-                return;
-            }
             self.transition_to_follower(msg.term());
         }
 
