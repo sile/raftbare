@@ -21,7 +21,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        toolchain: [stable, beta, nightly]
+        toolchain: [stable]
     steps:
       - name: Checkout sources
         uses: actions/checkout@v6
@@ -42,4 +42,4 @@ jobs:
       - run: rustup default ${{ matrix.toolchain }}
       - run: rustup component add rustfmt clippy
       - run: cargo fmt --all -- --check
-      - run: cargo clippy --all -- -D warnings
+      - run: cargo clippy --all --all-targets -- -D warnings

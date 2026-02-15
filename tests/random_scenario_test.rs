@@ -433,7 +433,7 @@ fn dynamic_membership() {
 
     for i in 0..10 {
         // Change the cluster configuration.
-        cluster.run_while_leader_absent(cluster.clock.add(1000_000));
+        cluster.run_while_leader_absent(cluster.clock.add(1_000_000));
         if cluster.rng.random_bool(0.7) {
             // Add.
             let node_id = NodeId::new(3 + i);
@@ -483,7 +483,7 @@ fn dynamic_membership() {
         // Propose commands.
         let mut positions = Vec::new();
         for _ in 0..10 {
-            cluster.run_while_leader_absent(cluster.clock.add(1000_000));
+            cluster.run_while_leader_absent(cluster.clock.add(1_000_000));
             let Some(leader) = cluster.leader_node_mut() else {
                 panic!("No leader");
             };
@@ -497,7 +497,7 @@ fn dynamic_membership() {
         let mut success_count = 0;
         for position in positions {
             for _ in 0..20000 {
-                cluster.run_while_leader_absent(cluster.clock.add(1000_000));
+                cluster.run_while_leader_absent(cluster.clock.add(1_000_000));
                 let Some(leader) = cluster.leader_node_mut() else {
                     panic!("No leader");
                 };
@@ -560,7 +560,7 @@ fn truncate_divergence_log() {
     let old_leader = cluster.nodes.remove(leader_node_index);
 
     // Elect a new leader.
-    cluster.run_while_leader_absent(cluster.clock.add(1000_000));
+    cluster.run_while_leader_absent(cluster.clock.add(1_000_000));
 
     // Propose remaining commands.
     for _ in 0..60 {
