@@ -3,9 +3,9 @@ use noraft::{
     NodeGeneration, NodeId, Role, Term,
 };
 use rand::{
-    Rng, SeedableRng,
+    Rng, RngExt, SeedableRng,
     distr::{Distribution, uniform::SampleRange},
-    prelude::{IndexedRandom, RngCore},
+    prelude::IndexedRandom,
     rngs::StdRng,
 };
 use std::collections::BTreeMap;
@@ -809,13 +809,13 @@ impl MinMax {
 }
 
 impl Distribution<usize> for MinMax {
-    fn sample<R: RngCore + ?Sized>(&self, rng: &mut R) -> usize {
+    fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> usize {
         rng.random_range(self.min..=self.max)
     }
 }
 
 impl SampleRange<usize> for MinMax {
-    fn sample_single<R: RngCore + ?Sized>(
+    fn sample_single<R: Rng + ?Sized>(
         self,
         rng: &mut R,
     ) -> Result<usize, rand::distr::uniform::Error> {
