@@ -532,7 +532,6 @@ impl TestNode {
                             cluster_config_entry(joint(initial_voters, &[])),
                             term_entry(t(1))
                         ]
-                        .into_iter()
                     ))
                 );
             } else {
@@ -541,7 +540,7 @@ impl TestNode {
                     node,
                     append_log_entries(&LogEntries::from_iter(
                         prev(t(0), i(0)),
-                        [cluster_config_entry(joint(initial_voters, &[]))].into_iter()
+                        [cluster_config_entry(joint(initial_voters, &[]))]
                     ))
                 );
                 assert!(matches!(
@@ -609,7 +608,7 @@ impl TestNode {
 
         let reply = append_entries_reply(msg, self);
         if !entries.is_empty() {
-            assert_action!(self, append_log_entries(&entries));
+            assert_action!(self, append_log_entries(entries));
         }
         if prev_commit_index < *leader_commit
             && prev_commit_index <= self.log().entries().last_position().index
@@ -872,7 +871,7 @@ impl TestNode {
 
         let tail = self.log().entries().last_position();
         self.handle_message(msg);
-        let reply = append_entries_reply(&msg, self);
+        let reply = append_entries_reply(msg, self);
         assert_action!(self, save_current_term());
         assert_eq!(self.current_term(), msg.term());
         assert_action!(self, save_voted_for());
@@ -1070,7 +1069,7 @@ fn next_same_kind_action(actions: &mut Actions, expected: &Action) -> Option<Act
         Action::InstallSnapshot(node_id) => actions
             .install_snapshots
             .remove(node_id)
-            .then(|| Action::InstallSnapshot(*node_id)),
+            .then_some(Action::InstallSnapshot(*node_id)),
         _ => None,
     }
 }
