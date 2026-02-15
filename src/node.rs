@@ -814,6 +814,15 @@ impl Node {
     /// this method for filtering. Otherwise, valid `RequestVoteCall` messages may be
     /// dropped unexpectedly.
     ///
+    /// Example scenario: A follower's election timeout has already expired, but the
+    /// integration runs pre-vote first and delays calling
+    /// [`Node::handle_election_timeout`] so that the node does not immediately become a
+    /// candidate and increment its term. During that gap, the node stays as a follower.
+    /// If `RequestVoteCall` messages are dropped by this method in that period and the
+    /// pre-vote does not succeed, the node can remain follower longer than necessary.
+    /// If many running followers stay in that state, leader election can stall for a
+    /// very long time because no candidate is able to gather votes.
+    ///
     /// Note that [`Node::handle_message`] does not automatically ignore this case.
     /// If you want to drop these messages, call this method before passing the message to
     /// [`Node::handle_message`].
