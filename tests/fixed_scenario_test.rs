@@ -94,6 +94,102 @@ fn self_request_vote_call_is_ignored() {
 }
 
 #[test]
+fn could_be_disruptive_request_vote_true_when_high_term_request_vote_conflicts_with_voted_for() {
+    let base = Node::start(id(0));
+    let mut node = Node::restart(
+        id(0),
+        NodeGeneration::new(1),
+        t(2),
+        Some(id(1)),
+        base.log().clone(),
+    );
+    assert_action!(node, set_election_timeout());
+    assert_no_action!(node);
+
+    let msg = request_vote_call(t(3), id(2), node.log().entries().last_position());
+    assert!(node.could_be_disruptive_request_vote(&msg));
+    assert_no_action!(node);
+}
+
+#[test]
+fn could_be_disruptive_request_vote_false_for_candidate() {
+    let node = TestNode::asserted_start(id(0), &[id(0), id(1), id(2)]);
+    assert_eq!(node.role(), Role::Candidate);
+
+    let msg = request_vote_call(
+        next_term(node.current_term()),
+        id(2),
+        node.log().entries().last_position(),
+    );
+    assert!(!node.could_be_disruptive_request_vote(&msg));
+}
+
+#[test]
+fn could_be_disruptive_request_vote_false_for_non_request_vote() {
+    let base = Node::start(id(0));
+    let mut node = Node::restart(
+        id(0),
+        NodeGeneration::new(1),
+        t(2),
+        Some(id(1)),
+        base.log().clone(),
+    );
+    assert_action!(node, set_election_timeout());
+    assert_no_action!(node);
+
+    let msg = Message::AppendEntriesCall {
+        from: id(2),
+        term: t(3),
+        commit_index: node.commit_index(),
+        entries: LogEntries::new(node.log().entries().last_position()),
+    };
+    assert!(!node.could_be_disruptive_request_vote(&msg));
+    assert_no_action!(node);
+}
+
+#[test]
+fn disruptive_request_vote_is_processed_without_prefilter() {
+    let base = Node::start(id(0));
+    let mut node = Node::restart(
+        id(0),
+        NodeGeneration::new(1),
+        t(2),
+        Some(id(1)),
+        base.log().clone(),
+    );
+    assert_action!(node, set_election_timeout());
+    assert_no_action!(node);
+
+    let msg = request_vote_call(t(3), id(2), node.log().entries().last_position());
+    assert!(node.could_be_disruptive_request_vote(&msg));
+
+    node.handle_message(&msg);
+
+    assert_eq!(node.role(), Role::Follower);
+    assert_eq!(node.current_term(), t(3));
+    assert_eq!(node.voted_for(), Some(id(2)));
+    let actions: Vec<_> = node.actions_mut().collect();
+    assert!(actions.iter().any(|a| matches!(a, Action::SaveCurrentTerm)));
+    assert!(actions.iter().any(|a| matches!(a, Action::SaveVotedFor)));
+    assert!(
+        actions
+            .iter()
+            .any(|a| matches!(a, Action::SetElectionTimeout))
+    );
+    assert!(actions.iter().any(|a| matches!(
+        a,
+        Action::SendMessage(
+            destination,
+            Message::RequestVoteReply {
+                term,
+                vote_granted: true,
+                ..
+            }
+        ) if *destination == id(2) && *term == t(3)
+    )));
+}
+
+#[test]
 fn election() {
     let mut cluster = ThreeNodeCluster::new();
     cluster.init_cluster();
@@ -183,8 +279,12 @@ fn truncate_log() {
     let _call = cluster.node2.asserted_follower_election_timeout();
     let call = cluster.node2.asserted_candidate_election_timeout(); // Increase term.
 
-    // As  node0 is the leader, it ignores RequestVoteRPC even it if has a higher term.
-    cluster.node0.handle_message(&call);
+    // Callers can filter out potentially disruptive RequestVoteRPCs.
+    let should_ignore = cluster.node0.could_be_disruptive_request_vote(&call);
+    assert!(should_ignore);
+    if !should_ignore {
+        cluster.node0.handle_message(&call);
+    }
     assert_eq!(cluster.node0.role(), Role::Leader);
     assert_no_action!(cluster.node0);
 
