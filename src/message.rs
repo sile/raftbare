@@ -117,8 +117,7 @@ impl Message {
             return true;
         }
 
-        let new_prev_index =
-            LogIndex::new(entries.prev_position().index.get() + sent_count as u64);
+        let new_prev_index = LogIndex::new(entries.prev_position().index.get() + sent_count as u64);
         let new_prev_term = entries.get_term(new_prev_index).expect(
             "sent_count is less than the number of entries, so the new previous index is always valid",
         );
@@ -330,7 +329,11 @@ mod tests {
         };
         let entries = LogEntries::from_iter(
             prev,
-            [LogEntry::Command, LogEntry::Term(Term::new(3)), LogEntry::Command],
+            [
+                LogEntry::Command,
+                LogEntry::Term(Term::new(3)),
+                LogEntry::Command,
+            ],
         );
         let old_last_position = entries.last_position();
         let mut message = Message::append_entries_call(term, from, commit_index, entries);
